@@ -13,6 +13,7 @@ from psycopg.types.json import Json
 
 from domain.enums import Step
 from infra.repositories import EventsRepository, PlansRepository
+from shared.auth import is_authorized_login
 from shared.config import get_database_settings, get_principal_settings
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,9 @@ def _initialize_session(connection: psycopg.Connection, principal: Principal) ->
             "SELECT app.login_matricula(%s::citext)",
             (principal.matricula,),
         )
+        row = cur.fetchone()
+        if not is_authorized_login(row):
+            raise PermissionError("Usuário não autorizado.")
         cur.execute("SET TIME ZONE 'America/Sao_Paulo'")
 
 
@@ -121,6 +125,9 @@ def _configure_transaction(
             "SELECT app.login_matricula(%s::citext)",
             (principal.matricula,),
         )
+        row = cur.fetchone()
+        if not is_authorized_login(row):
+            raise PermissionError("Usuário não autorizado.")
         cur.execute("SET TIME ZONE 'America/Sao_Paulo'")
         cur.execute("SET LOCAL statement_timeout = '30s'")
 
