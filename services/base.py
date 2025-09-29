@@ -132,6 +132,7 @@ def run_step_job(
 
     connection = psycopg.connect(settings.dsn, autocommit=False)
 
+    service_result: Optional[ServiceResult] = None
     try:
         with connection.cursor() as cur:
             cur.execute(
@@ -140,50 +141,61 @@ def run_step_job(
 
         bind_session_by_matricula(connection, principal.matricula)
 
-        with job_run(
-            connection,
-            job_name=str(job_name),
-            payload=job_payload,
-        ) as job_handle:
-            attempt = 0
-            while True:
-                attempt += 1
-                try:
-                    _configure_transaction(connection, principal=principal)
-                    context = _prepare_context(
-                        connection,
-                        job_run_id=job_handle.id,
-                        job_run_started_at=job_handle.started_at,
-                    )
-                    outcome = callback(context)
-                    final_status = outcome.status.upper() if outcome.status else "SUCCESS"
-                    if final_status not in {"SUCCESS", "ERROR", "SKIPPED"}:
-                        final_status = (
-                            "ERROR" if final_status.startswith("FAIL") else "SUCCESS"
+        try:
+            with job_run(
+                connection,
+                job_name=str(job_name),
+                payload=job_payload,
+            ) as job_handle:
+                attempt = 0
+                while True:
+                    attempt += 1
+                    try:
+                        _configure_transaction(connection, principal=principal)
+                        context = _prepare_context(
+                            connection,
+                            job_run_id=job_handle.id,
+                            job_run_started_at=job_handle.started_at,
                         )
-                    job_handle.status = final_status
-                    job_handle.error_message = None
-                    connection.commit()
-                    return ServiceResult(step=step, outcome=outcome)
-                except UniqueViolation as exc:
-                    logger.warning(
-                        "Unique violation durante execução da etapa %s (tentativa %s/%s)",
-                        step,
-                        attempt,
-                        max_retries,
-                    )
-                    connection.rollback()
-                    if attempt >= max_retries:
+                        outcome = callback(context)
+                        final_status = (
+                            outcome.status.upper() if outcome.status else "SUCCESS"
+                        )
+                        if final_status not in {"SUCCESS", "ERROR", "SKIPPED"}:
+                            final_status = (
+                                "ERROR" if final_status.startswith("FAIL") else "SUCCESS"
+                            )
+                        job_handle.status = final_status
+                        job_handle.error_message = None
+                        connection.commit()
+                        service_result = ServiceResult(step=step, outcome=outcome)
+                        break
+                    except UniqueViolation as exc:
+                        logger.warning(
+                            "Unique violation durante execução da etapa %s (tentativa %s/%s)",
+                            step,
+                            attempt,
+                            max_retries,
+                        )
+                        connection.rollback()
+                        if attempt >= max_retries:
+                            job_handle.status = "ERROR"
+                            job_handle.error_message = str(exc)
+                            raise
+                        _retry_backoff(attempt)
+                        continue
+                    except Exception as exc:
+                        connection.rollback()
                         job_handle.status = "ERROR"
                         job_handle.error_message = str(exc)
                         raise
-                    _retry_backoff(attempt)
-                    continue
-                except Exception as exc:
-                    connection.rollback()
-                    job_handle.status = "ERROR"
-                    job_handle.error_message = str(exc)
-                    raise
+        except Exception:
+            connection.commit()
+            raise
+        else:
+            connection.commit()
+            assert service_result is not None
+            return service_result
     finally:
         connection.close()
 
