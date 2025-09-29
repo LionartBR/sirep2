@@ -14,11 +14,8 @@ from .models import PlanRow
 logger = logging.getLogger(__name__)
 
 
-def portal_po_provider() -> List[dict]:  # pragma: no cover - integração real
-    try:  # pragma: no cover - dependência opcional em Windows
-        import certifi_win32  # noqa: F401
-    except ModuleNotFoundError:  # pragma: no cover - ambiente Linux/macOS
-        logger.debug("certifi_win32 não disponível; prosseguindo sem patch de certificados")
+def portal_po_provider() -> List[dict]:  # pragma: no cover - integração real    
+    import certifi_win32 # type: ignore
     import requests
     from requests_negotiate_sspi import HttpNegotiateAuth
 
