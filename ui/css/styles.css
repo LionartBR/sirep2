@@ -377,6 +377,18 @@ input:focus {
   cursor: pointer;
 }
 
+.logs-panel__export {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.logs-panel__label {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .accordion {
   border: 1px solid var(--border);
   border-radius: 10px;

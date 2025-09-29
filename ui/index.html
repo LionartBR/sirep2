@@ -97,57 +97,6 @@
                 <i data-feather="chevron-right" aria-hidden="true"></i>
               </button>
             </div>
-
-            <div class="filters">
-              <div class="filters__field">
-                <label for="date-from">De:</label>
-                <div class="filters__input-wrapper">
-                  <input
-                    type="text"
-                    id="date-from"
-                    placeholder="dd/mm/aaaa"
-                    aria-label="De"
-                    readonly
-                  />
-                  <button
-                    class="filters__icon"
-                    type="button"
-                    id="open-date-from"
-                    aria-label="Abrir calendário de data inicial"
-                  >
-                    <i data-feather="calendar" aria-hidden="true"></i>
-                  </button>
-                </div>
-              </div>
-              <div class="filters__field">
-                <label for="date-to">Até:</label>
-                <div class="filters__input-wrapper">
-                  <input
-                    type="text"
-                    id="date-to"
-                    placeholder="dd/mm/aaaa"
-                    aria-label="Até"
-                    readonly
-                  />
-                  <button
-                    class="filters__icon"
-                    type="button"
-                    id="open-date-to"
-                    aria-label="Abrir calendário de data final"
-                  >
-                    <i data-feather="calendar" aria-hidden="true"></i>
-                  </button>
-                </div>
-              </div>
-              <button
-                class="btn btn--ghost btn--disabled"
-                type="button"
-                disabled
-                title="Em breve"
-              >
-                Exportar (.xlsx)
-              </button>
-            </div>
           </div>
 
           <div class="accordion">
@@ -161,7 +110,67 @@
               <span>Janela de Eventos (logs)</span>
               <i data-feather="chevron-down" aria-hidden="true"></i>
             </button>
-            <div class="accordion__panel" id="logsPanel" role="region" aria-labelledby="logsToggle"></div>
+            <div class="accordion__panel" id="logsPanel" role="region" aria-labelledby="logsToggle">
+              <div
+                class="logs-panel__export"
+                role="group"
+                aria-labelledby="logsExportLabel"
+              >
+                <p class="logs-panel__label" id="logsExportLabel">
+                  Exportar Janela de Eventos
+                </p>
+                <div class="filters">
+                  <div class="filters__field">
+                    <label for="date-from">De:</label>
+                    <div class="filters__input-wrapper">
+                      <input
+                        type="text"
+                        id="date-from"
+                        placeholder="dd/mm/aaaa"
+                        aria-label="De"
+                        readonly
+                      />
+                      <button
+                        class="filters__icon"
+                        type="button"
+                        id="open-date-from"
+                        aria-label="Abrir calendário de data inicial"
+                      >
+                        <i data-feather="calendar" aria-hidden="true"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="filters__field">
+                    <label for="date-to">Até:</label>
+                    <div class="filters__input-wrapper">
+                      <input
+                        type="text"
+                        id="date-to"
+                        placeholder="dd/mm/aaaa"
+                        aria-label="Até"
+                        readonly
+                      />
+                      <button
+                        class="filters__icon"
+                        type="button"
+                        id="open-date-to"
+                        aria-label="Abrir calendário de data final"
+                      >
+                        <i data-feather="calendar" aria-hidden="true"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    class="btn btn--ghost btn--disabled"
+                    type="button"
+                    disabled
+                    title="Em breve"
+                  >
+                    Exportar (.xlsx)
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
