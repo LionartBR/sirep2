@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,7 +13,7 @@ from psycopg.types.json import Json
 
 from domain.enums import Step
 from infra.repositories import EventsRepository, PlansRepository
-from shared.config import get_database_settings
+from shared.config import get_database_settings, get_principal_settings
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +49,65 @@ class StepJobContext:
 StepJobCallback = Callable[[StepJobContext], StepJobOutcome]
 
 
+@dataclass(slots=True)
+class Principal:
+    """Informações necessárias para definir o contexto da sessão no banco."""
+
+    tenant_id: str
+    matricula: str
+    nome: Optional[str] = None
+    email: Optional[str] = None
+    perfil: Optional[str] = None
+
+
+def _resolve_principal(
+    tenant_override: Optional[str],
+    user_override: Optional[str],
+) -> Principal:
+    """Determina o tenant e o usuário do aplicativo a partir do ambiente."""
+
+    settings = get_principal_settings()
+    tenant_id = tenant_override or settings.tenant_id
+    matricula = user_override or settings.matricula
+
+    if not tenant_id:
+        raise RuntimeError(
+            "Identificador do tenant não configurado. Defina 'APP_TENANT_ID' ou 'TENANT_ID' "
+            "antes de iniciar a pipeline."
+        )
+
+    if not matricula:
+        raise RuntimeError(
+            "Usuário de aplicação não configurado. Informe 'APP_USER_REGISTRATION', "
+            "'APP_USER_ID' ou 'USER_ID' no ambiente para executar a pipeline."
+        )
+
+    return Principal(
+        tenant_id=tenant_id,
+        matricula=matricula,
+        nome=settings.nome,
+        email=settings.email,
+        perfil=settings.perfil,
+    )
+
+
+def _initialize_session(connection: psycopg.Connection, principal: Principal) -> None:
+    """Inicializa a sessão com o tenant e usuário definidos."""
+
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT app.set_principal(%s, %s, %s, %s, %s)",
+            (
+                principal.tenant_id,
+                principal.matricula,
+                principal.nome,
+                principal.email,
+                principal.perfil,
+            ),
+        )
+        cur.execute("SET TIME ZONE 'America/Sao_Paulo'")
+
+
 def _prepare_context(
     connection: psycopg.Connection,
     *,
@@ -72,16 +130,21 @@ def _prepare_context(
 def _configure_transaction(
     connection: psycopg.Connection,
     *,
-    tenant: Optional[str],
-    usuario: Optional[str],
+    principal: Principal,
 ) -> None:
     """Configura o contexto de RLS e parâmetros locais da transação."""
 
     with connection.cursor() as cur:
-        if tenant:
-            cur.execute("SELECT app.set_tenant(%s)", (tenant,))
-        if usuario:
-            cur.execute("SELECT app.set_user(%s)", (usuario,))
+        cur.execute(
+            "SELECT app.set_principal(%s, %s, %s, %s, %s)",
+            (
+                principal.tenant_id,
+                principal.matricula,
+                principal.nome,
+                principal.email,
+                principal.perfil,
+            ),
+        )
         cur.execute("SET TIME ZONE 'America/Sao_Paulo'")
         cur.execute("SET LOCAL statement_timeout = '30s'")
 
@@ -89,14 +152,13 @@ def _configure_transaction(
 def _insert_job_run(
     connection: psycopg.Connection,
     *,
-    tenant: Optional[str],
-    usuario: Optional[str],
+    principal: Principal,
     job_name: str,
     payload: Optional[dict[str, Any]] = None,
 ) -> tuple[str, datetime]:
     """Registra um novo job_run com status RUNNING e retorna os identificadores."""
 
-    _configure_transaction(connection, tenant=tenant, usuario=usuario)
+    _configure_transaction(connection, principal=principal)
     with connection.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
@@ -118,8 +180,7 @@ def _insert_job_run(
 def _finalize_job_run(
     connection: psycopg.Connection,
     *,
-    tenant: Optional[str],
-    usuario: Optional[str],
+    principal: Principal,
     job_run_id: str,
     started_at: datetime,
     status: str,
@@ -127,7 +188,7 @@ def _finalize_job_run(
 ) -> None:
     """Atualiza o job_run com o status final e mensagem opcional."""
 
-    _configure_transaction(connection, tenant=tenant, usuario=usuario)
+    _configure_transaction(connection, principal=principal)
     mensagem = (error_message or "").strip() or None
     if mensagem and len(mensagem) > 2000:
         mensagem = mensagem[:2000]
@@ -167,8 +228,7 @@ def run_step_job(
     """Executa o callback dentro de uma transação configurada com RLS."""
 
     settings = get_database_settings()
-    tenant = tenant_id or os.getenv("TENANT_ID")
-    usuario = user_id or os.getenv("APP_USER_ID") or os.getenv("USER_ID")
+    principal = _resolve_principal(tenant_id, user_id)
 
     connection = psycopg.connect(settings.dsn, autocommit=False)
 
@@ -178,10 +238,11 @@ def run_step_job(
                 "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED"
             )
 
+        _initialize_session(connection, principal)
+
         job_run_id, started_at = _insert_job_run(
             connection,
-            tenant=tenant,
-            usuario=usuario,
+            principal=principal,
             job_name=str(job_name),
             payload=job_payload,
         )
@@ -190,7 +251,7 @@ def run_step_job(
         while True:
             attempt += 1
             try:
-                _configure_transaction(connection, tenant=tenant, usuario=usuario)
+                _configure_transaction(connection, principal=principal)
                 context = _prepare_context(
                     connection, job_run_id=job_run_id, job_run_started_at=started_at
                 )
@@ -200,8 +261,7 @@ def run_step_job(
                     final_status = "ERROR" if final_status.startswith("FAIL") else "SUCCESS"
                 _finalize_job_run(
                     connection,
-                    tenant=tenant,
-                    usuario=usuario,
+                    principal=principal,
                     job_run_id=job_run_id,
                     started_at=started_at,
                     status=final_status,
@@ -220,8 +280,7 @@ def run_step_job(
                 if attempt >= max_retries:
                     _finalize_job_run(
                         connection,
-                        tenant=tenant,
-                        usuario=usuario,
+                        principal=principal,
                         job_run_id=job_run_id,
                         started_at=started_at,
                         status="ERROR",
@@ -235,8 +294,7 @@ def run_step_job(
                 connection.rollback()
                 _finalize_job_run(
                     connection,
-                    tenant=tenant,
-                    usuario=usuario,
+                    principal=principal,
                     job_run_id=job_run_id,
                     started_at=started_at,
                     status="ERROR",
