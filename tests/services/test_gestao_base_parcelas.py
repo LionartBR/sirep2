@@ -63,3 +63,20 @@ def test_normalize_parcelas_returns_empty_when_no_data():
     assert normalizados == []
     assert dias_total is None
 
+
+def test_normalize_parcelas_ignores_none_vencimento():
+    referencia = date(2024, 5, 10)
+    parcelas = [
+        {
+            "parcela": "001",
+            "valor": "100,00",
+            "vencimento": None,
+            "data_vencimento": "03/05/2024",
+        }
+    ]
+
+    normalizados, dias_total = normalize_parcelas_atraso(parcelas, referencia=referencia)
+
+    assert normalizados[0]["vencimento"] == "2024-05-03"
+    assert dias_total == 7
+
