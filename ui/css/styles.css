@@ -31,6 +31,13 @@ body {
   flex-direction: column;
 }
 
+body.login-page {
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at top, rgba(11, 95, 168, 0.15), transparent 55%), var(--bg);
+  padding: 32px 16px;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -77,6 +84,12 @@ input:focus {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.topbar__user {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .topbar__action {
@@ -219,6 +232,126 @@ input:focus {
 .btn--disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+.login {
+  width: 100%;
+  max-width: 420px;
+}
+
+.login-card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.login-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.login-card__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.login-card__subtitle {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.login-form__label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.login-form__input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 15px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-form__input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(16, 140, 188, 0.18);
+}
+
+.login-form__options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.login-form__remember {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.login-form__remember input {
+  width: 16px;
+  height: 16px;
+}
+
+.login-form__feedback {
+  margin: 0;
+  font-size: 14px;
+  color: #c0392b;
+}
+
+.login-form__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.login-form__submit {
+  width: 100%;
+}
+
+.login-footer {
+  margin-top: 32px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+@media (max-width: 520px) {
+  .login-card {
+    padding: 24px;
+  }
+
+  .login-card__title {
+    font-size: 21px;
+  }
 }
 
 .status {

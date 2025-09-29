@@ -1,7 +1,28 @@
 /* global flatpickr */
 document.addEventListener('DOMContentLoaded', () => {
+  if (!window.Auth || !Auth.isAuthenticated()) {
+    window.location.replace('login.html');
+    return;
+  }
+
   if (window.feather) {
     window.feather.replace();
+  }
+
+  const currentUser = Auth.getUser();
+  const userNameLabel = document.getElementById('currentUserName');
+  if (userNameLabel) {
+    const displayName = currentUser?.name || currentUser?.username || 'Operador';
+    userNameLabel.textContent = displayName;
+  }
+
+  const signOutLink = document.querySelector('.topbar__signout');
+  if (signOutLink) {
+    signOutLink.addEventListener('click', (event) => {
+      event.preventDefault();
+      Auth.logout();
+      window.location.replace('login.html');
+    });
   }
 
   const statusText = document.getElementById('statusText');

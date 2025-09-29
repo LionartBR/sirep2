@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Entrar • SIREP 2.0</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body class="login-page">
+    <main class="login" role="main">
+      <section class="login-card" aria-labelledby="loginTitle">
+        <header class="login-card__header">
+          <h1 id="loginTitle" class="login-card__title">Acessar o SIREP 2.0</h1>
+          <p class="login-card__subtitle">
+            Informe suas credenciais para iniciar a pipeline e acompanhar o processamento.
+          </p>
+        </header>
+        <form id="loginForm" class="login-form" novalidate>
+          <div class="login-form__field">
+            <label for="username" class="login-form__label">Usuário</label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              class="login-form__input"
+              autocomplete="username"
+              placeholder="nome.sobrenome"
+              required
+            />
+          </div>
+          <div class="login-form__field">
+            <label for="password" class="login-form__label">Senha</label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              class="login-form__input"
+              autocomplete="current-password"
+              placeholder="********"
+              required
+            />
+          </div>
+          <div class="login-form__options">
+            <label class="login-form__remember">
+              <input type="checkbox" id="rememberMe" name="rememberMe" />
+              <span>Lembrar meu acesso neste dispositivo</span>
+            </label>
+          </div>
+          <p class="login-form__feedback" id="loginError" role="alert" hidden></p>
+          <div class="login-form__actions">
+            <button type="submit" class="btn btn--primary login-form__submit">Entrar</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <footer class="login-footer" role="contentinfo">
+      <p>CEFGD/RJ — Recuperação de Débitos do FGTS perante o Empregador</p>
+      <p>CAIXA™ 2025</p>
+    </footer>
+
+    <script src="js/auth.js"></script>
+    <script src="js/login.js"></script>
+  </body>
+</html>
