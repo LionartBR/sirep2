@@ -56,4 +56,42 @@ def get_database_settings() -> DatabaseSettings:
     )
 
 
-__all__ = ["DatabaseSettings", "get_database_settings"]
+@dataclass(slots=True)
+class PrincipalSettings:
+    """Informações de contexto necessárias para inicializar a sessão no banco."""
+
+    tenant_id: Optional[str]
+    matricula: Optional[str]
+    nome: Optional[str]
+    email: Optional[str]
+    perfil: Optional[str]
+
+
+@lru_cache(maxsize=1)
+def get_principal_settings() -> PrincipalSettings:
+    """Carrega as credenciais do usuário de aplicação a partir do ambiente."""
+
+    tenant_id = os.getenv("APP_TENANT_ID") or os.getenv("TENANT_ID")
+    matricula = (
+        os.getenv("APP_USER_REGISTRATION")
+        or os.getenv("APP_USER_ID")
+        or os.getenv("USER_ID")
+    )
+    nome = os.getenv("APP_USER_NAME") or os.getenv("USER_NAME")
+    email = os.getenv("APP_USER_EMAIL") or os.getenv("USER_EMAIL")
+    perfil = os.getenv("APP_USER_PROFILE") or os.getenv("USER_PROFILE")
+    return PrincipalSettings(
+        tenant_id=tenant_id or None,
+        matricula=matricula or None,
+        nome=nome or None,
+        email=email or None,
+        perfil=perfil or None,
+    )
+
+
+__all__ = [
+    "DatabaseSettings",
+    "PrincipalSettings",
+    "get_database_settings",
+    "get_principal_settings",
+]
