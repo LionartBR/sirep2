@@ -25,13 +25,16 @@ async def init_pool(settings: Optional[DatabaseSettings] = None) -> AsyncConnect
             return _pool
 
         settings = settings or get_database_settings()
-        _pool = AsyncConnectionPool(
+        pool = AsyncConnectionPool(
             conninfo=settings.dsn,
             min_size=settings.pool_min_size,
             max_size=settings.pool_max_size,
             timeout=settings.timeout,
+            open=False,
         )
-        return _pool
+        await pool.open()
+        _pool = pool
+        return pool
 
 
 async def close_pool() -> None:
