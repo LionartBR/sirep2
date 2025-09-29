@@ -21,6 +21,13 @@ def _first_non_empty(mapping: dict[str, Any], keys: Iterable[str]) -> Optional[s
     return None
 
 
+def _first_present(mapping: dict[str, Any], keys: Iterable[str]) -> Any:
+    for key in keys:
+        if key in mapping:
+            return mapping[key]
+    return None
+
+
 def _parse_vencimento(raw: Any) -> tuple[Optional[date], Optional[str]]:
     if isinstance(raw, datetime):
         return raw.date(), raw.date().isoformat()
@@ -74,20 +81,20 @@ def normalize_parcelas_atraso(
                 item,
                 ("parcela", "numero", "sequencia", "id", "codigo"),
             )
-            valor_candidate = _first_non_empty(
+            valor_raw = _first_non_empty(
                 item,
                 ("valor", "valor_parcela", "valor_atraso", "valor_nominal"),
             )
-            valor_raw = valor_candidate
-            venc_raw = item.get("vencimento")
-            if venc_raw is None:
-                venc_raw = item.get("dt_vencimento")
-            if venc_raw is None:
-                venc_raw = item.get("data_vencimento")
-            if venc_raw is None:
-                venc_raw = item.get("data")
-            if venc_raw is None:
-                venc_raw = item.get("venc")
+            venc_raw = _first_present(
+                item,
+                (
+                    "vencimento",
+                    "dt_vencimento",
+                    "data_vencimento",
+                    "data",
+                    "venc",
+                ),
+            )
         elif isinstance(item, (list, tuple)):
             numero = (
                 str(item[0]).strip()
