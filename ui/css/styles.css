@@ -252,7 +252,9 @@ input:focus {
 .login-card__header {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+  align-items: center;
+  text-align: center;
 }
 
 .login-card__title {
@@ -260,12 +262,30 @@ input:focus {
   font-size: 24px;
   font-weight: 600;
   color: var(--primary);
+  text-align: center;
 }
 
 .login-card__subtitle {
   margin: 0;
   color: var(--muted);
   line-height: 1.4;
+  text-align: center;
+}
+
+.login-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(11, 95, 168, 0.12), rgba(73, 195, 182, 0.12));
+  color: var(--primary);
+}
+
+.login-card__icon svg {
+  width: 24px;
+  height: 24px;
 }
 
 .login-form {

@@ -4,6 +4,10 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
+  if (window.feather) {
+    window.feather.replace();
+  }
+
   if (Auth.isAuthenticated()) {
     window.location.replace('index.html');
     return;
@@ -69,7 +73,12 @@ document.addEventListener('DOMContentLoaded', () => {
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ');
 
-    Auth.login({ username, remember: rememberInput.checked, name: displayName });
+    Auth.login({
+      username,
+      remember: rememberInput.checked,
+      name: displayName,
+      password: credentials.password,
+    });
     form.reset();
     window.location.replace('index.html');
   });
