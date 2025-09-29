@@ -17,7 +17,7 @@ from services.base import (
 )
 
 from .collectors import DryRunCollector, GestaoBaseCollector, TerminalCollector
-from .models import GestaoBaseData, ProgressCallback
+from .models import ProgressCallback
 from .persistence import format_summary, persist_rows
 from .portal import portal_po_provider
 
