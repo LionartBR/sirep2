@@ -30,7 +30,7 @@ async def start_pipeline(
 
     payload = payload or PipelineStartPayload()
     try:
-        state = await orchestrator.start(payload.senha)
+        state = await orchestrator.start(matricula=payload.matricula, senha=payload.senha)
     except PipelineAlreadyRunningError as exc:  # pragma: no cover - defensive
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return PipelineStateResponse.from_state(state)
