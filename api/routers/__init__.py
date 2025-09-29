@@ -1,5 +1,5 @@
 from __future__ import annotations
 
-from . import pipeline
+from . import auth, pipeline
 
-__all__ = ["pipeline"]
+__all__ = ["auth", "pipeline"]

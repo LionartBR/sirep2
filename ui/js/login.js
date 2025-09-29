@@ -57,12 +57,63 @@ document.addEventListener('DOMContentLoaded', () => {
     return { username, password };
   };
 
-  form.addEventListener('submit', (event) => {
+  const authenticate = async ({ username, password }) => {
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ matricula: username, senha: password }),
+      });
+
+      if (response.ok) {
+        return;
+      }
+
+      let message = '';
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        try {
+          const payload = await response.json();
+          message = payload?.detail || '';
+        } catch (error) {
+          console.warn('Resposta de autenticação inválida.', error);
+        }
+      } else {
+        try {
+          message = (await response.text()) || '';
+        } catch (error) {
+          console.warn('Não foi possível ler a resposta de autenticação.', error);
+        }
+      }
+
+      if (response.status === 401) {
+        throw new Error(message || 'Usuário não autorizado.');
+      }
+
+      throw new Error(message || 'Não foi possível autenticar. Tente novamente.');
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new Error('Não foi possível conectar ao servidor. Tente novamente.');
+      }
+      throw error;
+    }
+  };
+
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
     showFeedback('');
 
     const credentials = validate();
     if (!credentials) {
+      return;
+    }
+
+    try {
+      await authenticate(credentials);
+    } catch (error) {
+      showFeedback(error.message || 'Não foi possível autenticar. Tente novamente.');
       return;
     }
 

@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from services.orchestrator import PipelineOrchestrator
 
-from .routers import pipeline
+from .routers import auth, pipeline
 
 
 def create_app() -> FastAPI:
@@ -16,6 +16,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="SIREP API", version="0.1.0")
 
+    app.include_router(auth.router, prefix="/api")
     app.include_router(pipeline.router, prefix="/api")
 
     app.state.pipeline_orchestrator = PipelineOrchestrator()
