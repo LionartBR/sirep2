@@ -7,7 +7,7 @@ from hashlib import md5
 from time import sleep
 from typing import Iterable, Iterator, List, Optional, Tuple
 
-from sirep.services.pw3270 import PW3270
+from services.pw3270 import PW3270
 
 from .constants import (
     COL_START,

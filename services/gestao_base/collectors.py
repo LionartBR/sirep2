@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, List, Optional
 
-from sirep.services.pw3270 import PW3270
+from services.pw3270 import PW3270
 
 from .models import GestaoBaseCollector, GestaoBaseData, PlanRowEnriched, ProgressCallback
 from .pipeline import run_pipeline
