@@ -49,6 +49,21 @@ async def test_bind_session_rejects_unknown_matricula():
 
 
 @pytest.mark.anyio
+async def test_bind_session_rejects_falsey_string_response():
+    connection = AsyncMock()
+    login_cursor = AsyncMock()
+    login_cursor.fetchone = AsyncMock(return_value=("f",))
+    connection.execute = AsyncMock(side_effect=[login_cursor])
+
+    with pytest.raises(PermissionError) as excinfo:
+        await bind_session(connection, "abc123")
+
+    assert str(excinfo.value) == "Usuário não autorizado."
+    assert connection.execute.await_count == 1
+    login_cursor.fetchone.assert_awaited()
+
+
+@pytest.mark.anyio
 async def test_bind_session_requires_matricula():
     connection = AsyncMock()
 
