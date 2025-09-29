@@ -111,10 +111,11 @@ def persist_rows(
         situacao = (row.situac or "").strip()
         tipo = (row.tipo or "").strip()
         dt_proposta = parse_date_any(row.dt_propost)
-        saldo_raw = parse_money_brl(row.saldo_total)
+        saldo_raw = parse_money_brl(getattr(row, "saldo_total", None))
         saldo = None if math.isnan(saldo_raw) else saldo_raw
-        inscricao_canonica = clean_inscricao(row.cnpj)
-        inscricao_original = (row.cnpj or "").strip()
+        cnpj_value = getattr(row, "cnpj", None)
+        inscricao_canonica = clean_inscricao(cnpj_value)
+        inscricao_original = (cnpj_value or "").strip()
 
         campos: dict[str, Any] = {
             "dt_situacao_atual": hoje,
@@ -122,7 +123,7 @@ def persist_rows(
         }
 
         parcelas_normalizadas, dias_calculado = normalize_parcelas_atraso(
-            row.parcelas_atraso,
+            getattr(row, "parcelas_atraso", None),
             referencia=hoje,
         )
 
@@ -137,7 +138,9 @@ def persist_rows(
         resolucao = (row.resoluc or "").strip()
         if resolucao:
             campos["resolucao"] = resolucao
-        razao_social = (row.razao_social or "").strip()
+        razao_social = (
+            getattr(row, "razao_social", getattr(row, "nome", "")) or ""
+        ).strip()
         if razao_social:
             campos["razao_social"] = razao_social
         if inscricao_canonica:
