@@ -145,9 +145,7 @@ def persist_rows(
         representacao = _representacao_value(inscricao_original, inscricao_canonica)
         if representacao is not None:
             campos["representacao"] = representacao
-        campos["parcelas_atraso"] = parcelas_normalizadas or None
-        if parcelas_normalizadas:
-            campos["parcelas_atraso"] = parcelas_normalizadas
+        campos["parcelas_atraso"] = parcelas_normalizadas
 
         campos["dias_em_atraso"] = dias_calculado
 
