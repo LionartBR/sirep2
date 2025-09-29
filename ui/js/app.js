@@ -1,3 +1,4 @@
+/* global flatpickr */
 document.addEventListener('DOMContentLoaded', () => {
   if (window.feather) {
     window.feather.replace();
@@ -7,6 +8,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnStart = document.getElementById('btnStart');
   const btnPause = document.getElementById('btnPause');
   const btnContinue = document.getElementById('btnContinue');
+
+  const PIPELINE_ENDPOINT = '/api/pipeline';
+  let pollHandle = null;
 
   const setStatus = (text) => {
     statusText.textContent = `Estado: ${text}`;
@@ -25,9 +29,98 @@ document.addEventListener('DOMContentLoaded', () => {
     btnContinue.classList.toggle('btn--ghost', true);
   };
 
+  const stopPolling = () => {
+    if (pollHandle !== null) {
+      window.clearInterval(pollHandle);
+      pollHandle = null;
+    }
+  };
+
+  const defaultMessages = {
+    idle: 'Ocioso',
+    running: 'Executando',
+    succeeded: 'Concluída',
+    failed: 'Falha',
+  };
+
+  toggleButtons({ start: true, pause: false, cont: false });
+  setStatus(defaultMessages.idle);
+
+  const schedulePolling = () => {
+    stopPolling();
+    pollHandle = window.setInterval(async () => {
+      const state = await fetchPipelineState();
+      if (state) {
+        applyState(state);
+        if (state.status !== 'running') {
+          stopPolling();
+        }
+      }
+    }, 5000);
+  };
+
+  const applyState = (state) => {
+    const message = state.message || defaultMessages[state.status] || defaultMessages.idle;
+    switch (state.status) {
+      case 'running':
+        toggleButtons({ start: false, pause: true, cont: false });
+        break;
+      case 'succeeded':
+      case 'failed':
+      case 'idle':
+      default:
+        toggleButtons({ start: true, pause: false, cont: false });
+        break;
+    }
+    setStatus(message);
+  };
+
+  const fetchPipelineState = async () => {
+    try {
+      const response = await fetch(`${PIPELINE_ENDPOINT}/state`, { headers: { 'Accept': 'application/json' } });
+      if (!response.ok) {
+        throw new Error('Não foi possível consultar o estado da pipeline.');
+      }
+      return await response.json();
+    } catch (error) {
+      console.error(error);
+      return null;
+    }
+  };
+
+  const startPipeline = async () => {
+    toggleButtons({ start: false, pause: false, cont: false });
+    setStatus('Iniciando...');
+
+    try {
+      const response = await fetch(`${PIPELINE_ENDPOINT}/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ detail: 'Erro desconhecido.' }));
+        throw new Error(payload.detail || 'Não foi possível iniciar a pipeline.');
+      }
+
+      const state = await response.json();
+      applyState(state);
+      if (state.status === 'running') {
+        schedulePolling();
+      }
+    } catch (error) {
+      console.error(error);
+      setStatus(`Erro: ${error.message}`);
+      toggleButtons({ start: true, pause: false, cont: false });
+    }
+  };
+
   btnStart.addEventListener('click', () => {
-    toggleButtons({ start: false, pause: true, cont: false });
-    setStatus('Executando');
+    startPipeline();
   });
 
   btnPause.addEventListener('click', () => {
@@ -40,8 +133,18 @@ document.addEventListener('DOMContentLoaded', () => {
     setStatus('Executando');
   });
 
-  toggleButtons({ start: true, pause: false, cont: false });
-  setStatus('Ocioso');
+  (async () => {
+    const state = await fetchPipelineState();
+    if (state) {
+      applyState(state);
+      if (state.status === 'running') {
+        schedulePolling();
+      }
+    } else {
+      toggleButtons({ start: true, pause: false, cont: false });
+      setStatus(defaultMessages.idle);
+    }
+  })();
 
   const fromPicker = flatpickr('#date-from', {
     locale: flatpickr.l10ns.pt,
