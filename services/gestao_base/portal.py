@@ -62,15 +62,25 @@ def parse_portal_po(json_text: str) -> list[dict]:
         data = json.loads(json_text)
         if not data or not data[0].get("result"):
             return []
-        out: list[dict] = []
 
+        out: list[dict] = []
         for item in data[0].get("response", []):
+            if not isinstance(item, dict):
+                continue
+
             plano = norm_plano(item.get("cadastro_plano", ""))
-            cnpj = str(item.get("cadastro_inscricao", "")).strip()
-            tipo_raw = (item.get("tipo_descricao", item.get("cnpj", ""))).strip()
-            tipo = html.unescape(tipo_raw)
-            if plano:
-                out.append({"Plano": plano, "CNPJ": cnpj, "Tipo": tipo})
+            if not plano:
+                continue
+
+            cnpj_raw = item.get("cadastro_inscricao")
+            cnpj = str(cnpj_raw or "").strip()
+
+            tipo_source = item.get("tipo_descricao")
+            if not tipo_source:
+                tipo_source = item.get("cnpj")
+            tipo = html.unescape(str(tipo_source or "").strip())
+
+            out.append({"Plano": plano, "CNPJ": cnpj, "Tipo": tipo})
         return out
     except JSONDecodeError as e:
         logger.warning(f"JSON inválido do Portal PO: {e}")
