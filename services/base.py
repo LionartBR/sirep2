@@ -53,27 +53,21 @@ StepJobCallback = Callable[[StepJobContext], StepJobOutcome]
 class Principal:
     """Informações necessárias para definir o contexto da sessão no banco."""
 
-    tenant_id: str
     matricula: str
-    nome: Optional[str] = None
-    email: Optional[str] = None
-    perfil: Optional[str] = None
 
 
 def _resolve_principal(
     tenant_override: Optional[str],
     user_override: Optional[str],
 ) -> Principal:
-    """Determina o tenant e o usuário do aplicativo a partir do ambiente."""
+    """Determina o usuário do aplicativo a partir do ambiente."""
 
     settings = get_principal_settings()
-    tenant_id = tenant_override or settings.tenant_id
-    matricula = user_override or settings.matricula
+    matricula = (user_override or settings.matricula or "").strip()
 
-    if not tenant_id:
-        raise RuntimeError(
-            "Identificador do tenant não configurado. Defina 'APP_TENANT_ID' ou 'TENANT_ID' "
-            "antes de iniciar a pipeline."
+    if tenant_override:
+        logger.debug(
+            "Identificador de tenant ignorado (controlado pelo app.login_matricula)."
         )
 
     if not matricula:
@@ -82,28 +76,16 @@ def _resolve_principal(
             "'APP_USER_ID' ou 'USER_ID' no ambiente para executar a pipeline."
         )
 
-    return Principal(
-        tenant_id=tenant_id,
-        matricula=matricula,
-        nome=settings.nome,
-        email=settings.email,
-        perfil=settings.perfil,
-    )
+    return Principal(matricula=matricula)
 
 
 def _initialize_session(connection: psycopg.Connection, principal: Principal) -> None:
-    """Inicializa a sessão com o tenant e usuário definidos."""
+    """Autentica a matrícula informada na sessão do banco."""
 
     with connection.cursor() as cur:
         cur.execute(
-            "SELECT app.set_principal(%s, %s, %s, %s, %s)",
-            (
-                principal.tenant_id,
-                principal.matricula,
-                principal.nome,
-                principal.email,
-                principal.perfil,
-            ),
+            "SELECT app.login_matricula(%s::citext)",
+            (principal.matricula,),
         )
         cur.execute("SET TIME ZONE 'America/Sao_Paulo'")
 
@@ -132,18 +114,12 @@ def _configure_transaction(
     *,
     principal: Principal,
 ) -> None:
-    """Configura o contexto de RLS e parâmetros locais da transação."""
+    """Garante que a transação esteja autenticada e parametrizada."""
 
     with connection.cursor() as cur:
         cur.execute(
-            "SELECT app.set_principal(%s, %s, %s, %s, %s)",
-            (
-                principal.tenant_id,
-                principal.matricula,
-                principal.nome,
-                principal.email,
-                principal.perfil,
-            ),
+            "SELECT app.login_matricula(%s::citext)",
+            (principal.matricula,),
         )
         cur.execute("SET TIME ZONE 'America/Sao_Paulo'")
         cur.execute("SET LOCAL statement_timeout = '30s'")

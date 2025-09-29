@@ -53,10 +53,26 @@ async def get_connection() -> AsyncIterator[AsyncConnection]:
         yield connection
 
 
+async def bind_session(connection: AsyncConnection, matricula: str) -> None:
+    """Inicializa a sessão com o usuário informado.
+
+    A função ``app.login_matricula`` configura o tenant, usuário e perfil
+    correntes para a conexão. Ela deve ser invocada sempre que uma nova conexão
+    é obtida do pool antes de executar qualquer ``SELECT`` ou ``INSERT``.
+    """
+
+    matricula = (matricula or "").strip()
+    if not matricula:
+        raise ValueError("A matrícula do usuário é obrigatória para vincular a sessão.")
+
+    await connection.execute("SELECT app.login_matricula(%s::citext)", (matricula,))
+    await connection.execute("SET TIME ZONE 'America/Sao_Paulo'")
+
+
 async def ping() -> None:
     """Verify that the database connection is reachable."""
     async with get_connection() as connection:
         await connection.execute("SELECT 1")
 
 
-__all__ = ["init_pool", "close_pool", "get_connection", "ping"]
+__all__ = ["init_pool", "close_pool", "get_connection", "bind_session", "ping"]
