@@ -131,9 +131,9 @@ class PlansRepository:
 
         parcelas_preparadas = self._preparar_parcelas(parcelas_brutas)
         if parcelas_preparadas:
-            alterado = self._persistir_parcelas(plano_id, parcelas_preparadas)
-            if alterado:
-                self._recalcular_atraso(plano_id)
+            self._lock_plano(plano_id)
+            self._persistir_parcelas(plano_id, parcelas_preparadas)
+            self._recalcular_atraso(plano_id)
 
         existente = self.get_by_numero(numero_plano)
         if existente is not None:
@@ -442,6 +442,13 @@ class PlansRepository:
             logger.warning("Situação de parcela 'EM_ATRASO' não encontrada no catálogo")
             self._situacao_parcela_atraso_id = None
         return self._situacao_parcela_atraso_id
+
+    def _lock_plano(self, plano_id: str) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s))",
+                (str(plano_id),),
+            )
 
     def _persistir_parcelas(
         self, plano_id: str, parcelas: list[dict[str, Any]]
