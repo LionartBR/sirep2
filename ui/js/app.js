@@ -114,13 +114,21 @@ document.addEventListener('DOMContentLoaded', () => {
     setStatus('Iniciando...');
 
     try {
+      const payload = {};
+      if (window.Auth?.getPassword) {
+        const senha = Auth.getPassword();
+        if (senha) {
+          payload.senha = senha;
+        }
+      }
+
       const response = await fetch(`${PIPELINE_ENDPOINT}/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
