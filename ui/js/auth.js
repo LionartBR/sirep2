@@ -1,36 +1,38 @@
 (function () {
   const STORAGE_KEY = 'sirep.auth';
+  const PASSWORD_KEY = 'sirep.auth.password';
   let memorySession = null;
+  let memoryPassword = null;
 
-  const safeGetItem = (storage) => {
+  const safeGetItem = (storage, key = STORAGE_KEY) => {
     if (!storage) {
       return null;
     }
     try {
-      return storage.getItem(STORAGE_KEY);
+      return storage.getItem(key);
     } catch (error) {
       console.warn('Não foi possível acessar o armazenamento.', error);
       return null;
     }
   };
 
-  const safeSetItem = (storage, value) => {
+  const safeSetItem = (storage, value, key = STORAGE_KEY) => {
     if (!storage) {
       return;
     }
     try {
-      storage.setItem(STORAGE_KEY, value);
+      storage.setItem(key, value);
     } catch (error) {
       console.warn('Não foi possível salvar o estado de autenticação.', error);
     }
   };
 
-  const safeRemoveItem = (storage) => {
+  const safeRemoveItem = (storage, key = STORAGE_KEY) => {
     if (!storage) {
       return;
     }
     try {
-      storage.removeItem(STORAGE_KEY);
+      storage.removeItem(key);
     } catch (error) {
       console.warn('Não foi possível remover o estado de autenticação.', error);
     }
@@ -66,6 +68,15 @@
     return memorySession;
   };
 
+  const readPassword = () => {
+    const sessionPassword = safeGetItem(window.sessionStorage, PASSWORD_KEY);
+    if (sessionPassword) {
+      memoryPassword = sessionPassword;
+      return sessionPassword;
+    }
+    return memoryPassword;
+  };
+
   const writeAuth = (value, { persistent }) => {
     memorySession = value;
     if (!value) {
@@ -84,6 +95,15 @@
     }
   };
 
+  const writePassword = (value) => {
+    memoryPassword = value || null;
+    if (!value) {
+      safeRemoveItem(window.sessionStorage, PASSWORD_KEY);
+      return;
+    }
+    safeSetItem(window.sessionStorage, value, PASSWORD_KEY);
+  };
+
   const generateToken = () => {
     if (window.crypto?.getRandomValues) {
       const buffer = new Uint32Array(4);
@@ -95,7 +115,7 @@
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   };
 
-  const login = ({ username, remember, name }) => {
+  const login = ({ username, remember, name, password }) => {
     const now = new Date();
     const session = {
       username,
@@ -105,11 +125,13 @@
     };
 
     writeAuth(session, { persistent: Boolean(remember) });
+    writePassword(password);
     return session;
   };
 
   const logout = () => {
     writeAuth(null, { persistent: false });
+    writePassword(null);
   };
 
   const isAuthenticated = () => {
@@ -120,10 +142,15 @@
     return readAuth();
   };
 
+  const getPassword = () => {
+    return readPassword();
+  };
+
   window.Auth = {
     login,
     logout,
     isAuthenticated,
     getUser,
+    getPassword,
   };
 })();
