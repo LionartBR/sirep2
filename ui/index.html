@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SIREP 2.0</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+  </head>
+  <body>
+    <header class="topbar" role="banner">
+      <div class="topbar__title">SIREP 2.0</div>
+      <nav class="topbar__actions" aria-label="Ações do usuário">
+        <button class="topbar__action" type="button" aria-label="Perfil do usuário">
+          <i data-feather="user" aria-hidden="true"></i>
+        </button>
+        <button class="topbar__action" type="button" aria-label="Configurações">
+          <i data-feather="settings" aria-hidden="true"></i>
+        </button>
+        <a href="#" class="topbar__signout">Sair</a>
+      </nav>
+    </header>
+
+    <main class="layout" role="main">
+      <section class="card" aria-labelledby="tab-base">
+        <div class="tabs" role="tablist" aria-label="Seções principais">
+          <button
+            class="tabs__item tabs__item--active"
+            id="tab-base"
+            role="tab"
+            aria-selected="true"
+            aria-controls="panel-base"
+            tabindex="0"
+          >
+            Gestão da Base
+          </button>
+          <button
+            class="tabs__item"
+            id="tab-treatment"
+            role="tab"
+            aria-selected="false"
+            aria-controls="panel-treatment"
+            tabindex="-1"
+          >
+            Tratamento
+          </button>
+        </div>
+
+        <div id="panel-base" class="card__panel" role="tabpanel" aria-labelledby="tab-base">
+          <div class="controls" role="group" aria-label="Controles de execução">
+            <div class="controls__group">
+              <button class="btn btn--primary" id="btnStart" type="button">Iniciar</button>
+              <button class="btn btn--ghost" id="btnPause" type="button" disabled>Pausar</button>
+              <button class="btn btn--ghost" id="btnContinue" type="button" disabled>Continuar</button>
+            </div>
+            <div class="status" id="statusText">Estado: Ocioso</div>
+          </div>
+
+          <div class="progress" aria-hidden="true">
+            <div class="progress__bar"></div>
+          </div>
+
+          <div class="section-title">
+            <h2 class="section-title__heading">TABELA DE PLANOS</h2>
+            <span class="badge" aria-live="polite">OCORRÊNCIAS (0)</span>
+          </div>
+
+          <div class="table" role="region" aria-labelledby="section-table">
+            <table aria-label="Tabela de planos">
+              <thead class="table__head">
+                <tr>
+                  <th scope="col">PLANO</th>
+                  <th scope="col">CNPJ</th>
+                  <th scope="col">RAZAO SOCIAL</th>
+                  <th scope="col">SITUAÇÃO</th>
+                  <th scope="col">DIAS EM ATRASO</th>
+                  <th scope="col">SALDO</th>
+                  <th scope="col">DT SITUAÇÃO</th>
+                  <th scope="col">COMUNICAÇÃO</th>
+                  <th scope="col">AÇÕES</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="table__row table__row--empty">
+                  <td class="table__cell" colspan="9">nada a exibir por aqui.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-footer">
+            <div class="pager" role="navigation" aria-label="Paginação">
+              <button class="pager__btn" type="button" aria-disabled="true" disabled>
+                <i data-feather="chevron-left" aria-hidden="true"></i>
+              </button>
+              <span class="pager__label">pág. 1 de 1</span>
+              <button class="pager__btn" type="button" aria-disabled="true" disabled>
+                <i data-feather="chevron-right" aria-hidden="true"></i>
+              </button>
+            </div>
+
+            <div class="filters">
+              <div class="filters__field">
+                <label for="date-from">De:</label>
+                <div class="filters__input-wrapper">
+                  <input
+                    type="text"
+                    id="date-from"
+                    placeholder="dd/mm/aaaa"
+                    aria-label="De"
+                    readonly
+                  />
+                  <button
+                    class="filters__icon"
+                    type="button"
+                    id="open-date-from"
+                    aria-label="Abrir calendário de data inicial"
+                  >
+                    <i data-feather="calendar" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="filters__field">
+                <label for="date-to">Até:</label>
+                <div class="filters__input-wrapper">
+                  <input
+                    type="text"
+                    id="date-to"
+                    placeholder="dd/mm/aaaa"
+                    aria-label="Até"
+                    readonly
+                  />
+                  <button
+                    class="filters__icon"
+                    type="button"
+                    id="open-date-to"
+                    aria-label="Abrir calendário de data final"
+                  >
+                    <i data-feather="calendar" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </div>
+              <button
+                class="btn btn--ghost btn--disabled"
+                type="button"
+                disabled
+                title="Em breve"
+              >
+                Exportar (.xlsx)
+              </button>
+            </div>
+          </div>
+
+          <div class="accordion">
+            <button
+              class="accordion__header"
+              id="logsToggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="logsPanel"
+            >
+              <span>Janela de Eventos (logs)</span>
+              <i data-feather="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="accordion__panel" id="logsPanel" role="region" aria-labelledby="logsToggle"></div>
+          </div>
+        </div>
+
+        <div id="panel-treatment" class="card__panel card__panel--hidden" role="tabpanel" aria-labelledby="tab-treatment" hidden>
+          <p class="card__placeholder">Selecione uma opção para visualizar.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>Desenvolvido por: CEFGD/RJ — Recuperação de Débitos do FGTS Perante o Empregador</p>
+      <p>CAIXA™ 2025</p>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js"></script>
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
