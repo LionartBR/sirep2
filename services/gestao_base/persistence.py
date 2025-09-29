@@ -5,10 +5,10 @@ import math
 from datetime import UTC, datetime
 from typing import Any, Optional
 
-from sirep.domain.enums import PlanStatus, Step
-from sirep.infra.config import settings
-from sirep.infra.repositories import OccurrenceRepository
-from sirep.services.base import StepJobContext
+from domain.enums import PlanStatus, Step
+from infra.config import settings
+from infra.repositories import OccurrenceRepository
+from services.base import StepJobContext
 
 from .models import GestaoBaseData, ProgressCallback
 from .parcelas import normalize_parcelas_atraso

@@ -3,13 +3,13 @@ from __future__ import annotations
 import logging
 from typing import Callable, List, Optional
 
-from sirep.domain.enums import Step
-from sirep.infra.config import settings
-from sirep.infra.runtime_credentials import (
+from domain.enums import Step
+from infra.config import settings
+from infra.runtime_credentials import (
     get_gestao_base_password,
     set_gestao_base_password,
 )
-from sirep.services.base import (
+from services.base import (
     ServiceResult,
     StepJobContext,
     StepJobOutcome,
