@@ -369,6 +369,7 @@ input:focus {
 .login-form__actions {
   display: flex;
   justify-content: flex-end;
+  margin-top: 12px;
 }
 
 .login-form__submit {
