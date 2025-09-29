@@ -7,6 +7,7 @@ from typing import AsyncIterator, Optional
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
+from shared.auth import is_authorized_login
 from shared.config import DatabaseSettings, get_database_settings
 
 _pool: Optional[AsyncConnectionPool] = None
@@ -65,7 +66,15 @@ async def bind_session(connection: AsyncConnection, matricula: str) -> None:
     if not matricula:
         raise ValueError("A matrícula do usuário é obrigatória para vincular a sessão.")
 
-    await connection.execute("SELECT app.login_matricula(%s::citext)", (matricula,))
+    cursor = await connection.execute(
+        "SELECT app.login_matricula(%s::citext)",
+        (matricula,),
+    )
+
+    row = await cursor.fetchone() if cursor is not None else None
+    if not is_authorized_login(row):
+        raise PermissionError("Usuário não autorizado.")
+
     await connection.execute("SET TIME ZONE 'America/Sao_Paulo'")
 
 
