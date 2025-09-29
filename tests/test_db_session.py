@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, call
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
@@ -19,48 +19,57 @@ def anyio_backend():
 @pytest.mark.anyio
 async def test_bind_session_executes_login_and_timezone():
     connection = AsyncMock()
-    login_cursor = AsyncMock()
-    login_cursor.fetchone = AsyncMock(return_value=(True,))
-    timezone_cursor = AsyncMock()
-    connection.execute = AsyncMock(side_effect=[login_cursor, timezone_cursor])
+    cursor_cm = AsyncMock()
+    cursor = AsyncMock()
+    cursor.execute = AsyncMock()
+    cursor.fetchone = AsyncMock(return_value={"ok": True})
+    cursor_cm.__aenter__.return_value = cursor
+    connection.cursor = MagicMock(return_value=cursor_cm)
 
     await bind_session(connection, "abc123")
 
-    assert connection.execute.await_args_list == [
+    connection.cursor.assert_called_once()
+    assert cursor.execute.await_args_list == [
         call("SELECT app.login_matricula(%s::citext)", ("abc123",)),
         call("SET TIME ZONE 'America/Sao_Paulo'")
     ]
-    assert login_cursor.fetchone.await_count == 1
+    cursor.fetchone.assert_awaited_once()
 
 
 @pytest.mark.anyio
 async def test_bind_session_rejects_unknown_matricula():
     connection = AsyncMock()
-    login_cursor = AsyncMock()
-    login_cursor.fetchone = AsyncMock(return_value=None)
-    connection.execute = AsyncMock(side_effect=[login_cursor])
+    cursor_cm = AsyncMock()
+    cursor = AsyncMock()
+    cursor.execute = AsyncMock()
+    cursor.fetchone = AsyncMock(return_value=None)
+    cursor_cm.__aenter__.return_value = cursor
+    connection.cursor = MagicMock(return_value=cursor_cm)
 
     with pytest.raises(PermissionError) as excinfo:
         await bind_session(connection, "abc123")
 
     assert str(excinfo.value) == "Usuário não autorizado."
-    assert connection.execute.await_count == 1
-    login_cursor.fetchone.assert_awaited()
+    connection.cursor.assert_called_once()
+    cursor.fetchone.assert_awaited()
 
 
 @pytest.mark.anyio
 async def test_bind_session_rejects_falsey_string_response():
     connection = AsyncMock()
-    login_cursor = AsyncMock()
-    login_cursor.fetchone = AsyncMock(return_value=("f",))
-    connection.execute = AsyncMock(side_effect=[login_cursor])
+    cursor_cm = AsyncMock()
+    cursor = AsyncMock()
+    cursor.execute = AsyncMock()
+    cursor.fetchone = AsyncMock(return_value={"ok": "f"})
+    cursor_cm.__aenter__.return_value = cursor
+    connection.cursor = MagicMock(return_value=cursor_cm)
 
     with pytest.raises(PermissionError) as excinfo:
         await bind_session(connection, "abc123")
 
     assert str(excinfo.value) == "Usuário não autorizado."
-    assert connection.execute.await_count == 1
-    login_cursor.fetchone.assert_awaited()
+    connection.cursor.assert_called_once()
+    cursor.fetchone.assert_awaited()
 
 
 @pytest.mark.anyio
@@ -70,4 +79,4 @@ async def test_bind_session_requires_matricula():
     with pytest.raises(ValueError):
         await bind_session(connection, "")
 
-    assert connection.execute.await_count == 0
+    connection.cursor.assert_not_called()
