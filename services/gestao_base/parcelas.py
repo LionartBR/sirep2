@@ -23,8 +23,12 @@ def _first_non_empty(mapping: dict[str, Any], keys: Iterable[str]) -> Optional[s
 
 def _first_present(mapping: dict[str, Any], keys: Iterable[str]) -> Any:
     for key in keys:
-        if key in mapping:
-            return mapping[key]
+        if key not in mapping:
+            continue
+        value = mapping[key]
+        if value is None:
+            continue
+        return value
     return None
 
 
