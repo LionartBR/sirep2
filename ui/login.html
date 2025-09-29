@@ -10,9 +10,6 @@
     <main class="login" role="main">
       <section class="login-card" aria-labelledby="loginTitle">
         <header class="login-card__header">
-          <div class="login-card__icon" aria-hidden="true">
-            <i data-feather="lock"></i>
-          </div>
           <h1 id="loginTitle" class="login-card__title">SIREP 2.0</h1>
           <p class="login-card__subtitle">
             Acesse com a mesma senha do Rede Caixa.
@@ -33,15 +30,18 @@
           </div>
           <div class="login-form__field">
             <label for="password" class="login-form__label">Senha</label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              class="login-form__input"
-              autocomplete="current-password"
-              placeholder="********"
-              required
-            />
+            <div class="login-form__input-wrapper">
+              <i data-feather="lock" class="login-form__icon" aria-hidden="true"></i>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                class="login-form__input"
+                autocomplete="current-password"
+                placeholder="********"
+                required
+              />
+            </div>
           </div>
           <div class="login-form__options">
             <label class="login-form__remember">

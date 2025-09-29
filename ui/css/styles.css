@@ -300,6 +300,10 @@ input:focus {
   gap: 8px;
 }
 
+.login-form__input-wrapper {
+  position: relative;
+}
+
 .login-form__label {
   font-size: 14px;
   font-weight: 500;
@@ -313,6 +317,21 @@ input:focus {
   border-radius: 10px;
   font-size: 15px;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-form__input-wrapper .login-form__input {
+  padding-left: 44px;
+}
+
+.login-form__icon {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+  pointer-events: none;
 }
 
 .login-form__input:focus {
