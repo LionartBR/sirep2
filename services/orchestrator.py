@@ -29,7 +29,11 @@ class PipelineOrchestrator:
 
         return self._state.copy()
 
-    async def start(self, senha: Optional[str] = None) -> PipelineState:
+    async def start(
+        self,
+        matricula: Optional[str] = None,
+        senha: Optional[str] = None,
+    ) -> PipelineState:
         """Trigger pipeline execution if it is not running."""
 
         async with self._lock:
@@ -43,12 +47,16 @@ class PipelineOrchestrator:
             self._state.message = "Execução iniciada"
 
             loop = asyncio.get_running_loop()
-            self._task = loop.create_task(self._execute_pipeline(senha))
+            self._task = loop.create_task(self._execute_pipeline(matricula, senha))
             return self._state.copy()
 
-    async def _execute_pipeline(self, senha: Optional[str]) -> None:
+    async def _execute_pipeline(
+        self,
+        matricula: Optional[str],
+        senha: Optional[str],
+    ) -> None:
         try:
-            result = await asyncio.to_thread(self._service.execute, senha)
+            result = await asyncio.to_thread(self._service.execute, matricula, senha)
         except Exception:  # pragma: no cover - defensive
             logger.exception("Falha ao executar pipeline de Gestão da Base")
             await self._finalize(PipelineStatus.FAILED, "Erro ao executar pipeline.")

@@ -115,6 +115,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       const payload = {};
+      if (currentUser?.username) {
+        payload.matricula = currentUser.username;
+      }
       if (window.Auth?.getPassword) {
         const senha = Auth.getPassword();
         if (senha) {

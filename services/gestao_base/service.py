@@ -55,6 +55,7 @@ class GestaoBaseService:
 
     def execute(
         self,
+        matricula: Optional[str] = None,
         senha: Optional[str] = None,
         progress_callback: Optional[ProgressCallback] = None,
     ) -> ServiceResult:
@@ -77,7 +78,12 @@ class GestaoBaseService:
             summary = format_summary(resultado)
             return StepJobOutcome(data=resultado, info_update={"summary": summary})
 
-        return run_step_job(step=Step.ETAPA_1, job_name=Step.ETAPA_1, callback=_run)
+        return run_step_job(
+            step=Step.ETAPA_1,
+            job_name=Step.ETAPA_1,
+            callback=_run,
+            user_id=matricula,
+        )
 
 
 class GestaoBaseNoOpService:

@@ -11,6 +11,7 @@ from domain.pipeline import PipelineState, PipelineStatus
 class PipelineStartPayload(BaseModel):
     """Payload accepted by the pipeline start endpoint."""
 
+    matricula: Optional[str] = None
     senha: Optional[str] = None
 
 
