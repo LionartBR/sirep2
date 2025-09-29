@@ -44,7 +44,16 @@ def _is_truthy(value: Any) -> bool:
 def is_authorized_login(row: Any) -> bool:
     """Return ``True`` when the login result indicates a valid user."""
 
-    return any(_is_truthy(value) for value in _iter_login_values(row))
+    if isinstance(row, dict):
+        for key in ("ok", "authorized", "autorizado"):
+            if key in row:
+                return _is_truthy(row[key])
+
+    values = tuple(_iter_login_values(row))
+    if not values:
+        return False
+
+    return any(_is_truthy(value) for value in values)
 
 
 __all__ = ["is_authorized_login"]
