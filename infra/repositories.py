@@ -12,6 +12,8 @@ from psycopg.types.json import Json
 
 from domain.enums import Step
 
+from .audit import log_event
+
 
 logger = logging.getLogger(__name__)
 
@@ -546,22 +548,15 @@ class EventsRepository:
 
     def log(self, entity_id: str, step: Step | str, message: str) -> None:
         event_type = step.value if isinstance(step, Step) else str(step)
-        payload = Json({})
-
-        with self._conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO audit.evento (
-                    tenant_id, event_time, entity, entity_id, event_type,
-                    severity, message, data, user_id
-                )
-                VALUES (
-                    app.current_tenant_id(), now(), 'plano', %s, %s,
-                    'info', %s, %s, app.current_user_id()
-                )
-                """,
-                (entity_id, event_type, message, payload),
-            )
+        log_event(
+            self._conn,
+            entity="plano",
+            entity_id=entity_id,
+            event_type=event_type,
+            severity="info",
+            message=message,
+            data={},
+        )
 
 
 class OccurrenceRepository:
@@ -602,18 +597,14 @@ class OccurrenceRepository:
                 "dt_situacao_atual": dt_situacao_atual.isoformat(),
             }
 
-            cur.execute(
-                """
-                INSERT INTO audit.evento (
-                    tenant_id, event_time, entity, entity_id, event_type,
-                    severity, message, data, user_id
-                )
-                VALUES (
-                    app.current_tenant_id(), now(), 'plano', %s, 'OCORRENCIA',
-                    'info', %s, %s, app.current_user_id()
-                )
-                """,
-                (plano["id"], mensagem, Json(payload)),
+            log_event(
+                self._conn,
+                entity="plano",
+                entity_id=str(plano["id"]),
+                event_type="OCORRENCIA",
+                severity="info",
+                message=mensagem,
+                data=payload,
             )
 
 

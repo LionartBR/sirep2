@@ -8,12 +8,10 @@ from typing import Any, Callable, Optional
 
 import psycopg
 from psycopg.errors import UniqueViolation
-from psycopg.rows import dict_row
-from psycopg.types.json import Json
 
 from domain.enums import Step
+from infra.audit import bind_session_by_matricula, job_run
 from infra.repositories import EventsRepository, PlansRepository
-from shared.auth import is_authorized_login
 from shared.config import get_database_settings, get_principal_settings
 
 logger = logging.getLogger(__name__)
@@ -80,20 +78,6 @@ def _resolve_principal(
     return Principal(matricula=matricula)
 
 
-def _initialize_session(connection: psycopg.Connection, principal: Principal) -> None:
-    """Autentica a matrícula informada na sessão do banco."""
-
-    with connection.cursor() as cur:
-        cur.execute(
-            "SELECT app.login_matricula(%s::citext)",
-            (principal.matricula,),
-        )
-        row = cur.fetchone()
-        if not is_authorized_login(row):
-            raise PermissionError("Usuário não autorizado.")
-        cur.execute("SET TIME ZONE 'America/Sao_Paulo'")
-
-
 def _prepare_context(
     connection: psycopg.Connection,
     *,
@@ -120,76 +104,9 @@ def _configure_transaction(
 ) -> None:
     """Garante que a transação esteja autenticada e parametrizada."""
 
+    bind_session_by_matricula(connection, principal.matricula)
     with connection.cursor() as cur:
-        cur.execute(
-            "SELECT app.login_matricula(%s::citext)",
-            (principal.matricula,),
-        )
-        row = cur.fetchone()
-        if not is_authorized_login(row):
-            raise PermissionError("Usuário não autorizado.")
-        cur.execute("SET TIME ZONE 'America/Sao_Paulo'")
         cur.execute("SET LOCAL statement_timeout = '30s'")
-
-
-def _insert_job_run(
-    connection: psycopg.Connection,
-    *,
-    principal: Principal,
-    job_name: str,
-    payload: Optional[dict[str, Any]] = None,
-) -> tuple[str, datetime]:
-    """Registra um novo job_run com status RUNNING e retorna os identificadores."""
-
-    _configure_transaction(connection, principal=principal)
-    with connection.cursor(row_factory=dict_row) as cur:
-        cur.execute(
-            """
-            INSERT INTO audit.job_run (tenant_id, job_name, status, payload)
-            VALUES (app.current_tenant_id(), %s, 'RUNNING', %s)
-            RETURNING id, started_at
-            """,
-            (job_name, Json(payload or {})),
-        )
-        row = cur.fetchone()
-
-    if not row:
-        raise RuntimeError("Falha ao registrar job_run")
-
-    connection.commit()
-    return (str(row["id"]), row["started_at"])
-
-
-def _finalize_job_run(
-    connection: psycopg.Connection,
-    *,
-    principal: Principal,
-    job_run_id: str,
-    started_at: datetime,
-    status: str,
-    error_message: Optional[str] = None,
-) -> None:
-    """Atualiza o job_run com o status final e mensagem opcional."""
-
-    _configure_transaction(connection, principal=principal)
-    mensagem = (error_message or "").strip() or None
-    if mensagem and len(mensagem) > 2000:
-        mensagem = mensagem[:2000]
-
-    with connection.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE audit.job_run
-               SET status = %s,
-                   finished_at = now(),
-                   error_msg = %s
-             WHERE id = %s
-               AND started_at = %s
-            """,
-            (status, mensagem, job_run_id, started_at),
-        )
-
-
 def _retry_backoff(attempt: int) -> None:
     """Aguarda um pequeno intervalo exponencial antes de nova tentativa."""
 
@@ -221,70 +138,52 @@ def run_step_job(
                 "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED"
             )
 
-        _initialize_session(connection, principal)
+        bind_session_by_matricula(connection, principal.matricula)
 
-        job_run_id, started_at = _insert_job_run(
+        with job_run(
             connection,
-            principal=principal,
             job_name=str(job_name),
             payload=job_payload,
-        )
-
-        attempt = 0
-        while True:
-            attempt += 1
-            try:
-                _configure_transaction(connection, principal=principal)
-                context = _prepare_context(
-                    connection, job_run_id=job_run_id, job_run_started_at=started_at
-                )
-                outcome = callback(context)
-                final_status = outcome.status.upper() if outcome.status else "SUCCESS"
-                if final_status not in {"SUCCESS", "ERROR"}:
-                    final_status = "ERROR" if final_status.startswith("FAIL") else "SUCCESS"
-                _finalize_job_run(
-                    connection,
-                    principal=principal,
-                    job_run_id=job_run_id,
-                    started_at=started_at,
-                    status=final_status,
-                    error_message=None,
-                )
-                connection.commit()
-                return ServiceResult(step=step, outcome=outcome)
-            except UniqueViolation as exc:
-                logger.warning(
-                    "Unique violation durante execução da etapa %s (tentativa %s/%s)",
-                    step,
-                    attempt,
-                    max_retries,
-                )
-                connection.rollback()
-                if attempt >= max_retries:
-                    _finalize_job_run(
+        ) as job_handle:
+            attempt = 0
+            while True:
+                attempt += 1
+                try:
+                    _configure_transaction(connection, principal=principal)
+                    context = _prepare_context(
                         connection,
-                        principal=principal,
-                        job_run_id=job_run_id,
-                        started_at=started_at,
-                        status="ERROR",
-                        error_message=str(exc),
+                        job_run_id=job_handle.id,
+                        job_run_started_at=job_handle.started_at,
                     )
+                    outcome = callback(context)
+                    final_status = outcome.status.upper() if outcome.status else "SUCCESS"
+                    if final_status not in {"SUCCESS", "ERROR", "SKIPPED"}:
+                        final_status = (
+                            "ERROR" if final_status.startswith("FAIL") else "SUCCESS"
+                        )
+                    job_handle.status = final_status
+                    job_handle.error_message = None
                     connection.commit()
+                    return ServiceResult(step=step, outcome=outcome)
+                except UniqueViolation as exc:
+                    logger.warning(
+                        "Unique violation durante execução da etapa %s (tentativa %s/%s)",
+                        step,
+                        attempt,
+                        max_retries,
+                    )
+                    connection.rollback()
+                    if attempt >= max_retries:
+                        job_handle.status = "ERROR"
+                        job_handle.error_message = str(exc)
+                        raise
+                    _retry_backoff(attempt)
+                    continue
+                except Exception as exc:
+                    connection.rollback()
+                    job_handle.status = "ERROR"
+                    job_handle.error_message = str(exc)
                     raise
-                _retry_backoff(attempt)
-                continue
-            except Exception as exc:
-                connection.rollback()
-                _finalize_job_run(
-                    connection,
-                    principal=principal,
-                    job_run_id=job_run_id,
-                    started_at=started_at,
-                    status="ERROR",
-                    error_message=str(exc),
-                )
-                connection.commit()
-                raise
     finally:
         connection.close()
 
