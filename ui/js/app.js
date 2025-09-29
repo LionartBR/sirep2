@@ -64,6 +64,58 @@ document.addEventListener('DOMContentLoaded', () => {
     failed: 'Falha',
   };
 
+  const formatDocument = (value) => {
+    if (window.SirepUtils?.formatDocument) {
+      return window.SirepUtils.formatDocument(value);
+    }
+    return String(value ?? '');
+  };
+
+  const applyDocumentFormatting = (row) => {
+    if (!row || row.classList.contains('table__row--empty')) {
+      return;
+    }
+
+    const documentCell = row.cells?.[1];
+    if (!documentCell) {
+      return;
+    }
+
+    const current = documentCell.textContent ?? '';
+    const formatted = formatDocument(current);
+    if (formatted && current.trim() !== formatted) {
+      documentCell.textContent = formatted;
+    }
+  };
+
+  const setupDocumentObserver = () => {
+    const table = document.querySelector('.table table');
+    if (!table) {
+      return;
+    }
+
+    const tbody = table.tBodies?.[0];
+    if (!tbody) {
+      return;
+    }
+
+    const formatAllRows = () => {
+      Array.from(tbody.rows).forEach((row) => applyDocumentFormatting(row));
+    };
+
+    formatAllRows();
+
+    const observer = new MutationObserver(() => {
+      formatAllRows();
+    });
+
+    observer.observe(tbody, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  };
+
   toggleButtons({ start: true, pause: false, cont: false });
   setStatus(defaultMessages.idle);
 
@@ -235,4 +287,5 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   updateAccordionState(false);
+  setupDocumentObserver();
 });
