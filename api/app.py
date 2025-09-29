@@ -20,7 +20,7 @@ def create_app() -> FastAPI:
 
     app.state.pipeline_orchestrator = PipelineOrchestrator()
 
-    static_dir = Path(__file__).resolve().parents[2] / "ui"
+    static_dir = Path(__file__).resolve().parents[1] / "ui"
     app.mount("/app", StaticFiles(directory=static_dir, html=True), name="app")
 
     @app.get("/", include_in_schema=False)
