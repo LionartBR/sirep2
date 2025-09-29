@@ -446,7 +446,7 @@ class PlansRepository:
     def _lock_plano(self, plano_id: str) -> None:
         with self._conn.cursor() as cur:
             cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s))",
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
                 (str(plano_id),),
             )
 
