@@ -64,13 +64,26 @@ class PipelineOrchestrator:
 
         outcome = result.outcome
         status_value = (outcome.status or "").strip().upper()
-        status = PipelineStatus.FAILED if status_value == "FAILED" else PipelineStatus.SUCCEEDED
+
+        if status_value in {"FAILED", "FAIL", "ERROR"}:
+            status = PipelineStatus.FAILED
+        elif status_value in {"SUCCESS", "SUCCEEDED", "SKIPPED", ""}:
+            status = PipelineStatus.SUCCEEDED
+        elif status_value.startswith("FAIL") or status_value.startswith("ERR"):
+            status = PipelineStatus.FAILED
+        else:
+            status = PipelineStatus.SUCCEEDED
 
         summary: Optional[str] = None
         if outcome.info_update:
             summary = outcome.info_update.get("summary") or outcome.info_update.get("mensagem")
 
-        message = summary or "Pipeline concluída com sucesso."
+        if status is PipelineStatus.FAILED:
+            fallback_message = "Pipeline finalizada com erro."
+        else:
+            fallback_message = "Pipeline concluída com sucesso."
+
+        message = summary or fallback_message
         await self._finalize(status, message)
 
     async def _finalize(self, status: PipelineStatus, message: Optional[str]) -> None:
