@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnStart = document.getElementById('btnStart');
   const btnPause = document.getElementById('btnPause');
   const btnContinue = document.getElementById('btnContinue');
+  const progressBar = document.querySelector('.progress__bar');
 
   const PIPELINE_ENDPOINT = '/api/pipeline';
   let pollHandle = null;
@@ -132,8 +133,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 5000);
   };
 
+  const updateProgressBarAppearance = (status) => {
+    if (!progressBar) {
+      return;
+    }
+
+    progressBar.classList.remove('progress__bar--complete');
+
+    if (status === 'succeeded') {
+      progressBar.classList.add('progress__bar--complete');
+    }
+  };
+
   const applyState = (state) => {
     const message = state.message || defaultMessages[state.status] || defaultMessages.idle;
+    updateProgressBarAppearance(state.status);
     switch (state.status) {
       case 'running':
         toggleButtons({ start: false, pause: true, cont: false });
