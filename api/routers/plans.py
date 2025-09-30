@@ -10,12 +10,13 @@ from psycopg import AsyncConnection
 from psycopg.rows import dict_row
 
 from api.models import PlanSummaryResponse, PlansResponse
-from infra.db import get_connection
+from infra.db import bind_session, get_connection
 from infra.repositories._helpers import (
     extract_date_from_timestamp,
     only_digits,
     to_decimal,
 )
+from shared.config import get_principal_settings
 
 logger = logging.getLogger(__name__)
 
@@ -125,9 +126,18 @@ async def _fetch_plan_rows(connection: AsyncConnection) -> list[dict[str, Any]]:
 async def list_plans() -> PlansResponse:
     """Return the consolidated plans available for the dashboard."""
 
+    principal = get_principal_settings()
+    matricula = (principal.matricula or "").strip() if principal.matricula else None
+    if not matricula:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais de acesso ausentes.",
+        )
+
     connection_manager = _get_connection_manager()
     try:
         async with connection_manager as connection:
+            await bind_session(connection, matricula)
             rows = await _fetch_plan_rows(connection)
     except Exception as exc:  # pragma: no cover - defensive programming
         logger.exception("Erro ao carregar planos do banco de dados")

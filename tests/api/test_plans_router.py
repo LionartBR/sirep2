@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
 
 from api.models import PlansResponse
 from api.routers import plans
+from shared.config import PrincipalSettings
 
 
 @pytest.fixture
@@ -77,6 +78,24 @@ async def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = _DummyManager(rows)
     monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
 
+    bind_calls: list[tuple[Any, str]] = []
+
+    async def _fake_bind(connection: Any, matricula: str) -> None:
+        bind_calls.append((connection, matricula))
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
     response = await plans.list_plans()
 
     assert isinstance(response, PlansResponse)
@@ -88,3 +107,37 @@ async def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.items[0].days_overdue == 12
     assert response.items[0].balance == Decimal("1500.50")
     assert response.items[0].status_date == date(2024, 5, 1)
+    assert len(bind_calls) == 1
+    connection, matricula = bind_calls[0]
+    assert isinstance(connection, _DummyConnection)
+    assert matricula == "abc123"
+
+
+@pytest.mark.anyio
+async def test_list_plans_requires_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _unexpected_manager() -> _DummyManager:
+        raise AssertionError("Connection should not be requested when credentials are missing")
+
+    monkeypatch.setattr(plans, "_get_connection_manager", _unexpected_manager)
+
+    async def _unexpected_bind(*_: Any) -> None:
+        raise AssertionError("bind_session should not be called when credentials are missing")
+
+    monkeypatch.setattr(plans, "bind_session", _unexpected_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula=None,
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    with pytest.raises(plans.HTTPException) as excinfo:
+        await plans.list_plans()
+
+    assert excinfo.value.status_code == plans.status.HTTP_401_UNAUTHORIZED
+    assert excinfo.value.detail == "Credenciais de acesso ausentes."
