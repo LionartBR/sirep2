@@ -97,9 +97,7 @@ def test_upsert_registra_historico_quando_informado():
     repo._calcular_atraso_desde = MagicMock(return_value=None)
     repo._to_decimal = MagicMock(return_value=None)
     repo._registrar_historico_situacao = MagicMock()
-    repo.get_by_numero = MagicMock(
-        return_value=PlanDTO(id="uuid-1", numero_plano="123", situacao_atual="RESCINDIDO")
-    )
+    repo.get_by_numero = MagicMock()
 
     resultado = repo.upsert(
         "123",
@@ -110,6 +108,7 @@ def test_upsert_registra_historico_quando_informado():
     )
 
     assert resultado.numero_plano == "123"
+    assert resultado.situacao_atual == "RESCINDIDO"
     repo._registrar_historico_situacao.assert_called_once()
     kwargs = repo._registrar_historico_situacao.call_args.kwargs
     assert kwargs == {
@@ -119,6 +118,39 @@ def test_upsert_registra_historico_quando_informado():
         "situacao_anterior": "EM_DIA",
         "dt_situacao_atual": date(2024, 5, 1),
     }
+    repo.get_by_numero.assert_not_called()
+
+
+def test_upsert_reutiliza_plano_existente_sem_busca_extra():
+    connection = MagicMock()
+    insert_cursor, insert_cm = _make_cursor({"id": "uuid-2"})
+    connection.cursor.return_value = insert_cm
+
+    repo = PlansRepository(connection)
+    repo._resolver_empregador = MagicMock(return_value=None)
+    repo._resolver_situacao = MagicMock(return_value=(None, None))
+    repo._resolver_tipo_plano = MagicMock(return_value=None)
+    repo._resolver_resolucao = MagicMock(return_value=None)
+    repo._calcular_atraso_desde = MagicMock(return_value=None)
+    repo._to_decimal = MagicMock(return_value=None)
+    repo._registrar_historico_situacao = MagicMock()
+    repo.get_by_numero = MagicMock()
+
+    existente = PlanDTO(id="uuid-1", numero_plano="123", situacao_atual="EM_DIA")
+
+    resultado = repo.upsert(
+        "123",
+        existing=existente,
+        situacao_anterior="EM_DIA",
+        dt_situacao_atual=date(2024, 5, 1),
+        parcelas_atraso=[],
+    )
+
+    repo.get_by_numero.assert_not_called()
+    repo._registrar_historico_situacao.assert_called_once()
+    assert resultado.id == "uuid-2"
+    assert resultado.numero_plano == "123"
+    assert resultado.situacao_atual == "EM_DIA"
 
 
 def test_resolver_tipo_plano_utiliza_cache_sem_ir_ao_banco():
