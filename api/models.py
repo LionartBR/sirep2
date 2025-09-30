@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -30,3 +31,22 @@ class PipelineStateResponse(BaseModel):
         """Build response model from a domain state object."""
 
         return cls.model_validate(state)
+
+
+class PlanSummaryResponse(BaseModel):
+    """Represents a single row shown in the plans dashboard."""
+
+    number: str
+    document: Optional[str] = None
+    company_name: Optional[str] = None
+    status: Optional[str] = None
+    days_overdue: Optional[int] = None
+    balance: Optional[Decimal] = None
+    status_date: Optional[date] = None
+
+
+class PlansResponse(BaseModel):
+    """Container returned by the plans listing endpoint."""
+
+    items: list[PlanSummaryResponse]
+    total: int

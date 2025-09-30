@@ -23,7 +23,7 @@ class NoCacheStaticFiles(StaticFiles):
 from infra.config import settings
 from services.orchestrator import PipelineOrchestrator
 
-from .routers import auth, pipeline
+from .routers import auth, pipeline, plans
 
 
 def create_app() -> FastAPI:
@@ -33,6 +33,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router, prefix="/api")
     app.include_router(pipeline.router, prefix="/api")
+    app.include_router(plans.router, prefix="/api")
 
     app.state.pipeline_orchestrator = PipelineOrchestrator()
 
