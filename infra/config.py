@@ -9,6 +9,7 @@ class Settings:
     """Configurações globais de execução."""
 
     DRY_RUN: bool = False
+    debug: bool = False
 
 
 def _str_to_bool(raw: str | None, default: bool = False) -> bool:
@@ -24,6 +25,7 @@ def _str_to_bool(raw: str | None, default: bool = False) -> bool:
 
 settings = Settings(
     DRY_RUN=_str_to_bool(os.getenv("DRY_RUN"), default=False),
+    debug=_str_to_bool(os.getenv("DEBUG"), default=False),
 )
 
 
