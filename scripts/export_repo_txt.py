@@ -43,7 +43,7 @@ from typing import Iterable
 IGNORE_DIRS = {".venv", "__pycache__", "txt_export", "tools", "logs", ".git"}
 
 # Arquivos específicos a ignorar (por nome exato)
-IGNORE_FILES = {"__init__.py", ".env", ".env.example", "pyproject.toml", "sirep.db", ".gitignore", "AGENTS.md"}
+IGNORE_FILES = {".env", ".env.example", "pyproject.toml", "sirep.db", ".gitignore", "AGENTS.md"}
 
 # Extensões que normalmente são binárias e devem ser puladas
 LIKELY_BINARY_EXTS = {
