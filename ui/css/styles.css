@@ -244,16 +244,16 @@ input:focus {
   background: var(--card-bg);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 32px;
+  padding: 40px 36px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px;
 }
 
 .login-card__header {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   align-items: center;
   text-align: center;
 }
@@ -269,7 +269,7 @@ input:focus {
 .login-card__subtitle {
   margin: 0;
   color: var(--muted-light);
-  line-height: 1.4;
+  line-height: 1.6;
   text-align: center;
 }
 
@@ -292,13 +292,13 @@ input:focus {
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .login-form__field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .login-form__input-wrapper {
@@ -313,7 +313,7 @@ input:focus {
 
 .login-form__input {
   width: 100%;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 15px;
@@ -321,7 +321,7 @@ input:focus {
 }
 
 .login-form__input-wrapper .login-form__input {
-  padding-left: 44px;
+  padding-left: 48px;
 }
 
 .login-form__icon {
@@ -342,16 +342,18 @@ input:focus {
 
 .login-form__options {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 12px;
+  padding-top: 16px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 .login-form__remember {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 14px;
   color: var(--muted);
 }
@@ -372,7 +374,7 @@ input:focus {
 .login-form__actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 .login-form__submit {
@@ -389,11 +391,16 @@ input:focus {
 
 @media (max-width: 520px) {
   .login-card {
-    padding: 24px;
+    padding: 28px 24px;
+    gap: 24px;
   }
 
   .login-card__title {
     font-size: 21px;
+  }
+
+  .login-form {
+    gap: 18px;
   }
 }
 
