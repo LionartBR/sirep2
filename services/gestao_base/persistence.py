@@ -158,7 +158,7 @@ def persist_rows(
         elif existente is None:
             campos["status"] = PlanStatus.PASSIVEL_RESC
 
-        plan = context.plans.upsert(numero_plano=row.numero, **campos)
+        plan = context.plans.upsert(numero_plano=row.numero, existing=existente, **campos)
 
         if occurrence_repo and _should_register_occurrence(situacao):
             numero_plano = row.numero.strip()

@@ -129,8 +129,21 @@ class PlansRepository:
             situacao_atual=situacao,
         )
 
-    def upsert(self, numero_plano: str, **campos: Any) -> PlanDTO:
-        """Insere ou atualiza o plano consolidando empregador, catálogos e atrasos."""
+    def upsert(
+        self,
+        numero_plano: str,
+        *,
+        existing: Optional[PlanDTO] = None,
+        **campos: Any,
+    ) -> PlanDTO:
+        """Insere ou atualiza o plano consolidando empregador, catálogos e atrasos.
+
+        Args:
+            numero_plano: Identificador normalizado do plano.
+            existing: Instância previamente carregada do plano para evitar
+                reconsultas após o *upsert*.
+            **campos: Demais atributos derivados da ingestão para persistir.
+        """
 
         campos = dict(campos)
         parcelas_brutas = list(campos.pop("parcelas_atraso", []) or [])
@@ -222,10 +235,21 @@ class PlansRepository:
             self._persistir_parcelas(plano_id, parcelas_preparadas)
             self._recalcular_atraso(plano_id)
 
+        situacao_resultante = situacao_codigo
+        if existing is not None and situacao_resultante is None:
+            situacao_resultante = existing.situacao_atual
+
+        if existing is not None:
+            return PlanDTO(plano_id, numero_plano, situacao_resultante)
+
+        if situacao_resultante is not None:
+            return PlanDTO(plano_id, numero_plano, situacao_resultante)
+
         existente = self.get_by_numero(numero_plano)
         if existente is not None:
             return existente
-        return PlanDTO(plano_id, numero_plano, situacao_codigo)
+
+        return PlanDTO(plano_id, numero_plano, None)
 
     # -- Helpers -----------------------------------------------------------------
 
