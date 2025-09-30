@@ -7,7 +7,7 @@ _password: Optional[str] = None
 
 
 def set_gestao_base_password(password: str) -> None:
-    """Armazena em memória a senha utilizada na Gestão da Base."""
+    """Armazena em memória a senha utilizada para login."""
 
     global _password
     _password = password or None
