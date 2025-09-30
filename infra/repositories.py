@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable, Optional
 
@@ -195,15 +195,9 @@ class PlansRepository:
 
         atraso_desde = self._calcular_atraso_desde(
             campos.get("dias_em_atraso"),
-            campos.get("dt_situacao_atual"),
         )
-
-        status = campos.get("status")
-        status_valor = getattr(status, "value", str(status)) if status is not None else None
-        representacao = campos.get("representacao")
         dt_proposta = campos.get("dt_proposta")
         saldo_total = self._to_decimal(campos.get("saldo"))
-        dt_situacao_atual = campos.get("dt_situacao_atual")
 
         with self._conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -211,12 +205,10 @@ class PlansRepository:
                 INSERT INTO app.plano (
                     tenant_id, numero_plano, empregador_id,
                     tipo_plano_id, resolucao_id, situacao_plano_id,
-                    dt_proposta, saldo_total, atraso_desde,
-                    representacao, status, dt_situacao_atual
+                    dt_proposta, saldo_total, atraso_desde
                 )
                 VALUES (
                     app.current_tenant_id(), %s, %s,
-                    %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s
                 )
@@ -228,10 +220,7 @@ class PlansRepository:
                     situacao_plano_id = EXCLUDED.situacao_plano_id,
                     dt_proposta       = EXCLUDED.dt_proposta,
                     saldo_total       = EXCLUDED.saldo_total,
-                    atraso_desde      = COALESCE(EXCLUDED.atraso_desde, app.plano.atraso_desde),
-                    representacao     = EXCLUDED.representacao,
-                    status            = EXCLUDED.status,
-                    dt_situacao_atual = EXCLUDED.dt_situacao_atual
+                    atraso_desde      = COALESCE(EXCLUDED.atraso_desde, app.plano.atraso_desde)
                 RETURNING id
                 """,
                 (
@@ -243,9 +232,6 @@ class PlansRepository:
                     dt_proposta,
                     saldo_total,
                     atraso_desde,
-                    representacao,
-                    status_valor,
-                    dt_situacao_atual,
                 ),
             )
             resultado = cur.fetchone()
@@ -260,7 +246,6 @@ class PlansRepository:
             situacao_id=situacao_id,
             situacao_codigo=situacao_codigo,
             situacao_anterior=situacao_anterior,
-            dt_situacao_atual=dt_situacao_atual,
         )
 
         parcelas_preparadas = self._preparar_parcelas(parcelas_brutas)
@@ -435,7 +420,6 @@ class PlansRepository:
         situacao_id: Optional[str],
         situacao_codigo: Optional[str],
         situacao_anterior: Optional[str],
-        dt_situacao_atual: Any,
         observacao: str = "Gestão da Base",
     ) -> None:
         if not situacao_id:
@@ -446,7 +430,7 @@ class PlansRepository:
         if atual and anterior and atual == anterior:
             return
 
-        mudou_em = self._format_effective_timestamp(dt_situacao_atual)
+        mudou_em = datetime.now(timezone.utc)
 
         if not anterior:
             with self._conn.cursor(row_factory=dict_row) as cur:
@@ -577,7 +561,6 @@ class PlansRepository:
     @staticmethod
     def _calcular_atraso_desde(
         dias_em_atraso: Any,
-        referencia: Any,
     ) -> Optional[date]:
         if dias_em_atraso is None:
             return None
@@ -590,12 +573,7 @@ class PlansRepository:
         if dias < 0:
             return None
 
-        if isinstance(referencia, datetime):
-            base = referencia.date()
-        elif isinstance(referencia, date):
-            base = referencia
-        else:
-            base = date.today()
+        base = date.today()
         return base - timedelta(days=dias)
 
     @staticmethod
@@ -658,17 +636,6 @@ class PlansRepository:
             return int(candidato)
         except ValueError:
             return None
-
-    @staticmethod
-    def _format_effective_timestamp(valor: Any) -> Optional[str]:
-        if valor is None:
-            return None
-        if isinstance(valor, datetime):
-            return valor.isoformat()
-        if isinstance(valor, date):
-            return valor.isoformat()
-        texto = str(valor).strip()
-        return texto or None
 
     @staticmethod
     def _extract_date_from_timestamp(valor: Any) -> Optional[date]:
