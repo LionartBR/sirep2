@@ -13,6 +13,9 @@ dependencies = [
     "psycopg[binary]>=3.2,<4.0",
     "psycopg-pool>=3.2,<4.0",
     "pydantic>=2.7,<3.0",
+    "python-certifi-win32>=1.6,<2.0; sys_platform == \"win32\"",
+    "requests>=2.31,<3.0",
+    "requests-negotiate-sspi>=0.5.2,<0.6",
     "uvicorn[standard]>=0.30,<0.32",
 ]
 
