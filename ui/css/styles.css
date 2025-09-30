@@ -6,6 +6,7 @@
   --card-bg: #ffffff;
   --text: #1f2937;
   --muted: #6b7280;
+  --muted-light: #9ca3af;
   --border: #e5e7eb;
   --shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
   --primary: #0b5fa8;
@@ -267,7 +268,7 @@ input:focus {
 
 .login-card__subtitle {
   margin: 0;
-  color: var(--muted);
+  color: var(--muted-light);
   line-height: 1.4;
   text-align: center;
 }
