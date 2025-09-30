@@ -35,17 +35,203 @@ document.addEventListener('DOMContentLoaded', () => {
   const dateToInput = document.getElementById('date-to');
   const openDateFromButton = document.getElementById('open-date-from');
   const openDateToButton = document.getElementById('open-date-to');
+  const plansTablePanel = document.getElementById('plansTablePanel');
+  const plansTableElement = plansTablePanel?.querySelector('table') ?? null;
+  const plansTableBody = plansTableElement?.tBodies?.[0] ?? null;
+  const plansColumnCount =
+    plansTableElement?.tHead?.rows?.[0]?.cells?.length ??
+    plansTableElement?.rows?.[0]?.cells?.length ??
+    8;
+
+  const PIPELINE_ENDPOINT = '/api/pipeline';
+  const PLANS_ENDPOINT = '/api/plans';
+  const currencyFormatter = new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+  });
 
   const PROGRESS_TOTAL_DURATION_MS = 15 * 60 * 1000;
   const PROGRESS_MAX_RATIO_BEFORE_COMPLETION = 0.99;
   let progressStartTimestamp = null;
   let progressIntervalHandle = null;
 
-  const PIPELINE_ENDPOINT = '/api/pipeline';
   let pollHandle = null;
+  let isFetchingPlans = false;
+  let plansLoaded = false;
+  let shouldRefreshPlansAfterRun = false;
 
   const setStatus = (text) => {
     statusText.textContent = `Estado: ${text}`;
+  };
+
+  const formatStatusLabel = (value) => {
+    if (!value) {
+      return '—';
+    }
+    const text = String(value).trim();
+    if (!text) {
+      return '—';
+    }
+    return text.replace(/_/g, ' ');
+  };
+
+  const formatDaysValue = (value) => {
+    if (value === null || value === undefined) {
+      return '—';
+    }
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return '—';
+    }
+    return String(Math.max(0, Math.trunc(number)));
+  };
+
+  const formatCurrencyValue = (value) => {
+    if (value === null || value === undefined) {
+      return '—';
+    }
+    const number = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(number)) {
+      return '—';
+    }
+    try {
+      return currencyFormatter.format(number);
+    } catch (error) {
+      console.warn('Falha ao formatar valor monetário.', error);
+      return number.toFixed(2);
+    }
+  };
+
+  const formatDateLabel = (value) => {
+    if (!value) {
+      return '—';
+    }
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value.toLocaleDateString('pt-BR');
+    }
+    const text = String(value).trim();
+    if (!text) {
+      return '—';
+    }
+    const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      const [, year, month, day] = isoMatch;
+      return `${day}/${month}/${year}`;
+    }
+    const parsed = new Date(text);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString('pt-BR');
+    }
+    return text;
+  };
+
+  const renderPlansPlaceholder = (message, modifier = 'empty') => {
+    if (!plansTableBody) {
+      return;
+    }
+    plansTableBody.innerHTML = '';
+    const row = document.createElement('tr');
+    row.className = 'table__row table__row--empty';
+    if (modifier) {
+      row.classList.add(`table__row--${modifier}`);
+    }
+    const cell = document.createElement('td');
+    cell.className = 'table__cell';
+    cell.colSpan = plansColumnCount;
+    cell.textContent = message;
+    row.appendChild(cell);
+    plansTableBody.appendChild(row);
+  };
+
+  const renderPlanRows = (items) => {
+    if (!plansTableBody) {
+      return;
+    }
+    plansTableBody.innerHTML = '';
+    const plans = Array.isArray(items) ? items : [];
+    if (!plans.length) {
+      renderPlansPlaceholder('nada a exibir por aqui.');
+      return;
+    }
+
+    plans.forEach((item) => {
+      const row = document.createElement('tr');
+      row.className = 'table__row';
+
+      const planCell = document.createElement('td');
+      planCell.className = 'table__cell';
+      planCell.textContent = item?.number ?? '';
+      row.appendChild(planCell);
+
+      const documentCell = document.createElement('td');
+      documentCell.className = 'table__cell';
+      documentCell.textContent = item?.document ?? '';
+      row.appendChild(documentCell);
+
+      const companyCell = document.createElement('td');
+      companyCell.className = 'table__cell';
+      companyCell.textContent = item?.company_name ?? '';
+      row.appendChild(companyCell);
+
+      const statusCell = document.createElement('td');
+      statusCell.className = 'table__cell';
+      statusCell.textContent = formatStatusLabel(item?.status);
+      row.appendChild(statusCell);
+
+      const daysCell = document.createElement('td');
+      daysCell.className = 'table__cell';
+      daysCell.textContent = formatDaysValue(item?.days_overdue);
+      row.appendChild(daysCell);
+
+      const balanceCell = document.createElement('td');
+      balanceCell.className = 'table__cell';
+      balanceCell.textContent = formatCurrencyValue(item?.balance);
+      row.appendChild(balanceCell);
+
+      const statusDateCell = document.createElement('td');
+      statusDateCell.className = 'table__cell';
+      statusDateCell.textContent = formatDateLabel(item?.status_date);
+      row.appendChild(statusDateCell);
+
+      const actionsCell = document.createElement('td');
+      actionsCell.className = 'table__cell';
+      actionsCell.textContent = '—';
+      row.appendChild(actionsCell);
+
+      plansTableBody.appendChild(row);
+    });
+  };
+
+  const refreshPlans = async ({ showLoading } = {}) => {
+    if (!plansTableBody || isFetchingPlans) {
+      return;
+    }
+    const shouldShowLoading = showLoading ?? !plansLoaded;
+    if (shouldShowLoading) {
+      renderPlansPlaceholder('carregando planos...', 'loading');
+    }
+
+    isFetchingPlans = true;
+    try {
+      const response = await fetch(PLANS_ENDPOINT, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!response.ok) {
+        throw new Error('Não foi possível carregar os planos.');
+      }
+      const payload = await response.json();
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      renderPlanRows(items);
+      plansLoaded = true;
+    } catch (error) {
+      console.error('Erro ao carregar planos.', error);
+      if (!plansLoaded) {
+        renderPlansPlaceholder('Não foi possível carregar os planos.', 'error');
+      }
+    } finally {
+      isFetchingPlans = false;
+    }
   };
 
   const toggleButtons = ({ start, pause, cont }) => {
@@ -521,6 +707,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   toggleButtons({ start: true, pause: false, cont: false });
   setStatus(defaultMessages.idle);
+  void refreshPlans();
 
   const schedulePolling = () => {
     stopPolling();
@@ -541,12 +728,17 @@ document.addEventListener('DOMContentLoaded', () => {
     switch (state.status) {
       case 'running':
         toggleButtons({ start: false, pause: true, cont: false });
+        shouldRefreshPlansAfterRun = true;
         break;
       case 'succeeded':
       case 'failed':
       case 'idle':
       default:
         toggleButtons({ start: true, pause: false, cont: false });
+        if (shouldRefreshPlansAfterRun) {
+          shouldRefreshPlansAfterRun = false;
+          void refreshPlans({ showLoading: false });
+        }
         break;
     }
     setStatus(message);
