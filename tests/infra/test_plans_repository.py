@@ -3,10 +3,12 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from psycopg.rows import dict_row
+from psycopg.pq import TransactionStatus
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -242,5 +244,92 @@ def test_resolver_tipo_plano_atualiza_cache_quando_insere():
 
     assert resultado == "novo-id"
     assert cache.tipos_plano["NOVO_PLANO"] == "novo-id"
+    assert cache.pending_tipos_plano == {"NOVO_PLANO"}
     assert cursor.execute.call_count == 2
+
+
+def test_resolver_tipo_plano_recarrega_cache_quando_transacao_finaliza():
+    connection = MagicMock()
+    connection.info = SimpleNamespace(transaction_status=TransactionStatus.IDLE)
+    cache = LookupCache(
+        tipos_plano={"NOVO_PLANO": "stale"},
+        resolucoes={},
+        situacoes_plano={},
+        tipos_inscricao={},
+        bases_fgts={},
+    )
+    cache.pending_tipos_plano.add("NOVO_PLANO")
+
+    refreshed_cache = LookupCache(
+        tipos_plano={"NOVO_PLANO": "atualizado"},
+        resolucoes={},
+        situacoes_plano={},
+        tipos_inscricao={},
+        bases_fgts={},
+    )
+
+    repo = PlansRepository(connection, lookup_cache=cache)
+
+    with patch.object(LookupCache, "load", return_value=refreshed_cache):
+        resultado = repo._resolver_tipo_plano("Novo Plano")
+
+    assert resultado == "atualizado"
+    assert cache.tipos_plano["NOVO_PLANO"] == "atualizado"
+    assert not cache.pending_tipos_plano
+
+
+def test_resolver_resolucao_atualiza_cache_quando_insere():
+    cursor = MagicMock()
+    cursor.fetchone.side_effect = [None, {"id": "res-id"}]
+    cursor_cm = MagicMock()
+    cursor_cm.__enter__.return_value = cursor
+    cursor_cm.__exit__.return_value = False
+
+    connection = MagicMock()
+    connection.cursor.return_value = cursor_cm
+    cache = LookupCache(
+        tipos_plano={},
+        resolucoes={},
+        situacoes_plano={},
+        tipos_inscricao={},
+        bases_fgts={},
+    )
+
+    repo = PlansRepository(connection, lookup_cache=cache)
+    resultado = repo._resolver_resolucao("R-123")
+
+    assert resultado == "res-id"
+    assert cache.resolucoes["R-123"] == "res-id"
+    assert cache.pending_resolucoes == {"R-123"}
+    assert cursor.execute.call_count == 2
+
+
+def test_resolver_resolucao_recarrega_cache_quando_transacao_finaliza():
+    connection = MagicMock()
+    connection.info = SimpleNamespace(transaction_status=TransactionStatus.IDLE)
+    cache = LookupCache(
+        tipos_plano={},
+        resolucoes={"R-123": "stale"},
+        situacoes_plano={},
+        tipos_inscricao={},
+        bases_fgts={},
+    )
+    cache.pending_resolucoes.add("R-123")
+
+    refreshed_cache = LookupCache(
+        tipos_plano={},
+        resolucoes={"R-123": "atualizado"},
+        situacoes_plano={},
+        tipos_inscricao={},
+        bases_fgts={},
+    )
+
+    repo = PlansRepository(connection, lookup_cache=cache)
+
+    with patch.object(LookupCache, "load", return_value=refreshed_cache):
+        resultado = repo._resolver_resolucao("R-123")
+
+    assert resultado == "atualizado"
+    assert cache.resolucoes["R-123"] == "atualizado"
+    assert not cache.pending_resolucoes
 
