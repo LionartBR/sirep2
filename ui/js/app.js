@@ -31,6 +31,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnContinue = document.getElementById('btnContinue');
   const progressContainer = document.querySelector('.progress');
   const progressBar = progressContainer?.querySelector('.progress__bar');
+  const dateFromInput = document.getElementById('date-from');
+  const dateToInput = document.getElementById('date-to');
+  const openDateFromButton = document.getElementById('open-date-from');
+  const openDateToButton = document.getElementById('open-date-to');
 
   const PROGRESS_TOTAL_DURATION_MS = 15 * 60 * 1000;
   const PROGRESS_MAX_RATIO_BEFORE_COMPLETION = 0.99;
@@ -423,29 +427,97 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   })();
 
-  const fromPicker = flatpickr('#date-from', {
-    locale: flatpickr.l10ns.pt,
-    dateFormat: 'd/m/Y',
-    allowInput: false,
-  });
-
-  const toPicker = flatpickr('#date-to', {
-    locale: flatpickr.l10ns.pt,
-    dateFormat: 'd/m/Y',
-    allowInput: false,
-  });
-
-  const openPicker = (picker) => {
-    if (picker) {
-      picker.open();
+  const disableCalendarButton = (button) => {
+    if (!button) {
+      return;
+    }
+    button.disabled = true;
+    button.setAttribute('aria-disabled', 'true');
+    if (!button.title) {
+      button.title = 'Calendário indisponível';
     }
   };
 
-  document.getElementById('open-date-from').addEventListener('click', () => openPicker(fromPicker));
-  document.getElementById('open-date-to').addEventListener('click', () => openPicker(toPicker));
+  const enableManualDateInput = (input) => {
+    if (!input) {
+      return;
+    }
+    input.readOnly = false;
+    const manualHint = 'digite a data manualmente';
+    const label = input.getAttribute('aria-label');
+    if (label && !label.toLowerCase().includes(manualHint)) {
+      input.setAttribute('aria-label', `${label} (digite a data manualmente)`);
+    }
+    if (!input.title) {
+      input.title = 'Digite a data no formato dd/mm/aaaa';
+    }
+  };
 
-  document.getElementById('date-from').addEventListener('click', () => openPicker(fromPicker));
-  document.getElementById('date-to').addEventListener('click', () => openPicker(toPicker));
+  const fallbackDateInput = (input, button) => {
+    enableManualDateInput(input);
+    disableCalendarButton(button);
+  };
+
+  const registerPickerTriggers = (picker, input, button) => {
+    if (!picker) {
+      return;
+    }
+
+    const open = () => picker.open();
+    if (input) {
+      input.addEventListener('click', open);
+    }
+    if (button) {
+      button.addEventListener('click', open);
+    }
+  };
+
+  const initializeDatePicker = (input, button, options) => {
+    if (!input) {
+      disableCalendarButton(button);
+      return null;
+    }
+
+    try {
+      const picker = window.flatpickr(input, options);
+      registerPickerTriggers(picker, input, button);
+      return picker;
+    } catch (error) {
+      console.error('Não foi possível inicializar o calendário de data.', error);
+      return null;
+    }
+  };
+
+  const initializeDatePickers = () => {
+    if (!dateFromInput && !dateToInput) {
+      return;
+    }
+
+    if (typeof window.flatpickr !== 'function') {
+      console.warn('flatpickr indisponível; habilitando entrada manual de datas.');
+      fallbackDateInput(dateFromInput, openDateFromButton);
+      fallbackDateInput(dateToInput, openDateToButton);
+      return;
+    }
+
+    const options = {
+      locale: window.flatpickr.l10ns?.pt ?? undefined,
+      dateFormat: 'd/m/Y',
+      allowInput: false,
+    };
+
+    const fromPicker = initializeDatePicker(dateFromInput, openDateFromButton, options);
+    const toPicker = initializeDatePicker(dateToInput, openDateToButton, options);
+
+    if (!fromPicker) {
+      fallbackDateInput(dateFromInput, openDateFromButton);
+    }
+    if (!toPicker) {
+      fallbackDateInput(dateToInput, openDateToButton);
+    }
+  };
+
+  initializeDatePickers();
 
   const logsToggle = document.getElementById('logsToggle');
   const logsPanel = document.getElementById('logsPanel');

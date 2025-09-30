@@ -633,6 +633,11 @@ input:focus {
   cursor: pointer;
 }
 
+.filters__icon:disabled {
+  color: var(--muted-light);
+  cursor: not-allowed;
+}
+
 .accordion {
   border: 1px solid var(--border);
   border-radius: 10px;
