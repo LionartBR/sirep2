@@ -18,6 +18,55 @@ from .audit import log_event
 logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
+class LookupCache:
+    """Mantém em memória os catálogos utilizados pelo pipeline."""
+
+    tipos_plano: dict[str, str]
+    resolucoes: dict[str, str]
+    situacoes_plano: dict[str, str]
+    tipos_inscricao: dict[str, str]
+    bases_fgts: dict[str, str]
+
+    @classmethod
+    def load(cls, conn: Connection) -> "LookupCache":
+        """Carrega todos os catálogos necessários a partir do banco."""
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT codigo, id FROM ref.tipo_plano")
+            tipos = {str(codigo): str(ident) for codigo, ident in cur.fetchall()}
+
+            cur.execute("SELECT codigo, id FROM ref.resolucao")
+            resolucoes = {str(codigo): str(ident) for codigo, ident in cur.fetchall()}
+
+            cur.execute("SELECT codigo, id FROM ref.situacao_plano")
+            situacoes = {str(codigo): str(ident) for codigo, ident in cur.fetchall()}
+
+            cur.execute("SELECT codigo, id FROM ref.tipo_inscricao")
+            tipos_inscricao = {str(codigo): str(ident) for codigo, ident in cur.fetchall()}
+
+            cur.execute("SELECT codigo, id FROM ref.base_fgts")
+            bases_fgts = {str(codigo): str(ident) for codigo, ident in cur.fetchall()}
+
+        return cls(
+            tipos_plano=tipos,
+            resolucoes=resolucoes,
+            situacoes_plano=situacoes,
+            tipos_inscricao=tipos_inscricao,
+            bases_fgts=bases_fgts,
+        )
+
+    def refresh(self, conn: Connection) -> None:
+        """Recarrega os catálogos a partir do banco."""
+
+        atualizado = self.load(conn)
+        self.tipos_plano = atualizado.tipos_plano
+        self.resolucoes = atualizado.resolucoes
+        self.situacoes_plano = atualizado.situacoes_plano
+        self.tipos_inscricao = atualizado.tipos_inscricao
+        self.bases_fgts = atualizado.bases_fgts
+
+
+@dataclass(slots=True)
 class PlanDTO:
     """Representação simplificada de um plano utilizado no pipeline."""
 
@@ -29,9 +78,15 @@ class PlanDTO:
 class PlansRepository:
     """Realiza operações de leitura e escrita para os planos."""
 
-    def __init__(self, conn: Connection) -> None:
+    def __init__(
+        self,
+        conn: Connection,
+        *,
+        lookup_cache: Optional[LookupCache] = None,
+    ) -> None:
         self._conn = conn
         self._situacao_parcela_atraso_id: Optional[str] = None
+        self._lookup_cache = lookup_cache
 
     def get_by_numero(self, numero_plano: str) -> Optional[PlanDTO]:
         """Busca um plano pelo número normalizado."""
@@ -164,19 +219,12 @@ class PlansRepository:
             return campos.get("empregador_id")
 
         codigo_tipo = self._inferir_tipo_inscricao(numero_normalizado)
+        tipo_inscricao_id = self._lookup_tipo_inscricao_id(codigo_tipo)
         razao_social = campos.get("razao_social") or None
         email = (campos.get("email") or "").strip() or None
         telefone = (campos.get("telefone") or "").strip() or None
 
         with self._conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                "SELECT id FROM ref.tipo_inscricao WHERE codigo = %s",
-                (codigo_tipo,),
-            )
-            tipo = cur.fetchone()
-            if not tipo:
-                raise RuntimeError(f"Tipo de inscrição desconhecido: {codigo_tipo}")
-
             cur.execute(
                 """
                 INSERT INTO app.empregador (
@@ -194,7 +242,7 @@ class PlansRepository:
                     telefone = COALESCE(EXCLUDED.telefone, app.empregador.telefone)
                 RETURNING id
                 """,
-                (tipo["id"], numero_normalizado, razao_social, email, telefone),
+                (tipo_inscricao_id, numero_normalizado, razao_social, email, telefone),
             )
             row = cur.fetchone()
 
@@ -210,17 +258,24 @@ class PlansRepository:
         texto = str(situacao_raw).strip().upper()
         codigo = self._normalizar_situacao(texto)
 
-        with self._conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                "SELECT id FROM ref.situacao_plano WHERE codigo = %s",
-                (codigo,),
-            )
-            row = cur.fetchone()
+        lookup = self._ensure_lookups()
+        situacao_id = lookup.situacoes_plano.get(codigo)
 
-        if not row:
+        if not situacao_id:
+            with self._conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    "SELECT id FROM ref.situacao_plano WHERE codigo = %s",
+                    (codigo,),
+                )
+                row = cur.fetchone()
+            if row:
+                situacao_id = str(row["id"])
+                lookup.situacoes_plano[codigo] = situacao_id
+
+        if not situacao_id:
             raise RuntimeError(f"Situação não cadastrada: {codigo}")
 
-        return (str(row["id"]), codigo)
+        return (situacao_id, codigo)
 
     def _resolver_tipo_plano(self, tipo_raw: Any) -> Optional[str]:
         if not tipo_raw:
@@ -231,6 +286,11 @@ class PlansRepository:
             return None
 
         codigo = self._normalizar_codigo(texto)
+        lookup = self._ensure_lookups()
+        tipo_id = lookup.tipos_plano.get(codigo)
+
+        if tipo_id:
+            return tipo_id
 
         with self._conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -239,22 +299,23 @@ class PlansRepository:
             )
             row = cur.fetchone()
             if row:
-                return str(row["id"])
+                tipo_id = str(row["id"])
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO ref.tipo_plano (codigo, descricao, ativo)
+                    VALUES (%s, %s, TRUE)
+                    RETURNING id
+                    """,
+                    (codigo, texto),
+                )
+                inserido = cur.fetchone()
+                if not inserido:
+                    raise RuntimeError("Falha ao resolver tipo de plano")
+                tipo_id = str(inserido["id"])
 
-            cur.execute(
-                """
-                INSERT INTO ref.tipo_plano (codigo, descricao, ativo)
-                VALUES (%s, %s, TRUE)
-                RETURNING id
-                """,
-                (codigo, texto),
-            )
-            inserido = cur.fetchone()
-
-        if not inserido:
-            raise RuntimeError("Falha ao resolver tipo de plano")
-
-        return str(inserido["id"])
+        lookup.tipos_plano[codigo] = tipo_id
+        return tipo_id
 
     def _registrar_historico_situacao(
         self,
@@ -326,6 +387,12 @@ class PlansRepository:
         if not codigo:
             return None
 
+        lookup = self._ensure_lookups()
+        resolucao_id = lookup.resolucoes.get(codigo)
+
+        if resolucao_id:
+            return resolucao_id
+
         with self._conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 "SELECT id FROM ref.resolucao WHERE codigo = %s",
@@ -333,22 +400,57 @@ class PlansRepository:
             )
             row = cur.fetchone()
             if row:
-                return str(row["id"])
+                resolucao_id = str(row["id"])
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO ref.resolucao (codigo, descricao, ativo)
+                    VALUES (%s, %s, TRUE)
+                    RETURNING id
+                    """,
+                    (codigo, codigo),
+                )
+                inserido = cur.fetchone()
+                if not inserido:
+                    raise RuntimeError("Falha ao resolver resolução")
+                resolucao_id = str(inserido["id"])
 
+        lookup.resolucoes[codigo] = resolucao_id
+        return resolucao_id
+
+    def _lookup_tipo_inscricao_id(self, codigo: str) -> str:
+        lookup = self._ensure_lookups()
+        tipo_id = lookup.tipos_inscricao.get(codigo)
+
+        if tipo_id:
+            return tipo_id
+
+        with self._conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
-                """
-                INSERT INTO ref.resolucao (codigo, descricao, ativo)
-                VALUES (%s, %s, TRUE)
-                RETURNING id
-                """,
-                (codigo, codigo),
+                "SELECT id FROM ref.tipo_inscricao WHERE codigo = %s",
+                (codigo,),
             )
-            inserido = cur.fetchone()
+            row = cur.fetchone()
 
-        if not inserido:
-            raise RuntimeError("Falha ao resolver resolução")
+        if not row:
+            raise RuntimeError(f"Tipo de inscrição desconhecido: {codigo}")
 
-        return str(inserido["id"])
+        tipo_id = str(row["id"])
+        lookup.tipos_inscricao[codigo] = tipo_id
+        return tipo_id
+
+    def _ensure_lookups(self) -> LookupCache:
+        if self._lookup_cache is None:
+            self._lookup_cache = LookupCache.load(self._conn)
+        return self._lookup_cache
+
+    def refresh_lookups(self) -> None:
+        """Recarrega o cache de catálogos associados ao repositório."""
+
+        if self._lookup_cache is None:
+            self._lookup_cache = LookupCache.load(self._conn)
+            return
+        self._lookup_cache.refresh(self._conn)
 
     @staticmethod
     def _calcular_atraso_desde(
