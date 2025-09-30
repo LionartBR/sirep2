@@ -525,16 +525,20 @@ input:focus {
 
 .filters__field {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
   font-size: 14px;
   color: var(--muted);
+}
+
+.filters__label {
+  white-space: nowrap;
 }
 
 .filters__input-wrapper {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0 8px;
@@ -547,7 +551,8 @@ input:focus {
   background: transparent;
   font-size: 14px;
   color: var(--text);
-  width: 130px;
+  width: 10ch;
+  text-align: center;
   cursor: pointer;
 }
 
@@ -564,12 +569,6 @@ input:focus {
   justify-content: center;
   color: var(--primary);
   cursor: pointer;
-}
-
-.logs-panel__label {
-  font-size: 14px;
-  color: var(--muted);
-  font-weight: 600;
 }
 
 .accordion {
