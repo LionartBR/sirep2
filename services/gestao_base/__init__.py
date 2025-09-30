@@ -3,6 +3,7 @@ from __future__ import annotations
 from .collectors import DryRunCollector, GestaoBaseCollector, TerminalCollector
 from .models import (
     GestaoBaseData,
+    PipelineAuditHooks,
     PlanRow,
     PlanRowEnriched,
     ProgressCallback,
@@ -17,6 +18,7 @@ __all__ = [
     "GestaoBaseData",
     "GestaoBaseNoOpService",
     "GestaoBaseService",
+    "PipelineAuditHooks",
     "PlanRow",
     "PlanRowEnriched",
     "ProgressCallback",
