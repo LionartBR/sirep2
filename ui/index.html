@@ -61,42 +61,125 @@
             <div class="progress__bar"></div>
           </div>
 
-          <div class="section-title">
-            <h2 class="section-title__heading">TABELA DE PLANOS</h2>
-            <span class="badge" aria-live="polite">OCORRÊNCIAS (0)</span>
+          <div
+            class="section-title section-title--tables"
+            role="tablist"
+            aria-label="Listas de planos"
+          >
+            <button
+              class="section-switch section-switch--active"
+              id="plansTableTab"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="plansTablePanel"
+              data-table-target="plans"
+              tabindex="0"
+            >
+              TABELA DE PLANOS
+            </button>
+            <button
+              class="section-switch"
+              id="occurrencesTableTab"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="occurrencesTablePanel"
+              data-table-target="occurrences"
+              tabindex="-1"
+            >
+              OCORRÊNCIAS
+              <span class="section-switch__count" id="occurrencesCount">(0)</span>
+            </button>
           </div>
 
-          <div class="table" role="region" aria-labelledby="section-table">
-            <table aria-label="Tabela de planos">
-              <thead class="table__head">
-                <tr>
-                  <th scope="col">PLANO</th>
-                  <th scope="col">CNPJ</th>
-                  <th scope="col">RAZAO SOCIAL</th>
-                  <th scope="col">SITUAÇÃO</th>
-                  <th scope="col">DIAS EM ATRASO</th>
-                  <th scope="col">SALDO</th>
-                  <th scope="col">DT SITUAÇÃO</th>
-                  <th scope="col">AÇÕES</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr class="table__row table__row--empty">
-                  <td class="table__cell" colspan="8">nada a exibir por aqui.</td>
-                </tr>
-              </tbody>
-            </table>
+          <div
+            class="table-panel"
+            id="plansTablePanel"
+            role="tabpanel"
+            aria-labelledby="plansTableTab"
+            data-table-panel="plans"
+          >
+            <div class="table">
+              <table class="data-table" aria-label="Tabela de planos">
+                <thead class="table__head">
+                  <tr>
+                    <th scope="col">PLANO</th>
+                    <th scope="col">CNPJ</th>
+                    <th scope="col">RAZAO SOCIAL</th>
+                    <th scope="col">SITUAÇÃO</th>
+                    <th scope="col">DIAS EM ATRASO</th>
+                    <th scope="col">SALDO</th>
+                    <th scope="col">DT SITUAÇÃO</th>
+                    <th scope="col">AÇÕES</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="table__row table__row--empty">
+                    <td class="table__cell" colspan="8">nada a exibir por aqui.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="table-footer">
+              <div class="pager" role="navigation" aria-label="Paginação">
+                <button class="pager__btn" type="button" aria-disabled="true" disabled>
+                  <i data-feather="chevron-left" aria-hidden="true"></i>
+                </button>
+                <span class="pager__label">pág. 1 de 1</span>
+                <button class="pager__btn" type="button" aria-disabled="true" disabled>
+                  <i data-feather="chevron-right" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div class="table-footer">
-            <div class="pager" role="navigation" aria-label="Paginação">
-              <button class="pager__btn" type="button" aria-disabled="true" disabled>
-                <i data-feather="chevron-left" aria-hidden="true"></i>
-              </button>
-              <span class="pager__label">pág. 1 de 1</span>
-              <button class="pager__btn" type="button" aria-disabled="true" disabled>
-                <i data-feather="chevron-right" aria-hidden="true"></i>
-              </button>
+          <div
+            class="table-panel table-panel--hidden"
+            id="occurrencesTablePanel"
+            role="tabpanel"
+            aria-labelledby="occurrencesTableTab"
+            data-table-panel="occurrences"
+            hidden
+          >
+            <div class="table">
+              <table
+                class="data-table"
+                aria-label="Tabela de planos com ocorrências"
+              >
+                <thead class="table__head">
+                  <tr>
+                    <th scope="col">PLANO</th>
+                    <th scope="col">CNPJ</th>
+                    <th scope="col">RAZAO SOCIAL</th>
+                    <th scope="col">SITUAÇÃO</th>
+                    <th scope="col">DIAS EM ATRASO</th>
+                    <th scope="col">SALDO</th>
+                    <th scope="col">DT SITUAÇÃO</th>
+                    <th scope="col">AÇÕES</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="table__row table__row--empty">
+                    <td class="table__cell" colspan="8">
+                      nenhuma ocorrência por aqui.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="table-footer">
+              <div class="pager" role="navigation" aria-label="Paginação de ocorrências">
+                <button class="pager__btn" type="button" aria-disabled="true" disabled>
+                  <i data-feather="chevron-left" aria-hidden="true"></i>
+                </button>
+                <span class="pager__label">pág. 1 de 1</span>
+                <button class="pager__btn" type="button" aria-disabled="true" disabled>
+                  <i data-feather="chevron-right" aria-hidden="true"></i>
+                </button>
+              </div>
             </div>
           </div>
 
