@@ -29,7 +29,7 @@ VENV_DIRECTORY_NAMES: tuple[str, ...] = (".venv",)
 
 def should_skip_directory(path: Path) -> bool:
     """Return True when the directory should be skipped during traversal."""
-    return any(part in VENV_DIRECTORY_NAMES for part in path.parts)
+    return path.name in VENV_DIRECTORY_NAMES
 
 
 def remove_directory(path: Path) -> None:
