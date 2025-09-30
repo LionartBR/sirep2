@@ -45,6 +45,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const PIPELINE_ENDPOINT = '/api/pipeline';
   const PLANS_ENDPOINT = '/api/plans';
+  const DEFAULT_PLAN_PAGE_SIZE = 50;
+  const tableSearchState = {
+    plans: '',
+    occurrences: '',
+  };
+  let currentPlansSearchTerm = '';
+  let currentOccurrencesSearchTerm = '';
+  let plansFetchController = null;
   const currencyFormatter = new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
@@ -151,7 +159,11 @@ document.addEventListener('DOMContentLoaded', () => {
     plansTableBody.innerHTML = '';
     const plans = Array.isArray(items) ? items : [];
     if (!plans.length) {
-      renderPlansPlaceholder('nada a exibir por aqui.');
+      if (currentPlansSearchTerm) {
+        renderPlansPlaceholder('nenhum plano encontrado para a busca.', 'empty');
+      } else {
+        renderPlansPlaceholder('nada a exibir por aqui.');
+      }
       return;
     }
 
@@ -203,6 +215,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
+  const buildPlansRequestUrl = () => {
+    const baseUrl =
+      window.location.origin && window.location.origin !== 'null'
+        ? window.location.origin
+        : window.location.href;
+    const url = new URL(PLANS_ENDPOINT, baseUrl);
+    url.searchParams.set('limit', String(DEFAULT_PLAN_PAGE_SIZE));
+    url.searchParams.set('offset', '0');
+    if (currentPlansSearchTerm) {
+      url.searchParams.set('q', currentPlansSearchTerm);
+    }
+    return url.toString();
+  };
+
   const refreshPlans = async ({ showLoading } = {}) => {
     if (!plansTableBody || isFetchingPlans) {
       return;
@@ -214,8 +240,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     isFetchingPlans = true;
     try {
-      const response = await fetch(PLANS_ENDPOINT, {
+      if (plansFetchController) {
+        plansFetchController.abort();
+      }
+      plansFetchController = new AbortController();
+      const response = await fetch(buildPlansRequestUrl(), {
         headers: { Accept: 'application/json' },
+        signal: plansFetchController.signal,
       });
       if (!response.ok) {
         throw new Error('Não foi possível carregar os planos.');
@@ -225,11 +256,15 @@ document.addEventListener('DOMContentLoaded', () => {
       renderPlanRows(items);
       plansLoaded = true;
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        return;
+      }
       console.error('Erro ao carregar planos.', error);
       if (!plansLoaded) {
         renderPlansPlaceholder('Não foi possível carregar os planos.', 'error');
       }
     } finally {
+      plansFetchController = null;
       isFetchingPlans = false;
     }
   };
@@ -403,6 +438,179 @@ document.addEventListener('DOMContentLoaded', () => {
       return '';
     }
     return value.replace(/\D+/g, '');
+  };
+
+  const searchForms = Array.from(document.querySelectorAll('[data-table-search]'));
+
+  const findSearchForm = (target) =>
+    searchForms.find((form) => form?.dataset?.tableSearch === target) ?? null;
+
+  const updateSearchFormVisibility = (target) => {
+    if (!target) {
+      return;
+    }
+    searchForms.forEach((form) => {
+      if (!form) {
+        return;
+      }
+      const isActive = form.dataset.tableSearch === target;
+      form.hidden = !isActive;
+      form.setAttribute('aria-hidden', String(!isActive));
+    });
+  };
+
+  const syncSearchInputValue = (target) => {
+    if (!target) {
+      return;
+    }
+    const form = findSearchForm(target);
+    if (!form) {
+      return;
+    }
+    const input = form.querySelector('input');
+    if (!input) {
+      return;
+    }
+    const value = tableSearchState[target] ?? '';
+    if (input.value !== value) {
+      input.value = value;
+    }
+  };
+
+  const applyOccurrencesFilter = (term) => {
+    const occurrencesPanel = document.getElementById('occurrencesTablePanel');
+    if (!occurrencesPanel) {
+      return;
+    }
+
+    const tbody = occurrencesPanel.querySelector('tbody');
+    if (!tbody) {
+      return;
+    }
+
+    const normalized = (term || '').trim();
+    const normalizedLower = normalized.toLowerCase();
+    const digitsTerm = stripDigits(normalized);
+    const isDocumentSearch = digitsTerm.length >= 11 && digitsTerm.length <= 14;
+    const isNumericSearch =
+      digitsTerm === normalized && digitsTerm.length > 0 && digitsTerm.length < 11;
+
+    const rows = Array.from(tbody.rows ?? []);
+    let visibleRows = 0;
+
+    rows.forEach((row) => {
+      if (!row || row.classList.contains('table__row--empty')) {
+        return;
+      }
+
+      const planCell = row.cells?.[0];
+      const documentCell = row.cells?.[1];
+      const nameCell = row.cells?.[2];
+
+      const planDigits = stripDigits(planCell?.textContent ?? '');
+      const documentDigits = stripDigits(documentCell?.textContent ?? '');
+      const nameText = (nameCell?.textContent ?? '').toLowerCase();
+
+      let matches = true;
+      if (normalized) {
+        if (isDocumentSearch) {
+          matches = documentDigits === digitsTerm;
+        } else if (isNumericSearch) {
+          matches = planDigits.startsWith(digitsTerm);
+        } else {
+          matches = nameText.includes(normalizedLower);
+        }
+      }
+
+      row.hidden = !matches;
+      if (matches) {
+        visibleRows += 1;
+      }
+    });
+
+    const placeholderRow = rows.find((row) => row.classList.contains('table__row--empty'));
+    if (placeholderRow) {
+      const placeholderCell = placeholderRow.cells?.[0];
+      if (placeholderCell) {
+        placeholderCell.textContent =
+          visibleRows > 0 || !normalized
+            ? 'nenhuma ocorrência por aqui.'
+            : 'nenhuma ocorrência encontrada para a busca.';
+      }
+      placeholderRow.hidden = visibleRows > 0;
+    }
+  };
+
+  const handleOccurrencesSearch = (term) => {
+    const normalized = (term || '').trim();
+    currentOccurrencesSearchTerm = normalized;
+    tableSearchState.occurrences = normalized;
+    applyOccurrencesFilter(normalized);
+  };
+
+  const handlePlansSearch = (term, { forceRefresh = false } = {}) => {
+    const normalized = (term || '').trim();
+    if (!forceRefresh && normalized === currentPlansSearchTerm) {
+      return;
+    }
+    currentPlansSearchTerm = normalized;
+    tableSearchState.plans = normalized;
+    void refreshPlans({ showLoading: true });
+  };
+
+  const plansSearchForm = document.getElementById('plansSearchForm');
+  const plansSearchInput = document.getElementById('plansSearchInput');
+  const occurrencesSearchForm = document.getElementById('occurrencesSearchForm');
+  const occurrencesSearchInput = document.getElementById('occurrencesSearchInput');
+
+  if (plansSearchForm) {
+    plansSearchForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      handlePlansSearch(plansSearchInput?.value ?? '', { forceRefresh: true });
+    });
+  }
+
+  if (plansSearchInput) {
+    plansSearchInput.addEventListener('input', (event) => {
+      const value = event.target?.value ?? '';
+      tableSearchState.plans = value;
+      if (!value.trim() && currentPlansSearchTerm) {
+        handlePlansSearch('', { forceRefresh: true });
+      }
+    });
+  }
+
+  if (occurrencesSearchForm) {
+    occurrencesSearchForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      handleOccurrencesSearch(occurrencesSearchInput?.value ?? '');
+    });
+  }
+
+  if (occurrencesSearchInput) {
+    occurrencesSearchInput.addEventListener('input', (event) => {
+      const value = event.target?.value ?? '';
+      tableSearchState.occurrences = value;
+      handleOccurrencesSearch(value);
+    });
+  }
+
+  const setupOccurrencesSearchObserver = () => {
+    const occurrencesPanel = document.getElementById('occurrencesTablePanel');
+    if (!occurrencesPanel) {
+      return;
+    }
+
+    const observer = new MutationObserver(() => {
+      if (currentOccurrencesSearchTerm) {
+        applyOccurrencesFilter(currentOccurrencesSearchTerm);
+      }
+    });
+
+    observer.observe(occurrencesPanel, {
+      childList: true,
+      subtree: true,
+    });
   };
 
   const tooltipTimeouts = new WeakMap();
@@ -682,6 +890,12 @@ document.addEventListener('DOMContentLoaded', () => {
           panel.setAttribute('hidden', 'hidden');
         }
       });
+
+      updateSearchFormVisibility(target);
+      syncSearchInputValue(target);
+      if (target === 'occurrences') {
+        applyOccurrencesFilter(currentOccurrencesSearchTerm);
+      }
     };
 
     tabs.forEach((tab, index) => {
@@ -702,7 +916,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const activeTab = tabs.find((tab) => tab.classList.contains('section-switch--active'));
-    activateTable(activeTab?.dataset.tableTarget || tabs[0].dataset.tableTarget);
+    const initialTarget = activeTab?.dataset.tableTarget || tabs[0].dataset.tableTarget;
+    activateTable(initialTarget);
   };
 
   toggleButtons({ start: true, pause: false, cont: false });
@@ -950,6 +1165,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateAccordionState(false);
   setupCopyableCells();
   setupDocumentObserver();
+  setupOccurrencesSearchObserver();
   setupOccurrencesCounter();
   setupTableSwitching();
 });
