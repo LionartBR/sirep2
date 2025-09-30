@@ -525,10 +525,14 @@ input:focus {
 
 .filters__field {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
   font-size: 14px;
   color: var(--muted);
+}
+
+.filters__label {
+  white-space: nowrap;
 }
 
 .filters__input-wrapper {
@@ -564,12 +568,6 @@ input:focus {
   justify-content: center;
   color: var(--primary);
   cursor: pointer;
-}
-
-.logs-panel__label {
-  font-size: 14px;
-  color: var(--muted);
-  font-weight: 600;
 }
 
 .accordion {
