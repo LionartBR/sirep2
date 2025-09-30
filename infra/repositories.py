@@ -48,10 +48,13 @@ class LookupCache:
             }
 
             cur.execute("SELECT codigo, id FROM ref.situacao_plano")
-            situacoes = {
-                str(codigo).strip().upper(): str(ident)
-                for codigo, ident in cur.fetchall()
-            }
+            situacoes: dict[str, str] = {}
+            for codigo, ident in cur.fetchall():
+                codigo_raw = str(codigo).strip().upper()
+                ident_str = str(ident)
+                situacoes[codigo_raw] = ident_str
+                codigo_normalizado = PlansRepository._normalizar_situacao(codigo_raw)
+                situacoes[codigo_normalizado] = ident_str
 
             cur.execute("SELECT codigo, id FROM ref.tipo_inscricao")
             tipos_inscricao = {
@@ -345,16 +348,31 @@ class PlansRepository:
         lookup_cache = lookup or self._ensure_lookups()
         situacao_id = lookup_cache.situacoes_plano.get(codigo)
 
-        if not situacao_id:
-            with self._conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    "SELECT id FROM ref.situacao_plano WHERE codigo = %s",
-                    (codigo,),
-                )
-                row = cur.fetchone()
-            if row:
-                situacao_id = str(row["id"])
+        if not situacao_id and texto != codigo:
+            situacao_id = lookup_cache.situacoes_plano.get(texto)
+            if situacao_id:
                 lookup_cache.situacoes_plano[codigo] = situacao_id
+
+        if not situacao_id:
+            candidatos = [codigo]
+            if texto != codigo:
+                candidatos.append(texto)
+
+            with self._conn.cursor(row_factory=dict_row) as cur:
+                for candidato in candidatos:
+                    cur.execute(
+                        "SELECT id FROM ref.situacao_plano WHERE codigo = %s",
+                        (candidato,),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        situacao_id = str(row["id"])
+                        break
+
+            if situacao_id:
+                lookup_cache.situacoes_plano[codigo] = situacao_id
+                if texto != codigo:
+                    lookup_cache.situacoes_plano[texto] = situacao_id
 
         if not situacao_id:
             raise RuntimeError(f"Situação não cadastrada: {codigo}")
@@ -613,6 +631,8 @@ class PlansRepository:
         if "LIQ" in normalizado:
             return "LIQUIDADO"
         if normalizado.startswith("P.") or normalizado.startswith("P ") or normalizado.startswith("PRESC"):
+            return "P_RESCISAO"
+        if "P_RESCISAO" in normalizado or normalizado.startswith("P_RESC"):
             return "P_RESCISAO"
         if "P. RESCISAO" in normalizado:
             return "P_RESCISAO"
