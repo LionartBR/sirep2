@@ -95,6 +95,12 @@ def _tokens_indicate_passivel_rescisao(tokens: list[str]) -> bool:
             continue
         if token.startswith("RESC") and token not in {"RESC", "RESCISAO"}:
             return False
+        if token.startswith("LIQ") or token == "GRDE" or token.startswith("ESPECIAL"):
+            return False
+        if saw_passivel_component:
+            # After identifying a passível component we allow extra descriptors
+            # (e.g. "EM", "ANALISE", "DEFERIDA") without invalidating the match.
+            continue
         return False
 
     has_abbreviation = any(token.startswith("PRESC") for token in tokens)

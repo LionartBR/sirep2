@@ -22,6 +22,8 @@ from services.gestao_base.models import GestaoBaseData, PlanRowEnriched
         "Passível Rescisão",
         "Passivel de Rescisao",
         "PASSIVELDERESCISAO",
+        "Passível de Rescisão Deferida",
+        "Passivel Rescisao Em Analise",
     ],
 )
 def test_should_not_register_occurrence_for_passivel_variations(situacao: str) -> None:
