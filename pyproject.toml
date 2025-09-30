@@ -7,7 +7,7 @@ name = "sirep"
 version = "0.1.0"
 description = "Automation services and API for the SIREP project."
 requires-python = ">=3.10"
-authors = [{ name = "SIREP Team" }]
+authors = [{ name = "CEFGD/RJ" }]
 dependencies = [
     "fastapi>=0.115,<0.116",
     "psycopg[binary]>=3.2,<4.0",
