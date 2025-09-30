@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from infra.repositories import PlanDTO, PlansRepository
+from infra.repositories import LookupCache, PlanDTO, PlansRepository
 
 
 def _make_cursor(return_value: Any | None = None) -> tuple[MagicMock, MagicMock]:
@@ -119,4 +119,46 @@ def test_upsert_registra_historico_quando_informado():
         "situacao_anterior": "EM_DIA",
         "dt_situacao_atual": date(2024, 5, 1),
     }
+
+
+def test_resolver_tipo_plano_utiliza_cache_sem_ir_ao_banco():
+    connection = MagicMock()
+    cache = LookupCache(
+        tipos_plano={"EXISTENTE": "tipo-1"},
+        resolucoes={},
+        situacoes_plano={},
+        tipos_inscricao={},
+        bases_fgts={},
+    )
+
+    repo = PlansRepository(connection, lookup_cache=cache)
+    resultado = repo._resolver_tipo_plano("Existente")
+
+    assert resultado == "tipo-1"
+    connection.cursor.assert_not_called()
+
+
+def test_resolver_tipo_plano_atualiza_cache_quando_insere():
+    cursor = MagicMock()
+    cursor.fetchone.side_effect = [None, {"id": "novo-id"}]
+    cursor_cm = MagicMock()
+    cursor_cm.__enter__.return_value = cursor
+    cursor_cm.__exit__.return_value = False
+
+    connection = MagicMock()
+    connection.cursor.return_value = cursor_cm
+    cache = LookupCache(
+        tipos_plano={},
+        resolucoes={},
+        situacoes_plano={},
+        tipos_inscricao={},
+        bases_fgts={},
+    )
+
+    repo = PlansRepository(connection, lookup_cache=cache)
+    resultado = repo._resolver_tipo_plano("Novo Plano")
+
+    assert resultado == "novo-id"
+    assert cache.tipos_plano["NOVO_PLANO"] == "novo-id"
+    assert cursor.execute.call_count == 2
 
