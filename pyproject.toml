@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sirep"
+version = "0.1.0"
+description = "Automation services and API for the SIREP project."
+requires-python = ">=3.10"
+authors = [{ name = "SIREP Team" }]
+dependencies = [
+    "fastapi>=0.115,<0.116",
+    "psycopg[binary]>=3.2,<4.0",
+    "psycopg-pool>=3.2,<4.0",
+    "pydantic>=2.7,<3.0",
+    "uvicorn[standard]>=0.30,<0.32",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "api",
+    "app",
+    "domain",
+    "infra",
+    "services",
+    "shared",
+    "sirep",
+]
+exclude = ["tests", "tests.*", "scripts", "scripts.*"]
+
+[tool.setuptools.package-data]
+"" = ["ui/**"]
