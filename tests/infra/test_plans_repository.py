@@ -27,6 +27,30 @@ def _make_cursor(return_value: Any | None = None) -> tuple[MagicMock, MagicMock]
     return cursor, cursor_cm
 
 
+def test_lookup_cache_load_preserves_situacao_codes():
+    cursor = MagicMock()
+    cursor.fetchall.side_effect = [
+        [("tipo-a", "tipo-1")],
+        [("resol", "res-1")],
+        [("EM_DIA", "sit-1"), ("P_RESCISAO", "sit-2")],
+        [("CNPJ", "doc-1")],
+        [("BASE", "base-1")],
+    ]
+    cursor_cm = MagicMock()
+    cursor_cm.__enter__.return_value = cursor
+    cursor_cm.__exit__.return_value = False
+
+    connection = MagicMock()
+    connection.cursor.return_value = cursor_cm
+
+    cache = LookupCache.load(connection)
+
+    assert cache.situacoes_plano == {
+        "EM_DIA": "sit-1",
+        "P_RESCISAO": "sit-2",
+    }
+
+
 def test_registrar_historico_insere_quando_situacao_altera():
     connection = MagicMock()
     cursor, cursor_cm = _make_cursor()
