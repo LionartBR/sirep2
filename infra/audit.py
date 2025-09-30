@@ -191,7 +191,11 @@ def start_job_step(
     normalized_message = _normalize_message(message)
     payload = _load_job_payload(conn, job)
 
-    steps = payload.setdefault("steps", {})
+    steps_value = payload.get("steps")
+    if not isinstance(steps_value, dict):
+        steps_value = {}
+    steps = steps_value
+    payload["steps"] = steps
     step_entry = steps.get(step_code, {})
     step_entry.update(
         {
@@ -244,7 +248,11 @@ def finish_job_step(
     normalized_message = _normalize_message(message)
     payload = _load_job_payload(conn, job)
 
-    steps = payload.setdefault("steps", {})
+    steps_value = payload.get("steps")
+    if not isinstance(steps_value, dict):
+        steps_value = {}
+    steps = steps_value
+    payload["steps"] = steps
     step_entry = steps.get(step_code, {})
     step_entry["status"] = final_status
     step_entry["finished_at"] = _utcnow_iso()
