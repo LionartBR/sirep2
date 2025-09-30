@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from psycopg.rows import dict_row
 from psycopg.pq import TransactionStatus
@@ -49,6 +49,61 @@ def test_lookup_cache_load_preserves_situacao_codes():
         "EM_DIA": "sit-1",
         "P_RESCISAO": "sit-2",
     }
+
+
+def test_resolver_situacao_usa_cache_com_codigo_bruto():
+    connection = MagicMock()
+    cache = LookupCache(
+        tipos_plano={},
+        resolucoes={},
+        situacoes_plano={"P. RESCISAO": "sit-2"},
+        tipos_inscricao={},
+        bases_fgts={},
+    )
+
+    repo = PlansRepository(connection, lookup_cache=cache)
+
+    situacao_id, codigo = repo._resolver_situacao("P. Rescisao", lookup=cache)
+
+    assert situacao_id == "sit-2"
+    assert codigo == "P_RESCISAO"
+    assert cache.situacoes_plano["P_RESCISAO"] == "sit-2"
+
+
+def test_resolver_situacao_busca_codigo_bruto_no_banco():
+    connection = MagicMock()
+    cursor, cursor_cm = _make_cursor()
+    cursor.fetchone.side_effect = [None, {"id": "sit-3"}]
+    connection.cursor.return_value = cursor_cm
+
+    cache = LookupCache(
+        tipos_plano={},
+        resolucoes={},
+        situacoes_plano={},
+        tipos_inscricao={},
+        bases_fgts={},
+    )
+
+    repo = PlansRepository(connection, lookup_cache=cache)
+
+    situacao_id, codigo = repo._resolver_situacao("P. Rescisao", lookup=cache)
+
+    assert situacao_id == "sit-3"
+    assert codigo == "P_RESCISAO"
+    assert cache.situacoes_plano["P_RESCISAO"] == "sit-3"
+    assert cache.situacoes_plano["P. RESCISAO"] == "sit-3"
+
+    connection.cursor.assert_called_once_with(row_factory=dict_row)
+    assert cursor.execute.call_args_list == [
+        call(
+            "SELECT id FROM ref.situacao_plano WHERE codigo = %s",
+            ("P_RESCISAO",),
+        ),
+        call(
+            "SELECT id FROM ref.situacao_plano WHERE codigo = %s",
+            ("P. RESCISAO",),
+        ),
+    ]
 
 
 def test_registrar_historico_insere_quando_situacao_altera():
