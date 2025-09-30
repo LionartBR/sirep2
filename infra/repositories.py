@@ -64,6 +64,8 @@ class PlansRepository:
         campos = dict(campos)
         parcelas_brutas = list(campos.pop("parcelas_atraso", []) or [])
 
+        situacao_anterior = campos.pop("situacao_anterior", None)
+
         empregador_id = self._resolver_empregador(campos)
         situacao_id, situacao_codigo = self._resolver_situacao(campos.get("situacao_atual"))
         tipo_id = self._resolver_tipo_plano(campos.get("tipo"))
@@ -130,6 +132,14 @@ class PlansRepository:
             raise RuntimeError("Falha ao inserir/atualizar plano")
 
         plano_id = str(resultado["id"])
+
+        self._registrar_historico_situacao(
+            plano_id=plano_id,
+            situacao_id=situacao_id,
+            situacao_codigo=situacao_codigo,
+            situacao_anterior=situacao_anterior,
+            dt_situacao_atual=dt_situacao_atual,
+        )
 
         parcelas_preparadas = self._preparar_parcelas(parcelas_brutas)
         if parcelas_preparadas:
@@ -246,6 +256,68 @@ class PlansRepository:
 
         return str(inserido["id"])
 
+    def _registrar_historico_situacao(
+        self,
+        *,
+        plano_id: str,
+        situacao_id: Optional[str],
+        situacao_codigo: Optional[str],
+        situacao_anterior: Optional[str],
+        dt_situacao_atual: Any,
+        observacao: str = "Gestão da Base",
+    ) -> None:
+        if not situacao_id:
+            return
+
+        atual = (situacao_codigo or "").strip().upper()
+        anterior = (situacao_anterior or "").strip().upper()
+        if atual and anterior and atual == anterior:
+            return
+
+        mudou_em = self._format_effective_timestamp(dt_situacao_atual)
+
+        if not anterior:
+            with self._conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT situacao_plano_id, mudou_em
+                      FROM app.plano_situacao_hist
+                     WHERE plano_id = %s
+                     ORDER BY mudou_em DESC
+                     LIMIT 1
+                    """,
+                    (plano_id,),
+                )
+                ultimo = cur.fetchone()
+            if ultimo and str(ultimo.get("situacao_plano_id")) == situacao_id:
+                if not mudou_em:
+                    return
+                ultimo_mudou_em = ultimo.get("mudou_em")
+                ultima_data = self._extract_date_from_timestamp(ultimo_mudou_em)
+                nova_data = self._extract_date_from_timestamp(mudou_em)
+                if ultima_data and nova_data and ultima_data == nova_data:
+                    return
+
+        observacao_txt = (observacao or "").strip() or "Gestão da Base"
+
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO app.plano_situacao_hist (
+                    tenant_id, plano_id, situacao_plano_id, mudou_em, mudou_por, observacao
+                )
+                VALUES (
+                    app.current_tenant_id(),
+                    %s,
+                    %s,
+                    %s::timestamptz,
+                    app.current_user_id(),
+                    %s
+                )
+                """,
+                (plano_id, situacao_id, mudou_em, observacao_txt),
+            )
+
     def _resolver_resolucao(self, resolucao_raw: Any) -> Optional[str]:
         if not resolucao_raw:
             return None
@@ -360,6 +432,34 @@ class PlansRepository:
             return int(candidato)
         except ValueError:
             return None
+
+    @staticmethod
+    def _format_effective_timestamp(valor: Any) -> Optional[str]:
+        if valor is None:
+            return None
+        if isinstance(valor, datetime):
+            return valor.isoformat()
+        if isinstance(valor, date):
+            return valor.isoformat()
+        texto = str(valor).strip()
+        return texto or None
+
+    @staticmethod
+    def _extract_date_from_timestamp(valor: Any) -> Optional[date]:
+        if valor is None:
+            return None
+        if isinstance(valor, datetime):
+            return valor.date()
+        if isinstance(valor, date):
+            return valor
+        texto = str(valor).strip()
+        if not texto:
+            return None
+        try:
+            parsed = datetime.fromisoformat(texto)
+        except ValueError:
+            return None
+        return parsed.date()
 
     @staticmethod
     def _parse_vencimento(valor: Any) -> Optional[date]:
