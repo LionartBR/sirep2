@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import math
+import re
+import unicodedata
 from datetime import UTC, datetime
 from typing import Any, Optional
 
@@ -48,20 +50,63 @@ def _infer_plan_status(situacao: str | None) -> PlanStatus | None:
     return PlanStatus.PASSIVEL_RESC
 
 
-def _should_register_occurrence(situacao: str | None) -> bool:
+def _normalize_situacao_tokens(situacao: str | None) -> list[str]:
+    """Converte a situação em tokens maiúsculos sem acentuação."""
+
     texto = (situacao or "").strip()
     if not texto:
+        return []
+
+    decomposed = unicodedata.normalize("NFKD", texto)
+    ascii_only = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    tokens = [
+        token
+        for token in re.split(r"[^A-Z0-9]+", ascii_only.upper())
+        if token
+    ]
+    return tokens
+
+
+def _tokens_indicate_passivel_rescisao(tokens: list[str]) -> bool:
+    """Retorna ``True`` se os tokens representam "passível rescisão"."""
+
+    if not tokens:
         return False
-    normalizado = texto.upper()
-    if "ESPECIAL" in normalizado:
-        return True
-    if normalizado.startswith("RESC"):
-        return True
-    if normalizado.startswith("LIQ"):
-        return True
-    if "GRDE" in normalizado:
-        return True
-    return False
+
+    saw_passivel = False
+    saw_passivel_component = False
+
+    for token in tokens:
+        if token == "P":
+            saw_passivel_component = True
+            continue
+        if token in {"DE", "DA", "DO"}:
+            continue
+        if token.startswith("PASSIVEL"):
+            saw_passivel = True
+            if "RESC" in token:
+                saw_passivel_component = True
+            continue
+        if token.startswith("PRESC"):
+            saw_passivel_component = True
+            continue
+        if token in {"RESC", "RESCISAO"}:
+            saw_passivel_component = True
+            continue
+        if token.startswith("RESC") and token not in {"RESC", "RESCISAO"}:
+            return False
+        return False
+
+    has_abbreviation = any(token.startswith("PRESC") for token in tokens)
+    prefix_is_p = tokens[0] == "P"
+    return saw_passivel_component and (saw_passivel or has_abbreviation or prefix_is_p)
+
+
+def _should_register_occurrence(situacao: str | None) -> bool:
+    tokens = _normalize_situacao_tokens(situacao)
+    if not tokens:
+        return False
+    return not _tokens_indicate_passivel_rescisao(tokens)
 
 
 def format_summary(stats: dict[str, int]) -> str:

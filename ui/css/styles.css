@@ -485,7 +485,7 @@ input:focus {
   color: #ffffff;
 }
 
-.section-switch--active .section-switch__count {
+.section-switch--active .section-switch__count:not(.section-switch__count--alert) {
   color: inherit;
 }
 
@@ -493,6 +493,11 @@ input:focus {
   margin-left: 8px;
   font-size: 13px;
   color: var(--primary);
+}
+
+.section-switch__count--alert {
+  color: #c53030;
+  font-weight: 600;
 }
 
 .badge {
