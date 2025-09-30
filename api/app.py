@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
+from starlette.types import Scope
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -14,8 +15,8 @@ class NoCacheStaticFiles(StaticFiles):
     def is_not_modified(self, *args, **kwargs) -> bool:  # pragma: no cover - comportamento fixo
         return False
 
-    def get_response(self, path: str, scope) -> Response:  # type: ignore[override]
-        response = super().get_response(path, scope)
+    async def get_response(self, path: str, scope: Scope) -> Response:  # type: ignore[override]
+        response = await super().get_response(path, scope)
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response
 
