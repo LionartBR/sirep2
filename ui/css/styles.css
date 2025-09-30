@@ -461,14 +461,12 @@ input:focus {
   padding: 8px 16px;
   border-radius: 999px;
   cursor: pointer;
-  transition: color 0.2s ease, background-color 0.2s ease,
-    box-shadow 0.2s ease;
+  transition: color 0.2s ease, background-color 0.2s ease;
 }
 
 .section-switch--active {
   background: var(--primary);
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(11, 95, 168, 0.25);
 }
 
 .section-switch:hover,
@@ -485,7 +483,6 @@ input:focus {
 .section-switch--active {
   background: var(--primary);
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(11, 95, 168, 0.25);
 }
 
 .section-switch--active .section-switch__count {
