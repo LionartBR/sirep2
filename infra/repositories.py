@@ -283,7 +283,7 @@ class PlansRepository:
                     SELECT situacao_plano_id, mudou_em
                       FROM app.plano_situacao_hist
                      WHERE plano_id = %s
-                     ORDER BY mudou_em DESC
+                     ORDER BY mudou_em DESC NULLS LAST
                      LIMIT 1
                     """,
                     (plano_id,),
