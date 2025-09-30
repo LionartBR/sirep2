@@ -476,9 +476,16 @@ input:focus {
   color: var(--primary);
 }
 
+
 .section-switch--active:hover,
 .section-switch--active:focus {
   color: #ffffff;
+}
+
+.section-switch--active {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(11, 95, 168, 0.25);
 }
 
 .section-switch--active .section-switch__count {
