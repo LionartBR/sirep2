@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 from .constants import MSG_FIM_BLOCO, MSG_ULTIMA_PAGINA, RESOLUCAO_DESCARTAR
 from .models import GestaoBaseData, PlanRow, ProgressCallback, PipelineAuditHooks
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 def run_pipeline(
     pw,
     senha: str,
-    portal_provider: Optional[Callable[[], List[dict]]] = None,
+    portal_provider: Optional[Callable[[], list[dict]]] = None,
     *,
     progress: Optional[ProgressCallback] = None,
     audit_hooks: Optional[PipelineAuditHooks] = None,
@@ -37,8 +37,8 @@ def run_pipeline(
     open_e555(pw)
 
     blocos = 0
-    raw_lines: List[str] = []
-    all_rows: List[PlanRow] = []
+    raw_lines: list[str] = []
+    all_rows: list[PlanRow] = []
 
     capture_step = "CAPTURA_PLANOS"
     if audit_hooks:
@@ -119,7 +119,7 @@ def run_pipeline(
 
     tipos_map = build_tipo_map(portal_po) if portal_po else {}
 
-    dados_ajustados: List[PlanRow] = []
+    dados_ajustados: list[PlanRow] = []
     try:
         dados_ajustados = (
             aplica_sit_especial(dados_filtrados, tipos_map)
