@@ -419,11 +419,15 @@ input:focus {
   overflow: hidden;
 }
 
+.progress--hidden {
+  display: none;
+}
+
 .progress__bar {
-  width: 35%;
+  width: 0%;
   height: 100%;
   background: linear-gradient(90deg, #ef7d00, #f7a600);
-  transition: background 0.3s ease-in-out;
+  transition: width 0.5s linear, background 0.3s ease-in-out;
 }
 
 .progress__bar--complete {
