@@ -5,6 +5,19 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """Serve arquivos estáticos sempre ignorando cache do navegador."""
+
+    def is_not_modified(self, *args, **kwargs) -> bool:  # pragma: no cover - comportamento fixo
+        return False
+
+    def get_response(self, path: str, scope) -> Response:  # type: ignore[override]
+        response = super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
 
 from services.orchestrator import PipelineOrchestrator
 
@@ -22,7 +35,7 @@ def create_app() -> FastAPI:
     app.state.pipeline_orchestrator = PipelineOrchestrator()
 
     static_dir = Path(__file__).resolve().parents[1] / "ui"
-    app.mount("/app", StaticFiles(directory=static_dir, html=True), name="app")
+    app.mount("/app", NoCacheStaticFiles(directory=static_dir, html=True), name="app")
 
     @app.get("/", include_in_schema=False)
     async def root() -> RedirectResponse:
