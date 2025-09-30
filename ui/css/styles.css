@@ -124,7 +124,7 @@ input:focus {
 
 .card {
   width: 100%;
-  max-width: 960px;
+  max-width: 1040px;
   background: var(--card-bg);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
