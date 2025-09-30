@@ -363,7 +363,9 @@ input:focus {
 .login-form__feedback {
   margin: 0;
   font-size: 14px;
-  color: #c0392b;
+  color: #ff1a1a;
+  font-weight: 700;
+  text-align: center;
 }
 
 .login-form__actions {
