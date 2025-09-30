@@ -470,28 +470,16 @@ input:focus {
   padding: 8px 16px;
   border-radius: 999px;
   cursor: pointer;
-  transition: color 0.2s ease, background-color 0.2s ease;
-}
-
-.section-switch--active {
-  background: var(--primary);
-  color: #ffffff;
+  transition: color 0.2s ease;
 }
 
 .section-switch:hover,
 .section-switch:focus {
-  color: var(--primary);
-}
-
-
-.section-switch--active:hover,
-.section-switch--active:focus {
-  color: #ffffff;
+  color: var(--brand-grad-mid);
 }
 
 .section-switch--active {
-  background: var(--primary);
-  color: #ffffff;
+  color: var(--brand-grad-mid);
 }
 
 .section-switch--active .section-switch__count:not(.section-switch__count--alert) {
@@ -501,7 +489,7 @@ input:focus {
 .section-switch__count {
   margin-left: 8px;
   font-size: 13px;
-  color: var(--primary);
+  color: inherit;
 }
 
 .section-switch__count--alert {
