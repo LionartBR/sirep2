@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -27,12 +27,7 @@ class PipelineState:
     def copy(self) -> "PipelineState":
         """Return an immutable copy of the current state."""
 
-        return PipelineState(
-            status=self.status,
-            started_at=self.started_at,
-            finished_at=self.finished_at,
-            message=self.message,
-        )
+        return replace(self)
 
 
 __all__ = ["PipelineState", "PipelineStatus"]
