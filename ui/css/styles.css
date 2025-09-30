@@ -548,6 +548,72 @@ input:focus {
   border-bottom: 1px solid var(--border);
 }
 
+.table__cell--copyable {
+  position: relative;
+  padding: 0;
+}
+
+.table__copy-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: var(--primary);
+  cursor: pointer;
+  position: relative;
+  transition: color 0.2s ease;
+}
+
+.table__copy-trigger:hover,
+.table__copy-trigger:focus {
+  color: #0a4c86;
+  text-decoration: underline;
+}
+
+.table__copy-trigger::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 16px;
+  background: #1f2937;
+  color: #ffffff;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 2;
+}
+
+.table__copy-trigger::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 24px;
+  width: 8px;
+  height: 8px;
+  background: #1f2937;
+  transform: translateY(4px) rotate(45deg);
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.table__copy-trigger[data-tooltip-visible='true']::after,
+.table__copy-trigger[data-tooltip-visible='true']::before {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .table-footer {
   display: flex;
   justify-content: space-between;

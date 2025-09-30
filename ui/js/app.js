@@ -212,6 +212,173 @@ document.addEventListener('DOMContentLoaded', () => {
     return String(value ?? '');
   };
 
+  const stripDigits = (value) => {
+    if (typeof value !== 'string') {
+      return '';
+    }
+    return value.replace(/\D+/g, '');
+  };
+
+  const tooltipTimeouts = new WeakMap();
+
+  const showCopyTooltip = (button) => {
+    if (!button) {
+      return;
+    }
+
+    const previousTimeout = tooltipTimeouts.get(button);
+    if (typeof previousTimeout === 'number') {
+      window.clearTimeout(previousTimeout);
+    }
+
+    button.setAttribute('data-tooltip-visible', 'true');
+
+    const timeoutHandle = window.setTimeout(() => {
+      button.removeAttribute('data-tooltip-visible');
+      tooltipTimeouts.delete(button);
+    }, 1500);
+
+    tooltipTimeouts.set(button, timeoutHandle);
+  };
+
+  const copyToClipboard = async (value) => {
+    if (!value) {
+      return false;
+    }
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+    } catch (error) {
+      console.warn('Falha ao copiar usando clipboard API.', error);
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'absolute';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+
+    try {
+      const success = document.execCommand('copy');
+      return success;
+    } catch (error) {
+      console.error('Não foi possível copiar o valor.', error);
+      return false;
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  };
+
+  const enhanceCopyableCell = (cell, { label }) => {
+    if (!cell) {
+      return;
+    }
+
+    const existingButton = cell.querySelector('.table__copy-trigger');
+    const target = existingButton ?? cell;
+    const currentText = target.textContent?.trim() ?? '';
+    if (!currentText) {
+      return;
+    }
+
+    const digits = stripDigits(currentText);
+    if (!digits) {
+      return;
+    }
+
+    const ariaLabel = `${label} ${digits}. Clique para copiar.`;
+
+    if (!existingButton) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'table__copy-trigger';
+      button.dataset.copyValue = digits;
+      button.dataset.tooltip = 'Item copiado';
+      button.setAttribute('aria-label', ariaLabel);
+      button.textContent = currentText;
+
+      cell.classList.add('table__cell--copyable');
+      cell.textContent = '';
+      cell.appendChild(button);
+      return;
+    }
+
+    existingButton.dataset.copyValue = digits;
+    existingButton.setAttribute('aria-label', ariaLabel);
+    if (!existingButton.dataset.tooltip) {
+      existingButton.dataset.tooltip = 'Item copiado';
+    }
+    if (existingButton.textContent !== currentText) {
+      existingButton.textContent = currentText;
+    }
+  };
+
+  const setupCopyableCells = () => {
+    const tables = document.querySelectorAll('.data-table');
+    if (!tables.length) {
+      return;
+    }
+
+    const processRow = (row) => {
+      if (!row || row.classList.contains('table__row--empty')) {
+        return;
+      }
+
+      const planCell = row.cells?.[0];
+      const documentCell = row.cells?.[1];
+
+      if (planCell) {
+        enhanceCopyableCell(planCell, { label: 'Copiar número do plano' });
+      }
+      if (documentCell) {
+        enhanceCopyableCell(documentCell, { label: 'Copiar CNPJ' });
+      }
+    };
+
+    tables.forEach((table) => {
+      const tbody = table.tBodies?.[0];
+      if (!tbody) {
+        return;
+      }
+
+      Array.from(tbody.rows).forEach(processRow);
+
+      const observer = new MutationObserver(() => {
+        Array.from(tbody.rows).forEach(processRow);
+      });
+
+      observer.observe(tbody, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+
+      tbody.addEventListener('click', async (event) => {
+        const targetElement = event.target;
+        if (!(targetElement instanceof Element)) {
+          return;
+        }
+
+        const button = targetElement.closest('.table__copy-trigger');
+        if (!button) {
+          return;
+        }
+
+        event.preventDefault();
+        const value = button.dataset.copyValue ?? '';
+        const success = await copyToClipboard(value);
+        if (success) {
+          showCopyTooltip(button);
+        }
+      });
+    });
+  };
+
   const applyDocumentFormatting = (row) => {
     if (!row || row.classList.contains('table__row--empty')) {
       return;
@@ -222,10 +389,15 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const current = documentCell.textContent ?? '';
+    const target = documentCell.querySelector('.table__copy-trigger') ?? documentCell;
+    const current = target.textContent ?? '';
     const formatted = formatDocument(current);
     if (formatted && current.trim() !== formatted) {
-      documentCell.textContent = formatted;
+      target.textContent = formatted;
+    }
+
+    if (target.classList.contains('table__copy-trigger')) {
+      target.dataset.copyValue = stripDigits(target.textContent ?? '');
     }
   };
 
@@ -548,6 +720,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   updateAccordionState(false);
+  setupCopyableCells();
   setupDocumentObserver();
   setupTableSwitching();
 });
