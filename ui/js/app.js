@@ -29,7 +29,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnStart = document.getElementById('btnStart');
   const btnPause = document.getElementById('btnPause');
   const btnContinue = document.getElementById('btnContinue');
-  const progressBar = document.querySelector('.progress__bar');
+  const progressContainer = document.querySelector('.progress');
+  const progressBar = progressContainer?.querySelector('.progress__bar');
+
+  const PROGRESS_TOTAL_DURATION_MS = 15 * 60 * 1000;
+  const PROGRESS_MAX_RATIO_BEFORE_COMPLETION = 0.99;
+  let progressStartTimestamp = null;
+  let progressIntervalHandle = null;
 
   const PIPELINE_ENDPOINT = '/api/pipeline';
   let pollHandle = null;
@@ -57,6 +63,136 @@ document.addEventListener('DOMContentLoaded', () => {
       pollHandle = null;
     }
   };
+
+  const setProgressVisibility = (visible) => {
+    if (!progressContainer) {
+      return;
+    }
+
+    progressContainer.classList.toggle('progress--hidden', !visible);
+    progressContainer.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  };
+
+  const stopProgressTimer = () => {
+    if (progressIntervalHandle !== null) {
+      window.clearInterval(progressIntervalHandle);
+      progressIntervalHandle = null;
+    }
+  };
+
+  const setProgressWidth = (ratio) => {
+    if (!progressBar) {
+      return;
+    }
+
+    const boundedRatio = Math.max(0, Math.min(ratio, 1));
+    progressBar.style.width = `${(boundedRatio * 100).toFixed(2)}%`;
+  };
+
+  const tickProgress = () => {
+    if (!progressBar || progressStartTimestamp === null) {
+      return;
+    }
+
+    const elapsed = Math.max(0, Date.now() - progressStartTimestamp);
+    const ratio = Math.min(
+      elapsed / PROGRESS_TOTAL_DURATION_MS,
+      PROGRESS_MAX_RATIO_BEFORE_COMPLETION,
+    );
+    setProgressWidth(ratio);
+  };
+
+  const beginProgressTracking = (startTimestamp) => {
+    if (!progressBar) {
+      return;
+    }
+
+    const normalizedTimestamp =
+      typeof startTimestamp === 'number' && !Number.isNaN(startTimestamp)
+        ? startTimestamp
+        : Date.now();
+
+    progressStartTimestamp = normalizedTimestamp;
+    progressBar.classList.remove('progress__bar--complete');
+    setProgressVisibility(true);
+    tickProgress();
+    stopProgressTimer();
+    progressIntervalHandle = window.setInterval(tickProgress, 1000);
+  };
+
+  const completeProgressTracking = () => {
+    if (!progressBar) {
+      return;
+    }
+
+    setProgressVisibility(true);
+    stopProgressTimer();
+    progressBar.classList.add('progress__bar--complete');
+    setProgressWidth(1);
+  };
+
+  const resetProgress = () => {
+    stopProgressTimer();
+    progressStartTimestamp = null;
+
+    if (progressBar) {
+      progressBar.classList.remove('progress__bar--complete');
+      setProgressWidth(0);
+    }
+
+    setProgressVisibility(false);
+  };
+
+  const parseTimestamp = (value) => {
+    if (!value) {
+      return null;
+    }
+
+    if (value instanceof Date) {
+      return value.getTime();
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const timestamp = Date.parse(value);
+      return Number.isNaN(timestamp) ? null : timestamp;
+    }
+
+    return null;
+  };
+
+  const updateProgressFromState = (state) => {
+    if (!progressContainer || !progressBar) {
+      return;
+    }
+
+    const status = state.status;
+    const startedTimestamp = parseTimestamp(state.started_at);
+
+    if (status === 'running') {
+      const effectiveStart =
+        startedTimestamp ?? progressStartTimestamp ?? Date.now();
+      beginProgressTracking(effectiveStart);
+      return;
+    }
+
+    if (status === 'succeeded') {
+      if (startedTimestamp && progressStartTimestamp === null) {
+        progressStartTimestamp = startedTimestamp;
+      }
+      completeProgressTracking();
+      return;
+    }
+
+    resetProgress();
+  };
+
+  if (progressContainer && progressBar) {
+    resetProgress();
+  }
 
   const defaultMessages = {
     idle: 'Ocioso',
@@ -133,21 +269,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 5000);
   };
 
-  const updateProgressBarAppearance = (status) => {
-    if (!progressBar) {
-      return;
-    }
-
-    progressBar.classList.remove('progress__bar--complete');
-
-    if (status === 'succeeded') {
-      progressBar.classList.add('progress__bar--complete');
-    }
-  };
-
   const applyState = (state) => {
     const message = state.message || defaultMessages[state.status] || defaultMessages.idle;
-    updateProgressBarAppearance(state.status);
+    updateProgressFromState(state);
     switch (state.status) {
       case 'running':
         toggleButtons({ start: false, pause: true, cont: false });
@@ -214,6 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error(error);
       setStatus(`Erro: ${error.message}`);
       toggleButtons({ start: true, pause: false, cont: false });
+      resetProgress();
     }
   };
 
