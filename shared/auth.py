@@ -20,6 +20,13 @@ def _iter_login_values(row: Any) -> Iterable[Any]:
 
 
 _FALSEY_STRINGS = {"", "0", "false", "f", "no", "não", "nao"}
+_NEGATIVE_MESSAGE_HINTS = {
+    "nao autorizado",
+    "não autorizado",
+    "unauthorized",
+    "access denied",
+    "acesso negado",
+}
 
 
 def _is_truthy(value: Any) -> bool:
@@ -36,6 +43,10 @@ def _is_truthy(value: Any) -> bool:
 
     if isinstance(value, str):
         normalized = value.strip().lower()
+        if not normalized:
+            return False
+        if any(hint in normalized for hint in _NEGATIVE_MESSAGE_HINTS):
+            return False
         return normalized not in _FALSEY_STRINGS
 
     return True
