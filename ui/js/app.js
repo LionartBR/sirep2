@@ -431,6 +431,42 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
+  const setupOccurrencesCounter = () => {
+    const countElement = document.getElementById('occurrencesCount');
+    const occurrencesPanel = document.getElementById('occurrencesTablePanel');
+
+    if (!countElement || !occurrencesPanel) {
+      return;
+    }
+
+    const updateCount = () => {
+      const tbody = occurrencesPanel.querySelector('tbody');
+      const rows = tbody ? Array.from(tbody.rows ?? []) : [];
+      const total = rows.filter((row) => {
+        if (row.classList.contains('table__row--empty')) {
+          return false;
+        }
+        if (row.hasAttribute('hidden')) {
+          return false;
+        }
+        return true;
+      }).length;
+
+      countElement.textContent = `(${total})`;
+      countElement.classList.toggle('section-switch__count--alert', total > 0);
+    };
+
+    updateCount();
+
+    const observer = new MutationObserver(updateCount);
+    observer.observe(occurrencesPanel, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'hidden'],
+    });
+  };
+
   const setupTableSwitching = () => {
     const tabs = Array.from(document.querySelectorAll('[data-table-target]'));
     const panels = Array.from(document.querySelectorAll('[data-table-panel]'));
@@ -722,5 +758,6 @@ document.addEventListener('DOMContentLoaded', () => {
   updateAccordionState(false);
   setupCopyableCells();
   setupDocumentObserver();
+  setupOccurrencesCounter();
   setupTableSwitching();
 });
