@@ -32,7 +32,8 @@ PLAN_DEFAULT_QUERY = """
         dias_em_atraso,
         saldo_total,
         dt_situacao,
-        valor_atrasado
+        valor_atrasado,
+        COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      ORDER BY valor_atrasado DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
@@ -47,7 +48,8 @@ PLAN_SEARCH_BY_NUMBER_QUERY = """
         dias_em_atraso,
         saldo_total,
         dt_situacao,
-        valor_atrasado
+        valor_atrasado,
+        COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      WHERE numero_plano = %(number)s
         OR numero_plano LIKE %(number)s || '%'
@@ -64,7 +66,8 @@ PLAN_SEARCH_BY_NAME_QUERY = """
         dias_em_atraso,
         saldo_total,
         dt_situacao,
-        valor_atrasado
+        valor_atrasado,
+        COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      WHERE razao_social ILIKE '%%' || %(term)s || '%%'
      ORDER BY valor_atrasado DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
@@ -80,7 +83,8 @@ PLAN_SEARCH_BY_DOCUMENT_QUERY = """
         dias_em_atraso,
         saldo_total,
         dt_situacao,
-        valor_atrasado
+        valor_atrasado,
+        COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      WHERE documento = %(document)s
        AND tipo_doc IN ('CNPJ', 'CEI')
@@ -238,7 +242,12 @@ async def list_plans(
         ) from exc
 
     items = [_row_to_plan_summary(row) for row in rows]
-    return PlansResponse(items=items, total=len(items))
+    if rows:
+        total_raw = rows[0].get("total_count")
+        total = int(total_raw) if total_raw is not None else len(rows)
+    else:
+        total = 0
+    return PlansResponse(items=items, total=total)
 
 
 __all__ = ["router", "list_plans"]

@@ -34,7 +34,7 @@ class _DummyCursor:
     async def __aexit__(self, exc_type, exc, tb) -> bool:
         return False
 
-    async def execute(self, sql: str) -> None:
+    async def execute(self, sql: str, *args: Any, **kwargs: Any) -> None:
         self.executed_sql = sql
 
     async def fetchall(self) -> list[dict[str, Any]]:
@@ -72,6 +72,7 @@ async def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
             "dias_em_atraso": 12,
             "saldo_total": Decimal("1500.50"),
             "dt_situacao": datetime(2024, 5, 1, tzinfo=timezone.utc),
+            "total_count": 120,
         }
     ]
 
@@ -96,10 +97,14 @@ async def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
 
-    response = await plans.list_plans()
+    response = await plans.list_plans(
+        q=None,
+        limit=plans.DEFAULT_LIMIT,
+        offset=0,
+    )
 
     assert isinstance(response, PlansResponse)
-    assert response.total == 1
+    assert response.total == 120
     assert response.items[0].number == "12345"
     assert response.items[0].document == "12345678000190"
     assert response.items[0].company_name == "Empresa Teste"
