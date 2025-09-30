@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   let currentPlansSearchTerm = '';
   let currentOccurrencesSearchTerm = '';
+  let activeTableSearchTarget = 'plans';
   let plansFetchController = null;
   const currencyFormatter = new Intl.NumberFormat('pt-BR', {
     style: 'currency',
@@ -440,40 +441,31 @@ document.addEventListener('DOMContentLoaded', () => {
     return value.replace(/\D+/g, '');
   };
 
-  const searchForms = Array.from(document.querySelectorAll('[data-table-search]'));
-
-  const findSearchForm = (target) =>
-    searchForms.find((form) => form?.dataset?.tableSearch === target) ?? null;
-
-  const updateSearchFormVisibility = (target) => {
-    if (!target) {
-      return;
-    }
-    searchForms.forEach((form) => {
-      if (!form) {
-        return;
-      }
-      const isActive = form.dataset.tableSearch === target;
-      form.hidden = !isActive;
-      form.setAttribute('aria-hidden', String(!isActive));
-    });
-  };
+  const tableSearchForm = document.getElementById('tableSearchForm');
+  const tableSearchInput = document.getElementById('tableSearchInput');
 
   const syncSearchInputValue = (target) => {
-    if (!target) {
-      return;
-    }
-    const form = findSearchForm(target);
-    if (!form) {
-      return;
-    }
-    const input = form.querySelector('input');
-    if (!input) {
+    if (!target || !tableSearchInput) {
       return;
     }
     const value = tableSearchState[target] ?? '';
-    if (input.value !== value) {
-      input.value = value;
+    if (tableSearchInput.value !== value) {
+      tableSearchInput.value = value;
+    }
+  };
+
+  const setActiveSearchTarget = (target) => {
+    if (!target) {
+      return;
+    }
+    activeTableSearchTarget = target;
+    if (tableSearchForm) {
+      tableSearchForm.dataset.activeTable = target;
+    }
+    if (tableSearchInput) {
+      const controlsTarget =
+        target === 'occurrences' ? 'occurrencesTablePanel' : 'plansTablePanel';
+      tableSearchInput.setAttribute('aria-controls', controlsTarget);
     }
   };
 
@@ -558,40 +550,29 @@ document.addEventListener('DOMContentLoaded', () => {
     void refreshPlans({ showLoading: true });
   };
 
-  const plansSearchForm = document.getElementById('plansSearchForm');
-  const plansSearchInput = document.getElementById('plansSearchInput');
-  const occurrencesSearchForm = document.getElementById('occurrencesSearchForm');
-  const occurrencesSearchInput = document.getElementById('occurrencesSearchInput');
-
-  if (plansSearchForm) {
-    plansSearchForm.addEventListener('submit', (event) => {
+  if (tableSearchForm) {
+    tableSearchForm.addEventListener('submit', (event) => {
       event.preventDefault();
-      handlePlansSearch(plansSearchInput?.value ?? '', { forceRefresh: true });
-    });
-  }
-
-  if (plansSearchInput) {
-    plansSearchInput.addEventListener('input', (event) => {
-      const value = event.target?.value ?? '';
-      tableSearchState.plans = value;
-      if (!value.trim() && currentPlansSearchTerm) {
-        handlePlansSearch('', { forceRefresh: true });
+      const value = tableSearchInput?.value ?? '';
+      if (activeTableSearchTarget === 'occurrences') {
+        handleOccurrencesSearch(value);
+      } else {
+        handlePlansSearch(value, { forceRefresh: true });
       }
     });
   }
 
-  if (occurrencesSearchForm) {
-    occurrencesSearchForm.addEventListener('submit', (event) => {
-      event.preventDefault();
-      handleOccurrencesSearch(occurrencesSearchInput?.value ?? '');
-    });
-  }
-
-  if (occurrencesSearchInput) {
-    occurrencesSearchInput.addEventListener('input', (event) => {
+  if (tableSearchInput) {
+    tableSearchInput.addEventListener('input', (event) => {
       const value = event.target?.value ?? '';
-      tableSearchState.occurrences = value;
-      handleOccurrencesSearch(value);
+      tableSearchState[activeTableSearchTarget] = value;
+      if (activeTableSearchTarget === 'occurrences') {
+        handleOccurrencesSearch(value);
+        return;
+      }
+      if (!value.trim() && currentPlansSearchTerm) {
+        handlePlansSearch('', { forceRefresh: true });
+      }
     });
   }
 
@@ -891,7 +872,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
 
-      updateSearchFormVisibility(target);
+      setActiveSearchTarget(target);
       syncSearchInputValue(target);
       if (target === 'occurrences') {
         applyOccurrencesFilter(currentOccurrencesSearchTerm);
