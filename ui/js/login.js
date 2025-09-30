@@ -18,6 +18,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const passwordInput = document.getElementById('password');
   const rememberInput = document.getElementById('rememberMe');
   const feedback = document.getElementById('loginError');
+  const submitButton = document.querySelector('.login-form__submit');
+
+  const setLoadingState = (isLoading) => {
+    if (!submitButton) {
+      return;
+    }
+    submitButton.disabled = isLoading;
+    submitButton.classList.toggle('is-loading', isLoading);
+    submitButton.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+  };
+
+  setLoadingState(false);
 
   window.setTimeout(() => {
     if (usernameInput) {
@@ -110,9 +122,12 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    setLoadingState(true);
+
     try {
       await authenticate(credentials);
     } catch (error) {
+      setLoadingState(false);
       showFeedback(error.message || 'Não foi possível autenticar. Tente novamente.');
       return;
     }
