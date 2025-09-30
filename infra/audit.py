@@ -4,7 +4,7 @@ import traceback
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 from psycopg import AsyncConnection, Connection
 from psycopg.rows import dict_row
@@ -31,6 +31,248 @@ class JobRunHandle:
             "started_at": self.started_at,
             "id": self.id,
         }
+
+
+@dataclass(slots=True)
+class JobStepHandle:
+    """Dados de controle de um registro em ``audit.job_step``."""
+
+    tenant_id: str
+    job_started_at: datetime
+    job_id: str
+    step_code: str
+    etapa_id: Optional[str] = None
+    status: str = "SUCCESS"
+    message: Optional[str] = None
+    data: Optional[dict[str, Any]] = None
+
+
+_VALID_STEP_STATUSES = {"PENDING", "RUNNING", "SUCCESS", "ERROR", "SKIPPED"}
+
+
+def _normalize_step_status(value: Optional[str], default: str = "SUCCESS") -> str:
+    """Normaliza o status informado para um dos valores aceitos."""
+
+    if value is None:
+        return default
+
+    status = value.strip().upper()
+    if not status:
+        return default
+
+    if status in _VALID_STEP_STATUSES:
+        return status
+
+    if status.startswith("SUCC"):
+        return "SUCCESS"
+    if status.startswith("ERR") or status.startswith("FAIL"):
+        return "ERROR"
+    if status.startswith("SKIP"):
+        return "SKIPPED"
+    if status.startswith("PEN"):
+        return "PENDING"
+    if status.startswith("RUN"):
+        return "RUNNING"
+    return default
+
+
+def _normalize_message(message: Optional[str]) -> Optional[str]:
+    """Limpa e limita mensagens para armazenamento em auditoria."""
+
+    if message is None:
+        return None
+
+    cleaned = message.strip()
+    if not cleaned:
+        return None
+
+    return cleaned[:2000]
+
+
+def _json_or_none(data: Optional[dict[str, Any]]) -> Optional[Json]:
+    """Converte o dicionário informado em JSON aceitável pelo banco."""
+
+    if data is None:
+        return None
+    return Json(data)
+
+
+def start_job_step(
+    conn: Connection,
+    *,
+    job: JobRunHandle,
+    step_code: str,
+    etapa_id: Optional[str] = None,
+    message: Optional[str] = None,
+    data: Optional[dict[str, Any]] = None,
+) -> JobStepHandle:
+    """Registra o início (ou reinício) da execução de uma etapa."""
+
+    normalized_message = _normalize_message(message)
+    json_data = _json_or_none(data)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO audit.job_step
+              (tenant_id, job_started_at, job_id, step_code, etapa_id, status, started_at, message, data, user_id)
+            VALUES
+              (%s, %s, %s, %s, %s, 'RUNNING', now(), %s, %s, app.current_user_id())
+            ON CONFLICT (tenant_id, job_started_at, job_id, step_code) DO UPDATE
+               SET status = 'RUNNING',
+                   started_at = now(),
+                   finished_at = NULL,
+                   etapa_id = COALESCE(EXCLUDED.etapa_id, audit.job_step.etapa_id),
+                   message = COALESCE(EXCLUDED.message, audit.job_step.message),
+                   data = COALESCE(EXCLUDED.data, audit.job_step.data),
+                   user_id = app.current_user_id()
+            """,
+            (
+                job.tenant_id,
+                job.started_at,
+                job.id,
+                step_code,
+                etapa_id,
+                normalized_message,
+                json_data,
+            ),
+        )
+
+    return JobStepHandle(
+        tenant_id=job.tenant_id,
+        job_started_at=job.started_at,
+        job_id=job.id,
+        step_code=step_code,
+        etapa_id=etapa_id,
+        status="SUCCESS",
+        message=normalized_message,
+        data=data,
+    )
+
+
+def finish_job_step(
+    conn: Connection,
+    *,
+    job: JobRunHandle,
+    step_code: str,
+    status: str,
+    message: Optional[str] = None,
+    data: Optional[dict[str, Any]] = None,
+) -> None:
+    """Atualiza o status final de uma etapa do job."""
+
+    final_status = _normalize_step_status(status)
+    normalized_message = _normalize_message(message)
+    json_data = _json_or_none(data)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE audit.job_step
+               SET status = %s,
+                   finished_at = now(),
+                   message = COALESCE(%s, audit.job_step.message),
+                   data = COALESCE(%s, audit.job_step.data),
+                   user_id = app.current_user_id()
+             WHERE tenant_id = %s
+               AND job_started_at = %s
+               AND job_id = %s
+               AND step_code = %s
+            """,
+            (
+                final_status,
+                normalized_message,
+                json_data,
+                job.tenant_id,
+                job.started_at,
+                job.id,
+                step_code,
+            ),
+        )
+
+
+def finish_job_step_ok(
+    conn: Connection,
+    *,
+    job: JobRunHandle,
+    step_code: str,
+    message: Optional[str] = None,
+    data: Optional[dict[str, Any]] = None,
+) -> None:
+    """Convenience wrapper para etapas finalizadas com sucesso."""
+
+    finish_job_step(
+        conn,
+        job=job,
+        step_code=step_code,
+        status="SUCCESS",
+        message=message,
+        data=data,
+    )
+
+
+def finish_job_step_error(
+    conn: Connection,
+    *,
+    job: JobRunHandle,
+    step_code: str,
+    message: Optional[str],
+    data: Optional[dict[str, Any]] = None,
+) -> None:
+    """Convenience wrapper para etapas finalizadas com erro."""
+
+    finish_job_step(
+        conn,
+        job=job,
+        step_code=step_code,
+        status="ERROR",
+        message=message,
+        data=data,
+    )
+
+
+@contextmanager
+def job_step(
+    conn: Connection,
+    *,
+    job: JobRunHandle,
+    step_code: str,
+    etapa_id: Optional[str] = None,
+    message: Optional[str] = None,
+    data: Optional[dict[str, Any]] = None,
+) -> Iterator[JobStepHandle]:
+    """Context manager para controlar ``audit.job_step`` automaticamente."""
+
+    handle = start_job_step(
+        conn,
+        job=job,
+        step_code=step_code,
+        etapa_id=etapa_id,
+        message=message,
+        data=data,
+    )
+
+    try:
+        yield handle
+    except Exception as exc:  # pragma: no cover - tratado em testes específicos
+        err = "".join(traceback.format_exception_only(type(exc), exc)).strip()
+        finish_job_step_error(
+            conn,
+            job=job,
+            step_code=step_code,
+            message=err,
+            data=handle.data,
+        )
+        raise
+    else:
+        finish_job_step(
+            conn,
+            job=job,
+            step_code=step_code,
+            status=handle.status,
+            message=handle.message,
+            data=handle.data,
+        )
 
 
 def bind_session_by_matricula(conn: Connection, matricula: str) -> None:
@@ -254,10 +496,16 @@ async def log_event_async(
 
 __all__ = [
     "JobRunHandle",
+    "JobStepHandle",
     "JobRunAsync",
     "bind_session_by_matricula",
     "bind_session_by_matricula_async",
+    "finish_job_step",
+    "finish_job_step_error",
+    "finish_job_step_ok",
     "job_run",
+    "job_step",
     "log_event",
     "log_event_async",
+    "start_job_step",
 ]

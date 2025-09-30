@@ -10,7 +10,13 @@ import psycopg
 from psycopg.errors import UniqueViolation
 
 from domain.enums import Step
-from infra.audit import bind_session_by_matricula, job_run
+from infra.audit import (
+    bind_session_by_matricula,
+    finish_job_step,
+    finish_job_step_error,
+    job_run,
+    start_job_step,
+)
 from infra.repositories import EventsRepository, PlansRepository
 from shared.config import get_database_settings, get_principal_settings
 
@@ -115,6 +121,58 @@ def _retry_backoff(attempt: int) -> None:
     time.sleep(delay)
 
 
+def _normalize_job_status(status: Optional[str]) -> str:
+    """Normaliza o status final do job para valores aceitos pelo audit."""
+
+    if status is None:
+        return "SUCCESS"
+
+    normalized = status.strip().upper()
+    if not normalized:
+        return "SUCCESS"
+
+    if normalized in {"SUCCESS", "ERROR", "SKIPPED"}:
+        return normalized
+
+    if normalized.startswith("S"):
+        return "SUCCESS"
+    if normalized.startswith("K"):
+        return "SKIPPED"
+    if normalized.startswith("E") or normalized.startswith("F"):
+        return "ERROR"
+    return "SUCCESS"
+
+
+def _resolve_step_code(step: Step | str) -> str:
+    """Extrai o código textual da etapa."""
+
+    if isinstance(step, Step):
+        return step.value
+    return str(step)
+
+
+def _summary_from_outcome(outcome: StepJobOutcome) -> Optional[str]:
+    """Obtém um resumo amigável da execução da etapa."""
+
+    info = outcome.info_update or {}
+    if isinstance(info, dict):
+        summary = info.get("summary")
+        if summary is not None:
+            return str(summary)
+    return None
+
+
+def _data_from_outcome(outcome: StepJobOutcome) -> Optional[dict[str, Any]]:
+    """Compila os dados relevantes da etapa para auditoria."""
+
+    payload: dict[str, Any] = {}
+    if outcome.data:
+        payload.update(outcome.data)
+    if outcome.info_update:
+        payload.setdefault("info_update", outcome.info_update)
+    return payload or None
+
+
 def run_step_job(
     *,
     step: Step,
@@ -148,9 +206,16 @@ def run_step_job(
                 payload=job_payload,
             ) as job_handle:
                 attempt = 0
+                step_code = _resolve_step_code(step)
                 while True:
                     attempt += 1
                     try:
+                        start_job_step(
+                            connection,
+                            job=job_handle,
+                            step_code=step_code,
+                        )
+                        connection.commit()
                         _configure_transaction(connection, principal=principal)
                         context = _prepare_context(
                             connection,
@@ -158,15 +223,17 @@ def run_step_job(
                             job_run_started_at=job_handle.started_at,
                         )
                         outcome = callback(context)
-                        final_status = (
-                            outcome.status.upper() if outcome.status else "SUCCESS"
-                        )
-                        if final_status not in {"SUCCESS", "ERROR", "SKIPPED"}:
-                            final_status = (
-                                "ERROR" if final_status.startswith("FAIL") else "SUCCESS"
-                            )
+                        final_status = _normalize_job_status(outcome.status)
                         job_handle.status = final_status
                         job_handle.error_message = None
+                        finish_job_step(
+                            connection,
+                            job=job_handle,
+                            step_code=step_code,
+                            status=final_status,
+                            message=_summary_from_outcome(outcome),
+                            data=_data_from_outcome(outcome),
+                        )
                         connection.commit()
                         service_result = ServiceResult(step=step, outcome=outcome)
                         break
@@ -178,6 +245,18 @@ def run_step_job(
                             max_retries,
                         )
                         connection.rollback()
+                        finish_job_step_error(
+                            connection,
+                            job=job_handle,
+                            step_code=step_code,
+                            message=str(exc),
+                            data={
+                                "error": str(exc),
+                                "exception_type": type(exc).__name__,
+                                "attempt": attempt,
+                            },
+                        )
+                        connection.commit()
                         if attempt >= max_retries:
                             job_handle.status = "ERROR"
                             job_handle.error_message = str(exc)
@@ -188,6 +267,18 @@ def run_step_job(
                         connection.rollback()
                         job_handle.status = "ERROR"
                         job_handle.error_message = str(exc)
+                        finish_job_step_error(
+                            connection,
+                            job=job_handle,
+                            step_code=step_code,
+                            message=str(exc),
+                            data={
+                                "error": str(exc),
+                                "exception_type": type(exc).__name__,
+                                "attempt": attempt,
+                            },
+                        )
+                        connection.commit()
                         raise
         except Exception:
             connection.commit()
