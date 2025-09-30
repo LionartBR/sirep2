@@ -566,12 +566,6 @@ input:focus {
   cursor: pointer;
 }
 
-.logs-panel__export {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
 .logs-panel__label {
   font-size: 14px;
   color: var(--muted);
@@ -587,28 +581,43 @@ input:focus {
 .accordion__header {
   width: 100%;
   background: #f9fafb;
-  border: none;
   display: flex;
   align-items: center;
+  gap: 24px;
   justify-content: space-between;
   padding: 16px 20px;
+  flex-wrap: wrap;
+}
+
+.accordion__toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: none;
+  background: transparent;
+  padding: 0;
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
-  cursor: default;
-}
-
-.accordion__header span {
   cursor: pointer;
 }
 
-.accordion__header i {
-  pointer-events: none;
+.accordion__toggle:focus {
+  outline-offset: 2px;
 }
 
-.accordion__header:hover,
-.accordion__header:focus {
-  background: #eef2f7;
+.accordion__toggle-label {
+  cursor: pointer;
+}
+
+.accordion__toggle-icon {
+  display: flex;
+  transition: transform 0.2s ease-in-out;
+}
+
+.accordion__toggle-icon .feather {
+  width: 16px;
+  height: 16px;
 }
 
 .accordion__panel {
@@ -622,6 +631,19 @@ input:focus {
 .accordion__panel.is-open,
 .accordion.is-open .accordion__panel {
   display: block;
+}
+
+.accordion.is-open .accordion__toggle-icon {
+  transform: rotate(90deg);
+}
+
+.logs-panel__controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .footer {
@@ -645,6 +667,18 @@ input:focus {
   .table-footer {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .accordion__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .logs-panel__controls {
+    width: 100%;
+    justify-content: space-between;
+    gap: 16px;
   }
 
   .filters {

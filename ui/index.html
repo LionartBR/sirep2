@@ -101,19 +101,21 @@
           </div>
 
           <div class="accordion">
-            <button
-              class="accordion__header"
-              id="logsToggle"
-              type="button"
-              aria-expanded="false"
-              aria-controls="logsPanel"
-            >
-              <span>Janela de Eventos (logs)</span>
-              <i data-feather="chevron-down" aria-hidden="true"></i>
-            </button>
-            <div class="accordion__panel" id="logsPanel" role="region" aria-labelledby="logsToggle">
+            <div class="accordion__header">
+              <button
+                class="accordion__toggle"
+                id="logsToggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="logsPanel"
+              >
+                <span class="accordion__toggle-icon" aria-hidden="true">
+                  <i data-feather="chevron-right"></i>
+                </span>
+                <span class="accordion__toggle-label">Janela de Eventos (logs)</span>
+              </button>
               <div
-                class="logs-panel__export"
+                class="logs-panel__controls"
                 role="group"
                 aria-labelledby="logsExportLabel"
               >
@@ -172,6 +174,7 @@
                 </div>
               </div>
             </div>
+            <div class="accordion__panel" id="logsPanel" role="region" aria-labelledby="logsToggle"></div>
           </div>
         </div>
 

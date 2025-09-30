@@ -283,11 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  logsToggle.addEventListener('click', (event) => {
-    const textSpan = logsToggle.querySelector('span');
-    if (event.target !== textSpan) {
-      return;
-    }
+  logsToggle.addEventListener('click', () => {
     const isOpen = logsToggle.getAttribute('aria-expanded') === 'true';
     updateAccordionState(!isOpen);
   });
