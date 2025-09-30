@@ -3,7 +3,8 @@ from __future__ import annotations
 import traceback
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any, Iterator, Optional
 
 from psycopg import AsyncConnection, Connection
@@ -35,7 +36,7 @@ class JobRunHandle:
 
 @dataclass(slots=True)
 class JobStepHandle:
-    """Dados de controle de um registro em ``audit.job_step``."""
+    """Dados de controle da execução de uma etapa do ``audit.job_run``."""
 
     tenant_id: str
     job_started_at: datetime
@@ -48,6 +49,9 @@ class JobStepHandle:
 
 
 _VALID_STEP_STATUSES = {"PENDING", "RUNNING", "SUCCESS", "ERROR", "SKIPPED"}
+
+
+_UNSET = object()
 
 
 def _normalize_step_status(value: Optional[str], default: str = "SUCCESS") -> str:
@@ -89,12 +93,88 @@ def _normalize_message(message: Optional[str]) -> Optional[str]:
     return cleaned[:2000]
 
 
-def _json_or_none(data: Optional[dict[str, Any]]) -> Optional[Json]:
-    """Converte o dicionário informado em JSON aceitável pelo banco."""
+def _utcnow_iso() -> str:
+    """Retorna o timestamp atual em formato ISO 8601 no fuso UTC."""
 
-    if data is None:
-        return None
-    return Json(data)
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _sanitize_payload(value: Any) -> Any:
+    """Normaliza estruturas para garantir serialização JSON segura."""
+
+    if isinstance(value, dict):
+        return {str(key): _sanitize_payload(val) for key, val in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_payload(item) for item in value]
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value) if value % 1 else int(value)
+    return value
+
+
+def _load_job_payload(conn: Connection, job: JobRunHandle) -> dict[str, Any]:
+    """Obtém e prepara o payload atual associado ao job informado."""
+
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT payload
+              FROM audit.job_run
+             WHERE tenant_id = %s
+               AND started_at = %s
+               AND id = %s
+             FOR UPDATE
+            """,
+            (job.tenant_id, job.started_at, job.id),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        raise RuntimeError("Registro de job_run não encontrado para atualizar etapas.")
+
+    payload = row.get("payload") or {}
+    if not isinstance(payload, dict):
+        return {}
+    return dict(payload)
+
+
+def _persist_job_payload(
+    conn: Connection,
+    job: JobRunHandle,
+    payload: dict[str, Any],
+    *,
+    status: Optional[str] = _UNSET,
+    error_message: Optional[str] = _UNSET,
+) -> None:
+    """Atualiza o payload do job (e, opcionalmente, status e erro)."""
+
+    update_columns = ["payload = %s"]
+    params: list[Any] = [Json(_sanitize_payload(payload))]
+
+    if status is not _UNSET:
+        update_columns.append("status = %s")
+        params.append(status)
+
+    if error_message is not _UNSET:
+        update_columns.append("error_msg = %s")
+        params.append(error_message)
+
+    params.extend([job.tenant_id, job.started_at, job.id])
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE audit.job_run
+               SET {set_clause}
+             WHERE tenant_id = %s
+               AND started_at = %s
+               AND id = %s
+            """.format(set_clause=", ".join(update_columns)),
+            tuple(params),
+        )
 
 
 def start_job_step(
@@ -109,34 +189,33 @@ def start_job_step(
     """Registra o início (ou reinício) da execução de uma etapa."""
 
     normalized_message = _normalize_message(message)
-    json_data = _json_or_none(data)
+    payload = _load_job_payload(conn, job)
 
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO audit.job_step
-              (tenant_id, job_started_at, job_id, step_code, etapa_id, status, started_at, message, data, user_id)
-            VALUES
-              (%s, %s, %s, %s, %s, 'RUNNING', now(), %s, %s, app.current_user_id())
-            ON CONFLICT (tenant_id, job_started_at, job_id, step_code) DO UPDATE
-               SET status = 'RUNNING',
-                   started_at = now(),
-                   finished_at = NULL,
-                   etapa_id = COALESCE(EXCLUDED.etapa_id, audit.job_step.etapa_id),
-                   message = COALESCE(EXCLUDED.message, audit.job_step.message),
-                   data = COALESCE(EXCLUDED.data, audit.job_step.data),
-                   user_id = app.current_user_id()
-            """,
-            (
-                job.tenant_id,
-                job.started_at,
-                job.id,
-                step_code,
-                etapa_id,
-                normalized_message,
-                json_data,
-            ),
-        )
+    steps = payload.setdefault("steps", {})
+    step_entry = steps.get(step_code, {})
+    step_entry.update(
+        {
+            "status": "RUNNING",
+            "started_at": _utcnow_iso(),
+        }
+    )
+    if normalized_message is not None:
+        step_entry["message"] = normalized_message
+    elif "message" in step_entry:
+        step_entry.pop("message")
+
+    if data is not None:
+        step_entry["data"] = data
+    elif "data" in step_entry:
+        step_entry.pop("data")
+    if etapa_id is not None:
+        step_entry["etapa_id"] = etapa_id
+    step_entry.pop("finished_at", None)
+    step_entry.pop("error", None)
+    steps[step_code] = step_entry
+    payload["current_step"] = step_code
+
+    _persist_job_payload(conn, job, payload, status="RUNNING", error_message=None)
 
     return JobStepHandle(
         tenant_id=job.tenant_id,
@@ -163,32 +242,28 @@ def finish_job_step(
 
     final_status = _normalize_step_status(status)
     normalized_message = _normalize_message(message)
-    json_data = _json_or_none(data)
+    payload = _load_job_payload(conn, job)
 
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE audit.job_step
-               SET status = %s,
-                   finished_at = now(),
-                   message = COALESCE(%s, audit.job_step.message),
-                   data = COALESCE(%s, audit.job_step.data),
-                   user_id = app.current_user_id()
-             WHERE tenant_id = %s
-               AND job_started_at = %s
-               AND job_id = %s
-               AND step_code = %s
-            """,
-            (
-                final_status,
-                normalized_message,
-                json_data,
-                job.tenant_id,
-                job.started_at,
-                job.id,
-                step_code,
-            ),
-        )
+    steps = payload.setdefault("steps", {})
+    step_entry = steps.get(step_code, {})
+    step_entry["status"] = final_status
+    step_entry["finished_at"] = _utcnow_iso()
+    if normalized_message is not None:
+        step_entry["message"] = normalized_message
+    if data is not None:
+        step_entry["data"] = data
+    elif "data" in step_entry and data is None:
+        step_entry.pop("data")
+
+    if final_status == "ERROR" and normalized_message:
+        step_entry["error"] = normalized_message
+    elif "error" in step_entry and final_status != "ERROR":
+        step_entry.pop("error")
+
+    steps[step_code] = step_entry
+
+    error_message = normalized_message if final_status == "ERROR" else None
+    _persist_job_payload(conn, job, payload, error_message=error_message)
 
 
 def finish_job_step_ok(
@@ -241,7 +316,7 @@ def job_step(
     message: Optional[str] = None,
     data: Optional[dict[str, Any]] = None,
 ) -> Iterator[JobStepHandle]:
-    """Context manager para controlar ``audit.job_step`` automaticamente."""
+    """Context manager que registra início e fim da etapa dentro do ``job_run``."""
 
     handle = start_job_step(
         conn,
