@@ -33,19 +33,35 @@ class LookupCache:
 
         with conn.cursor() as cur:
             cur.execute("SELECT codigo, id FROM ref.tipo_plano")
-            tipos = {str(codigo): str(ident) for codigo, ident in cur.fetchall()}
+            tipos = {
+                PlansRepository._normalizar_codigo(str(codigo)):
+                str(ident)
+                for codigo, ident in cur.fetchall()
+            }
 
             cur.execute("SELECT codigo, id FROM ref.resolucao")
-            resolucoes = {str(codigo): str(ident) for codigo, ident in cur.fetchall()}
+            resolucoes = {
+                str(codigo).strip(): str(ident) for codigo, ident in cur.fetchall()
+            }
 
             cur.execute("SELECT codigo, id FROM ref.situacao_plano")
-            situacoes = {str(codigo): str(ident) for codigo, ident in cur.fetchall()}
+            situacoes = {
+                PlansRepository._normalizar_situacao(str(codigo)):
+                str(ident)
+                for codigo, ident in cur.fetchall()
+            }
 
             cur.execute("SELECT codigo, id FROM ref.tipo_inscricao")
-            tipos_inscricao = {str(codigo): str(ident) for codigo, ident in cur.fetchall()}
+            tipos_inscricao = {
+                str(codigo).strip().upper(): str(ident)
+                for codigo, ident in cur.fetchall()
+            }
 
             cur.execute("SELECT codigo, id FROM ref.base_fgts")
-            bases_fgts = {str(codigo): str(ident) for codigo, ident in cur.fetchall()}
+            bases_fgts = {
+                str(codigo).strip(): str(ident)
+                for codigo, ident in cur.fetchall()
+            }
 
         return cls(
             tipos_plano=tipos,
@@ -121,10 +137,14 @@ class PlansRepository:
 
         situacao_anterior = campos.pop("situacao_anterior", None)
 
-        empregador_id = self._resolver_empregador(campos)
-        situacao_id, situacao_codigo = self._resolver_situacao(campos.get("situacao_atual"))
-        tipo_id = self._resolver_tipo_plano(campos.get("tipo"))
-        resolucao_id = self._resolver_resolucao(campos.get("resolucao"))
+        lookup = self._ensure_lookups()
+
+        empregador_id = self._resolver_empregador(campos, lookup=lookup)
+        situacao_id, situacao_codigo = self._resolver_situacao(
+            campos.get("situacao_atual"), lookup=lookup
+        )
+        tipo_id = self._resolver_tipo_plano(campos.get("tipo"), lookup=lookup)
+        resolucao_id = self._resolver_resolucao(campos.get("resolucao"), lookup=lookup)
 
         atraso_desde = self._calcular_atraso_desde(
             campos.get("dias_em_atraso"),
@@ -209,7 +229,9 @@ class PlansRepository:
 
     # -- Helpers -----------------------------------------------------------------
 
-    def _resolver_empregador(self, campos: dict[str, Any]) -> Optional[str]:
+    def _resolver_empregador(
+        self, campos: dict[str, Any], *, lookup: Optional[LookupCache] = None
+    ) -> Optional[str]:
         numero = campos.get("numero_inscricao")
         if not numero:
             return campos.get("empregador_id")
@@ -219,7 +241,9 @@ class PlansRepository:
             return campos.get("empregador_id")
 
         codigo_tipo = self._inferir_tipo_inscricao(numero_normalizado)
-        tipo_inscricao_id = self._lookup_tipo_inscricao_id(codigo_tipo)
+        tipo_inscricao_id = self._lookup_tipo_inscricao_id(
+            codigo_tipo, lookup=lookup
+        )
         razao_social = campos.get("razao_social") or None
         email = (campos.get("email") or "").strip() or None
         telefone = (campos.get("telefone") or "").strip() or None
@@ -251,15 +275,20 @@ class PlansRepository:
 
         return str(row["id"])
 
-    def _resolver_situacao(self, situacao_raw: Any) -> tuple[Optional[str], Optional[str]]:
+    def _resolver_situacao(
+        self,
+        situacao_raw: Any,
+        *,
+        lookup: Optional[LookupCache] = None,
+    ) -> tuple[Optional[str], Optional[str]]:
         if not situacao_raw:
             return (None, None)
 
         texto = str(situacao_raw).strip().upper()
         codigo = self._normalizar_situacao(texto)
 
-        lookup = self._ensure_lookups()
-        situacao_id = lookup.situacoes_plano.get(codigo)
+        lookup_cache = lookup or self._ensure_lookups()
+        situacao_id = lookup_cache.situacoes_plano.get(codigo)
 
         if not situacao_id:
             with self._conn.cursor(row_factory=dict_row) as cur:
@@ -270,14 +299,19 @@ class PlansRepository:
                 row = cur.fetchone()
             if row:
                 situacao_id = str(row["id"])
-                lookup.situacoes_plano[codigo] = situacao_id
+                lookup_cache.situacoes_plano[codigo] = situacao_id
 
         if not situacao_id:
             raise RuntimeError(f"Situação não cadastrada: {codigo}")
 
         return (situacao_id, codigo)
 
-    def _resolver_tipo_plano(self, tipo_raw: Any) -> Optional[str]:
+    def _resolver_tipo_plano(
+        self,
+        tipo_raw: Any,
+        *,
+        lookup: Optional[LookupCache] = None,
+    ) -> Optional[str]:
         if not tipo_raw:
             return None
 
@@ -286,8 +320,8 @@ class PlansRepository:
             return None
 
         codigo = self._normalizar_codigo(texto)
-        lookup = self._ensure_lookups()
-        tipo_id = lookup.tipos_plano.get(codigo)
+        lookup_cache = lookup or self._ensure_lookups()
+        tipo_id = lookup_cache.tipos_plano.get(codigo)
 
         if tipo_id:
             return tipo_id
@@ -314,7 +348,7 @@ class PlansRepository:
                     raise RuntimeError("Falha ao resolver tipo de plano")
                 tipo_id = str(inserido["id"])
 
-        lookup.tipos_plano[codigo] = tipo_id
+        lookup_cache.tipos_plano[codigo] = tipo_id
         return tipo_id
 
     def _registrar_historico_situacao(
@@ -379,7 +413,12 @@ class PlansRepository:
                 (plano_id, situacao_id, mudou_em, observacao_txt),
             )
 
-    def _resolver_resolucao(self, resolucao_raw: Any) -> Optional[str]:
+    def _resolver_resolucao(
+        self,
+        resolucao_raw: Any,
+        *,
+        lookup: Optional[LookupCache] = None,
+    ) -> Optional[str]:
         if not resolucao_raw:
             return None
 
@@ -387,8 +426,8 @@ class PlansRepository:
         if not codigo:
             return None
 
-        lookup = self._ensure_lookups()
-        resolucao_id = lookup.resolucoes.get(codigo)
+        lookup_cache = lookup or self._ensure_lookups()
+        resolucao_id = lookup_cache.resolucoes.get(codigo)
 
         if resolucao_id:
             return resolucao_id
@@ -415,12 +454,14 @@ class PlansRepository:
                     raise RuntimeError("Falha ao resolver resolução")
                 resolucao_id = str(inserido["id"])
 
-        lookup.resolucoes[codigo] = resolucao_id
+        lookup_cache.resolucoes[codigo] = resolucao_id
         return resolucao_id
 
-    def _lookup_tipo_inscricao_id(self, codigo: str) -> str:
-        lookup = self._ensure_lookups()
-        tipo_id = lookup.tipos_inscricao.get(codigo)
+    def _lookup_tipo_inscricao_id(
+        self, codigo: str, *, lookup: Optional[LookupCache] = None
+    ) -> str:
+        lookup_cache = lookup or self._ensure_lookups()
+        tipo_id = lookup_cache.tipos_inscricao.get(codigo)
 
         if tipo_id:
             return tipo_id
@@ -436,7 +477,7 @@ class PlansRepository:
             raise RuntimeError(f"Tipo de inscrição desconhecido: {codigo}")
 
         tipo_id = str(row["id"])
-        lookup.tipos_inscricao[codigo] = tipo_id
+        lookup_cache.tipos_inscricao[codigo] = tipo_id
         return tipo_id
 
     def _ensure_lookups(self) -> LookupCache:

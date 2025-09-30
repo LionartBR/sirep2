@@ -121,6 +121,56 @@ def test_upsert_registra_historico_quando_informado():
     }
 
 
+def test_upsert_utiliza_cache_para_resolver_catalogos():
+    connection = MagicMock()
+    insert_cursor, insert_cm = _make_cursor({"id": "uuid-1"})
+    connection.cursor.return_value = insert_cm
+
+    cache = LookupCache(
+        tipos_plano={"TIPO_A": "tipo-1"},
+        resolucoes={"123": "res-1"},
+        situacoes_plano={"RESCINDIDO": "sit-1"},
+        tipos_inscricao={"CNPJ": "doc-1"},
+        bases_fgts={},
+    )
+
+    repo = PlansRepository(connection, lookup_cache=cache)
+    repo._resolver_empregador = MagicMock(return_value="emp-1")
+    original_tipo = repo._resolver_tipo_plano
+    repo._resolver_tipo_plano = MagicMock(side_effect=original_tipo)
+    original_situacao = repo._resolver_situacao
+    repo._resolver_situacao = MagicMock(side_effect=original_situacao)
+    original_resolucao = repo._resolver_resolucao
+    repo._resolver_resolucao = MagicMock(side_effect=original_resolucao)
+    repo._calcular_atraso_desde = MagicMock(return_value=None)
+    repo._to_decimal = MagicMock(return_value=None)
+    repo._registrar_historico_situacao = MagicMock()
+    repo.get_by_numero = MagicMock(
+        return_value=PlanDTO(id="uuid-1", numero_plano="123", situacao_atual="RESCINDIDO")
+    )
+
+    resultado = repo.upsert(
+        "123",
+        situacao_atual="Rescindido",
+        tipo="Tipo A",
+        resolucao="123",
+        parcelas_atraso=[],
+    )
+
+    assert resultado.id == "uuid-1"
+    repo._resolver_empregador.assert_called_once()
+    _, kwargs_emp = repo._resolver_empregador.call_args
+    assert kwargs_emp == {"lookup": cache}
+    assert repo._resolver_tipo_plano.call_args.kwargs == {"lookup": cache}
+    assert repo._resolver_situacao.call_args.kwargs == {"lookup": cache}
+    assert repo._resolver_resolucao.call_args.kwargs == {"lookup": cache}
+
+    connection.cursor.assert_called_once_with(row_factory=dict_row)
+    assert len(insert_cursor.execute.call_args_list) == 1
+    executed_sql = insert_cursor.execute.call_args_list[0][0][0]
+    assert "INSERT INTO app.plano" in executed_sql
+    assert "ref.tipo_plano" not in executed_sql
+
 def test_resolver_tipo_plano_utiliza_cache_sem_ir_ao_banco():
     connection = MagicMock()
     cache = LookupCache(
