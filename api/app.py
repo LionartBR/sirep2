@@ -19,6 +19,7 @@ class NoCacheStaticFiles(StaticFiles):
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response
 
+from infra.config import settings
 from services.orchestrator import PipelineOrchestrator
 
 from .routers import auth, pipeline
@@ -35,7 +36,12 @@ def create_app() -> FastAPI:
     app.state.pipeline_orchestrator = PipelineOrchestrator()
 
     static_dir = Path(__file__).resolve().parents[1] / "ui"
-    app.mount("/app", NoCacheStaticFiles(directory=static_dir, html=True), name="app")
+    static_handler = (
+        NoCacheStaticFiles(directory=static_dir, html=True)
+        if settings.debug
+        else StaticFiles(directory=static_dir, html=True)
+    )
+    app.mount("/app", static_handler, name="app")
 
     @app.get("/", include_in_schema=False)
     async def root() -> RedirectResponse:
