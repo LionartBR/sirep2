@@ -441,10 +441,49 @@ input:focus {
   gap: 16px;
 }
 
+.section-title--tables {
+  justify-content: flex-start;
+  gap: 12px;
+}
+
 .section-title__heading {
   font-size: 16px;
   margin: 0;
   letter-spacing: 0.04em;
+}
+
+.section-switch {
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.section-switch:hover,
+.section-switch:focus {
+  color: var(--primary);
+}
+
+.section-switch--active {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(11, 95, 168, 0.25);
+}
+
+.section-switch--active .section-switch__count {
+  color: inherit;
+}
+
+.section-switch__count {
+  margin-left: 8px;
+  font-size: 13px;
+  color: var(--primary);
 }
 
 .badge {
@@ -457,6 +496,16 @@ input:focus {
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
+}
+
+.table-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.table-panel--hidden {
+  display: none;
 }
 
 .table table {

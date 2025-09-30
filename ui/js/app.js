@@ -226,31 +226,85 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const setupDocumentObserver = () => {
-    const table = document.querySelector('.table table');
-    if (!table) {
+    const tables = document.querySelectorAll('.data-table');
+    if (!tables.length) {
       return;
     }
 
-    const tbody = table.tBodies?.[0];
-    if (!tbody) {
+    tables.forEach((table) => {
+      const tbody = table.tBodies?.[0];
+      if (!tbody) {
+        return;
+      }
+
+      const formatAllRows = () => {
+        Array.from(tbody.rows).forEach((row) => applyDocumentFormatting(row));
+      };
+
+      formatAllRows();
+
+      const observer = new MutationObserver(() => {
+        formatAllRows();
+      });
+
+      observer.observe(tbody, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    });
+  };
+
+  const setupTableSwitching = () => {
+    const tabs = Array.from(document.querySelectorAll('[data-table-target]'));
+    const panels = Array.from(document.querySelectorAll('[data-table-panel]'));
+
+    if (!tabs.length || !panels.length) {
       return;
     }
 
-    const formatAllRows = () => {
-      Array.from(tbody.rows).forEach((row) => applyDocumentFormatting(row));
+    const activateTable = (target) => {
+      if (!target) {
+        return;
+      }
+
+      tabs.forEach((tab) => {
+        const isActive = tab.dataset.tableTarget === target;
+        tab.classList.toggle('section-switch--active', isActive);
+        tab.setAttribute('aria-selected', String(isActive));
+        tab.setAttribute('tabindex', isActive ? '0' : '-1');
+      });
+
+      panels.forEach((panel) => {
+        const isActive = panel.dataset.tablePanel === target;
+        panel.classList.toggle('table-panel--hidden', !isActive);
+        if (isActive) {
+          panel.removeAttribute('hidden');
+        } else {
+          panel.setAttribute('hidden', 'hidden');
+        }
+      });
     };
 
-    formatAllRows();
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => {
+        activateTable(tab.dataset.tableTarget);
+      });
 
-    const observer = new MutationObserver(() => {
-      formatAllRows();
+      tab.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+          event.preventDefault();
+          const direction = event.key === 'ArrowRight' ? 1 : -1;
+          const nextIndex = (index + direction + tabs.length) % tabs.length;
+          const nextTab = tabs[nextIndex];
+          activateTable(nextTab.dataset.tableTarget);
+          nextTab.focus();
+        }
+      });
     });
 
-    observer.observe(tbody, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
+    const activeTab = tabs.find((tab) => tab.classList.contains('section-switch--active'));
+    activateTable(activeTab?.dataset.tableTarget || tabs[0].dataset.tableTarget);
   };
 
   toggleButtons({ start: true, pause: false, cont: false });
@@ -423,4 +477,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
   updateAccordionState(false);
   setupDocumentObserver();
+  setupTableSwitching();
 });
