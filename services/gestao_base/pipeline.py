@@ -183,7 +183,7 @@ def run_pipeline(
         )
 
     if progress:
-        progress(50.0, 3, "Enriquecimento na E527 concluído")
+        progress(50.0, 3, "Captura de dados na E527 concluído")
 
     return GestaoBaseData(
         rows=enriched,
