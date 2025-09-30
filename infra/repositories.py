@@ -46,8 +46,7 @@ class LookupCache:
 
             cur.execute("SELECT codigo, id FROM ref.situacao_plano")
             situacoes = {
-                PlansRepository._normalizar_situacao(str(codigo)):
-                str(ident)
+                str(codigo).strip().upper(): str(ident)
                 for codigo, ident in cur.fetchall()
             }
 
