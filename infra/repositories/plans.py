@@ -1,128 +1,29 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any, Iterable, Optional
 
 from psycopg import Connection
 from psycopg.rows import dict_row
-from psycopg.types.json import Json
-from psycopg.pq import TransactionStatus
 
-from domain.enums import Step
-
-from .audit import log_event
+from ._helpers import (
+    calcular_atraso_desde,
+    extract_date_from_timestamp,
+    inferir_tipo_inscricao,
+    normalizar_codigo,
+    normalizar_situacao,
+    only_digits,
+    parse_vencimento,
+    safe_int,
+    to_decimal,
+)
+from .dto import PlanDTO
+from .lookups import LookupCache
 
 
 logger = logging.getLogger(__name__)
-
-@dataclass(slots=True)
-class LookupCache:
-    """Mantém em memória os catálogos utilizados pelo pipeline."""
-
-    tipos_plano: dict[str, str]
-    resolucoes: dict[str, str]
-    situacoes_plano: dict[str, str]
-    tipos_inscricao: dict[str, str]
-    bases_fgts: dict[str, str]
-    pending_tipos_plano: set[str] = field(default_factory=set)
-    pending_resolucoes: set[str] = field(default_factory=set)
-
-    @classmethod
-    def load(cls, conn: Connection) -> "LookupCache":
-        """Carrega todos os catálogos necessários a partir do banco."""
-
-        with conn.cursor() as cur:
-            cur.execute("SELECT codigo, id FROM ref.tipo_plano")
-            tipos = {
-                PlansRepository._normalizar_codigo(str(codigo)):
-                str(ident)
-                for codigo, ident in cur.fetchall()
-            }
-
-            cur.execute("SELECT codigo, id FROM ref.resolucao")
-            resolucoes = {
-                str(codigo).strip(): str(ident) for codigo, ident in cur.fetchall()
-            }
-
-            cur.execute("SELECT codigo, id FROM ref.situacao_plano")
-            situacoes: dict[str, str] = {}
-            for codigo, ident in cur.fetchall():
-                codigo_raw = str(codigo).strip().upper()
-                ident_str = str(ident)
-                situacoes[codigo_raw] = ident_str
-                codigo_normalizado = PlansRepository._normalizar_situacao(codigo_raw)
-                situacoes[codigo_normalizado] = ident_str
-
-            cur.execute("SELECT codigo, id FROM ref.tipo_inscricao")
-            tipos_inscricao = {
-                str(codigo).strip().upper(): str(ident)
-                for codigo, ident in cur.fetchall()
-            }
-
-            cur.execute("SELECT codigo, id FROM ref.base_fgts")
-            bases_fgts = {
-                str(codigo).strip(): str(ident)
-                for codigo, ident in cur.fetchall()
-            }
-
-        return cls(
-            tipos_plano=tipos,
-            resolucoes=resolucoes,
-            situacoes_plano=situacoes,
-            tipos_inscricao=tipos_inscricao,
-            bases_fgts=bases_fgts,
-        )
-
-    def refresh(self, conn: Connection) -> None:
-        """Recarrega os catálogos a partir do banco."""
-
-        atualizado = self.load(conn)
-        self.tipos_plano = atualizado.tipos_plano
-        self.resolucoes = atualizado.resolucoes
-        self.situacoes_plano = atualizado.situacoes_plano
-        self.tipos_inscricao = atualizado.tipos_inscricao
-        self.bases_fgts = atualizado.bases_fgts
-        self.pending_tipos_plano.clear()
-        self.pending_resolucoes.clear()
-
-    def mark_tipo_plano_pending(self, codigo: str) -> None:
-        """Registra que um tipo de plano foi inserido na transação atual."""
-
-        self.pending_tipos_plano.add(codigo)
-
-    def mark_resolucao_pending(self, codigo: str) -> None:
-        """Registra que uma resolução foi inserida na transação atual."""
-
-        self.pending_resolucoes.add(codigo)
-
-    def sync_pending(self, conn: Connection) -> None:
-        """Sincroniza o cache quando há inserções pendentes."""
-
-        if not (self.pending_tipos_plano or self.pending_resolucoes):
-            return
-
-        info = getattr(conn, "info", None)
-        status = getattr(info, "transaction_status", None)
-
-        if not isinstance(status, TransactionStatus):
-            return
-
-        if status is not TransactionStatus.IDLE:
-            return
-
-        self.refresh(conn)
-
-
-@dataclass(slots=True)
-class PlanDTO:
-    """Representação simplificada de um plano utilizado no pipeline."""
-
-    id: str
-    numero_plano: str
-    situacao_atual: Optional[str] = None
 
 
 class PlansRepository:
@@ -170,14 +71,7 @@ class PlansRepository:
         existing: Optional[PlanDTO] = None,
         **campos: Any,
     ) -> PlanDTO:
-        """Insere ou atualiza o plano consolidando empregador, catálogos e atrasos.
-
-        Args:
-            numero_plano: Identificador normalizado do plano.
-            existing: Instância previamente carregada do plano para evitar
-                reconsultas após o *upsert*.
-            **campos: Demais atributos derivados da ingestão para persistir.
-        """
+        """Insere ou atualiza o plano consolidando empregador, catálogos e atrasos."""
 
         campos = dict(campos)
         parcelas_brutas = list(campos.pop("parcelas_atraso", []) or [])
@@ -562,130 +456,39 @@ class PlansRepository:
     def _calcular_atraso_desde(
         dias_em_atraso: Any,
     ) -> Optional[date]:
-        if dias_em_atraso is None:
-            return None
-
-        try:
-            dias = int(dias_em_atraso)
-        except (TypeError, ValueError):
-            return None
-
-        if dias < 0:
-            return None
-
-        base = date.today()
-        return base - timedelta(days=dias)
+        return calcular_atraso_desde(dias_em_atraso)
 
     @staticmethod
     def _inferir_tipo_inscricao(numero: str) -> str:
-        texto = "".join(ch for ch in str(numero) if ch.isdigit())
-        if len(texto) == 14:
-            return "CNPJ"
-        if len(texto) == 11:
-            return "CPF"
-        return "CEI"
+        return inferir_tipo_inscricao(numero)
 
     @staticmethod
     def _normalizar_codigo(texto: str) -> str:
-        canonico = "".join(
-            ch if ch.isalnum() else "_" for ch in texto.upper().strip()
-        )
-        canonico = "_".join(filter(None, canonico.split("_")))
-        return canonico or texto.upper()
+        return normalizar_codigo(texto)
 
     @staticmethod
     def _normalizar_situacao(texto: str) -> str:
-        if not texto:
-            return "EM_DIA"
-
-        normalizado = texto.strip().upper()
-        if not normalizado:
-            return "EM_DIA"
-
-        if "GRDE" in normalizado:
-            return "GRDE_EMITIDA"
-        if "SIT" in normalizado and "ESPECIAL" in normalizado:
-            return "SIT_ESPECIAL"
-        if "LIQ" in normalizado:
-            return "LIQUIDADO"
-        if normalizado.startswith("P.") or normalizado.startswith("P ") or normalizado.startswith("PRESC"):
-            return "P_RESCISAO"
-        if "P_RESCISAO" in normalizado or normalizado.startswith("P_RESC"):
-            return "P_RESCISAO"
-        if "P. RESCISAO" in normalizado:
-            return "P_RESCISAO"
-        if normalizado.startswith("RESC") or "RESCINDIDO" in normalizado:
-            return "RESCINDIDO"
-        return "EM_DIA"
+        return normalizar_situacao(texto)
 
     @staticmethod
     def _only_digits(valor: Any) -> str:
-        texto = "".join(ch for ch in str(valor or "") if ch.isdigit())
-        return texto
+        return only_digits(valor)
 
     @staticmethod
     def _safe_int(valor: Any) -> Optional[int]:
-        if valor is None:
-            return None
-        texto = str(valor).strip()
-        if not texto:
-            return None
-        digits = PlansRepository._only_digits(texto)
-        candidato = digits or texto
-        try:
-            return int(candidato)
-        except ValueError:
-            return None
+        return safe_int(valor)
 
     @staticmethod
     def _extract_date_from_timestamp(valor: Any) -> Optional[date]:
-        if valor is None:
-            return None
-        if isinstance(valor, datetime):
-            return valor.date()
-        if isinstance(valor, date):
-            return valor
-        texto = str(valor).strip()
-        if not texto:
-            return None
-        try:
-            parsed = datetime.fromisoformat(texto)
-        except ValueError:
-            return None
-        return parsed.date()
+        return extract_date_from_timestamp(valor)
 
     @staticmethod
     def _parse_vencimento(valor: Any) -> Optional[date]:
-        if isinstance(valor, datetime):
-            return valor.date()
-        if isinstance(valor, date):
-            return valor
-        texto = str(valor or "").strip()
-        if not texto:
-            return None
-        for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
-            try:
-                return datetime.strptime(texto, fmt).date()
-            except ValueError:
-                continue
-        return None
+        return parse_vencimento(valor)
 
     @staticmethod
     def _to_decimal(valor: Any) -> Optional[Decimal]:
-        if valor is None:
-            return None
-        if isinstance(valor, Decimal):
-            return valor
-        if isinstance(valor, (int, float)):
-            return Decimal(str(valor))
-        texto = str(valor).strip()
-        if not texto:
-            return None
-        texto_normalizado = texto.replace(".", "").replace(",", ".")
-        try:
-            return Decimal(texto_normalizado)
-        except InvalidOperation:
-            return None
+        return to_decimal(valor)
 
     def _preparar_parcelas(
         self, parcelas: Iterable[Any]
@@ -833,77 +636,4 @@ class PlansRepository:
             )
 
 
-class EventsRepository:
-    """Persiste eventos de auditoria associados a planos."""
-
-    def __init__(self, conn: Connection) -> None:
-        self._conn = conn
-
-    def log(self, entity_id: str, step: Step | str, message: str) -> None:
-        event_type = step.value if isinstance(step, Step) else str(step)
-        log_event(
-            self._conn,
-            entity="plano",
-            entity_id=entity_id,
-            event_type=event_type,
-            severity="info",
-            message=message,
-            data={},
-        )
-
-
-class OccurrenceRepository:
-    """Registra ocorrências relevantes para auditoria."""
-
-    def __init__(self, conn: Connection) -> None:
-        self._conn = conn
-
-    def add(
-        self,
-        numero_plano: str,
-        situacao: str,
-        cnpj: str,
-        tipo: Optional[str],
-        saldo: Optional[float],
-        dt_situacao_atual: date,
-    ) -> None:
-        with self._conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                "SELECT id FROM app.plano WHERE numero_plano = %s",
-                (numero_plano,),
-            )
-            plano = cur.fetchone()
-            if not plano:
-                return
-
-            mensagem = f"Ocorrência {situacao} para plano {numero_plano}"
-            documento = PlansRepository._only_digits(cnpj) or (cnpj or "").strip() or None
-            if isinstance(saldo, Decimal):
-                saldo_json: Optional[str | float] = str(saldo)
-            else:
-                saldo_json = saldo
-            payload = {
-                "numero_plano": numero_plano,
-                "documento": documento,
-                "tipo_plano": tipo,
-                "saldo_total": saldo_json,
-                "dt_situacao_atual": dt_situacao_atual.isoformat(),
-            }
-
-            log_event(
-                self._conn,
-                entity="plano",
-                entity_id=str(plano["id"]),
-                event_type="OCORRENCIA",
-                severity="info",
-                message=mensagem,
-                data=payload,
-            )
-
-
-__all__ = [
-    "EventsRepository",
-    "OccurrenceRepository",
-    "PlanDTO",
-    "PlansRepository",
-]
+__all__ = ["PlansRepository"]

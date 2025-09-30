@@ -10,7 +10,13 @@ from .audit import (
     log_event_async,
 )
 from .config import Settings, settings
-from .repositories import EventsRepository, OccurrenceRepository, PlanDTO, PlansRepository
+from .repositories import (
+    EventsRepository,
+    LookupCache,
+    OccurrenceRepository,
+    PlanDTO,
+    PlansRepository,
+)
 
 __all__ = [
     "JobRunAsync",
@@ -21,6 +27,7 @@ __all__ = [
     "log_event",
     "log_event_async",
     "EventsRepository",
+    "LookupCache",
     "OccurrenceRepository",
     "PlanDTO",
     "PlansRepository",
