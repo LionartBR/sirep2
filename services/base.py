@@ -12,6 +12,7 @@ from psycopg.errors import UniqueViolation
 from domain.enums import Step
 from infra.audit import (
     bind_session_by_matricula,
+    JobRunHandle,
     finish_job_step,
     finish_job_step_error,
     job_run,
@@ -49,6 +50,7 @@ class StepJobContext:
     events: EventsRepository
     job_run_id: str
     job_run_started_at: datetime
+    job: JobRunHandle
 
 
 StepJobCallback = Callable[[StepJobContext], StepJobOutcome]
@@ -87,8 +89,7 @@ def _resolve_principal(
 def _prepare_context(
     connection: psycopg.Connection,
     *,
-    job_run_id: str,
-    job_run_started_at: datetime,
+    job: JobRunHandle,
 ) -> StepJobContext:
     """Inicializa o contexto com os repositórios necessários."""
 
@@ -98,8 +99,9 @@ def _prepare_context(
         db=connection,
         plans=plans,
         events=events,
-        job_run_id=job_run_id,
-        job_run_started_at=job_run_started_at,
+        job_run_id=job.id,
+        job_run_started_at=job.started_at,
+        job=job,
     )
 
 
@@ -217,11 +219,7 @@ def run_step_job(
                         )
                         connection.commit()
                         _configure_transaction(connection, principal=principal)
-                        context = _prepare_context(
-                            connection,
-                            job_run_id=job_handle.id,
-                            job_run_started_at=job_handle.started_at,
-                        )
+                        context = _prepare_context(connection, job=job_handle)
                         outcome = callback(context)
                         final_status = _normalize_job_status(outcome.status)
                         job_handle.status = final_status

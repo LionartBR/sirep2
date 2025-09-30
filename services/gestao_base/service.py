@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Optional
 
 from domain.enums import Step
 from infra.config import settings
@@ -16,6 +16,7 @@ from services.base import (
     run_step_job,
 )
 
+from .audit import GestaoBaseAuditManager
 from .collectors import DryRunCollector, GestaoBaseCollector, TerminalCollector
 from .models import ProgressCallback
 from .persistence import format_summary, persist_rows
@@ -73,9 +74,27 @@ class GestaoBaseService:
             if progress_callback:
                 progress_callback(12.0, None, "Captura real da Gestão da Base iniciada")
 
-            data = collector.collect(progress_callback)
-            resultado = persist_rows(context, data, progress_callback)
+            audit_manager = GestaoBaseAuditManager(context)
+            start_payload: Optional[dict[str, Any]] = None
+            if matricula:
+                start_payload = {"matricula": matricula}
+            audit_manager.pipeline_started(start_payload)
+
+            hooks = audit_manager.create_stage_hooks()
+
+            try:
+                data = collector.collect(
+                    progress_callback,
+                    audit_hooks=hooks,
+                )
+                resultado = persist_rows(context, data, progress_callback)
+            except Exception as exc:
+                context.db.rollback()
+                audit_manager.pipeline_failed(exc)
+                raise
+
             summary = format_summary(resultado)
+            audit_manager.pipeline_finished(resultado)
             return StepJobOutcome(data=resultado, info_update={"summary": summary})
 
         return run_step_job(

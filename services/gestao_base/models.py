@@ -40,5 +40,37 @@ ProgressCallback = Callable[[float, Optional[int], Optional[str]], None]
 
 
 class GestaoBaseCollector(Protocol):
-    def collect(self, progress: Optional[ProgressCallback] = None) -> GestaoBaseData:
+    def collect(
+        self,
+        progress: Optional[ProgressCallback] = None,
+        audit_hooks: Optional["PipelineAuditHooks"] = None,
+    ) -> GestaoBaseData:
+        ...
+
+
+class PipelineAuditHooks(Protocol):
+    def stage_started(
+        self,
+        step_code: str,
+        message: Optional[str] = None,
+        data: Optional[dict[str, Any]] = None,
+    ) -> None:
+        ...
+
+    def stage_finished(
+        self,
+        step_code: str,
+        message: Optional[str] = None,
+        data: Optional[dict[str, Any]] = None,
+    ) -> None:
+        ...
+
+    def stage_failed(
+        self,
+        step_code: str,
+        error: str,
+        *,
+        data: Optional[dict[str, Any]] = None,
+        message: Optional[str] = None,
+    ) -> None:
         ...
