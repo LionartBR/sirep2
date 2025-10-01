@@ -6,14 +6,25 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from types import ModuleType
+import importlib
 import sys
 
 import pytest
 
 
 def _ensure_psycopg_stub() -> None:
-    if "psycopg" in sys.modules:
+    try:
+        importlib.import_module("psycopg")
+        importlib.import_module("psycopg.errors")
+        importlib.import_module("psycopg.rows")
+        importlib.import_module("psycopg.types")
+        importlib.import_module("psycopg.types.json")
+        importlib.import_module("psycopg.pq")
+        importlib.import_module("psycopg_pool")
         return
+    except ModuleNotFoundError:
+        if "psycopg" in sys.modules:
+            return
 
     psycopg_module = ModuleType("psycopg")
 
@@ -109,8 +120,15 @@ from psycopg.rows import dict_row
 
 
 def _ensure_fastapi_stub() -> None:
-    if "fastapi" in sys.modules:
+    try:
+        importlib.import_module("fastapi")
+        importlib.import_module("fastapi.responses")
+        importlib.import_module("fastapi.staticfiles")
+        importlib.import_module("fastapi.status")
         return
+    except ModuleNotFoundError:
+        if "fastapi" in sys.modules:
+            return
 
     fastapi_module = ModuleType("fastapi")
     responses_module = ModuleType("fastapi.responses")
@@ -228,8 +246,12 @@ _ensure_fastapi_stub()
 
 
 def _ensure_pydantic_stub() -> None:
-    if "pydantic" in sys.modules:
+    try:
+        importlib.import_module("pydantic")
         return
+    except ModuleNotFoundError:
+        if "pydantic" in sys.modules:
+            return
 
     pydantic_module = ModuleType("pydantic")
 
