@@ -140,6 +140,7 @@ class PlansRepository:
             situacao_id=situacao_id,
             situacao_codigo=situacao_codigo,
             situacao_anterior=situacao_anterior,
+            dt_situacao_atual=campos.get("dt_situacao_atual"),
         )
 
         parcelas_preparadas = self._preparar_parcelas(parcelas_brutas)
@@ -314,6 +315,7 @@ class PlansRepository:
         situacao_id: Optional[str],
         situacao_codigo: Optional[str],
         situacao_anterior: Optional[str],
+        dt_situacao_atual: Optional[date | datetime] = None,
         observacao: str = "Gestão da Base",
     ) -> None:
         if not situacao_id:
@@ -324,7 +326,12 @@ class PlansRepository:
         if atual and anterior and atual == anterior:
             return
 
-        mudou_em = datetime.now(timezone.utc)
+        mudou_em = self._coerce_mudou_em(dt_situacao_atual)
+        mudou_em_param: datetime | str
+        if isinstance(dt_situacao_atual, date) and not isinstance(dt_situacao_atual, datetime):
+            mudou_em_param = dt_situacao_atual.isoformat()
+        else:
+            mudou_em_param = mudou_em
 
         if not anterior:
             with self._conn.cursor(row_factory=dict_row) as cur:
@@ -340,8 +347,6 @@ class PlansRepository:
                 )
                 ultimo = cur.fetchone()
             if ultimo and str(ultimo.get("situacao_plano_id")) == situacao_id:
-                if not mudou_em:
-                    return
                 ultimo_mudou_em = ultimo.get("mudou_em")
                 ultima_data = self._extract_date_from_timestamp(ultimo_mudou_em)
                 nova_data = self._extract_date_from_timestamp(mudou_em)
@@ -365,7 +370,7 @@ class PlansRepository:
                     %s
                 )
                 """,
-                (plano_id, situacao_id, mudou_em, observacao_txt),
+                (plano_id, situacao_id, mudou_em_param, observacao_txt),
             )
 
     def _resolver_resolucao(
@@ -477,6 +482,16 @@ class PlansRepository:
     @staticmethod
     def _safe_int(valor: Any) -> Optional[int]:
         return safe_int(valor)
+
+    @staticmethod
+    def _coerce_mudou_em(valor: Optional[date | datetime]) -> datetime:
+        if isinstance(valor, datetime):
+            if valor.tzinfo is None:
+                return valor.replace(tzinfo=timezone.utc)
+            return valor.astimezone(timezone.utc)
+        if isinstance(valor, date):
+            return datetime(valor.year, valor.month, valor.day, tzinfo=timezone.utc)
+        return datetime.now(timezone.utc)
 
     @staticmethod
     def _extract_date_from_timestamp(valor: Any) -> Optional[date]:
