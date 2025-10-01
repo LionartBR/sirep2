@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from domain.pipeline import PipelineState, PipelineStatus
 
@@ -24,7 +24,7 @@ class PipelineStateResponse(BaseModel):
     finished_at: Optional[datetime] = None
     message: Optional[str] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = {"from_attributes": True}
 
     @classmethod
     def from_state(cls, state: PipelineState) -> "PipelineStateResponse":
