@@ -44,9 +44,18 @@ document.addEventListener('DOMContentLoaded', () => {
     8;
   const lastUpdateLabel = document.getElementById('lastUpdateInfo');
 
+  // Occurrences table elements
+  const occTablePanel = document.getElementById('occurrencesTablePanel');
+  const occTableElement = occTablePanel?.querySelector('table') ?? null;
+  const occTableBody = occTableElement?.tBodies?.[0] ?? null;
+  const occColumnCount =
+    occTableElement?.tHead?.rows?.[0]?.cells?.length ??
+    occTableElement?.rows?.[0]?.cells?.length ??
+    8;
+
   const PIPELINE_ENDPOINT = '/api/pipeline';
   const PLANS_ENDPOINT = '/api/plans';
-  const DEFAULT_PLAN_PAGE_SIZE = 50;
+  const DEFAULT_PLAN_PAGE_SIZE = 10;
   const tableSearchState = {
     plans: '',
     occurrences: '',
@@ -247,21 +256,174 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
-  const buildPlansRequestUrl = () => {
+  const renderOccurrenceRows = (items) => {
+    if (!occTableBody) {
+      return;
+    }
+    occTableBody.innerHTML = '';
+    const rows = Array.isArray(items) ? items : [];
+    if (!rows.length) {
+      renderOccurrencesPlaceholder('nenhuma ocorrência por aqui.');
+      return;
+    }
+
+    rows.forEach((item) => {
+      const row = document.createElement('tr');
+      row.className = 'table__row';
+
+      const planCell = document.createElement('td');
+      planCell.className = 'table__cell';
+      planCell.textContent = item?.number ?? '';
+      row.appendChild(planCell);
+
+      const documentCell = document.createElement('td');
+      documentCell.className = 'table__cell';
+      documentCell.textContent = item?.document ?? '';
+      row.appendChild(documentCell);
+
+      const companyCell = document.createElement('td');
+      companyCell.className = 'table__cell';
+      companyCell.textContent = item?.company_name ?? '';
+      row.appendChild(companyCell);
+
+      const statusCell = document.createElement('td');
+      statusCell.className = 'table__cell';
+      statusCell.textContent = formatStatusLabel(item?.status);
+      row.appendChild(statusCell);
+
+      const daysCell = document.createElement('td');
+      daysCell.className = 'table__cell';
+      daysCell.textContent = formatDaysValue(item?.days_overdue);
+      row.appendChild(daysCell);
+
+      const balanceCell = document.createElement('td');
+      balanceCell.className = 'table__cell';
+      balanceCell.textContent = formatCurrencyValue(item?.balance);
+      row.appendChild(balanceCell);
+
+      const statusDateCell = document.createElement('td');
+      statusDateCell.className = 'table__cell';
+      statusDateCell.textContent = formatDateLabel(item?.status_date);
+      row.appendChild(statusDateCell);
+
+      const actionsCell = document.createElement('td');
+      actionsCell.className = 'table__cell';
+      actionsCell.textContent = '—';
+      row.appendChild(actionsCell);
+
+      occTableBody.appendChild(row);
+    });
+  };
+
+  const renderOccurrencesPlaceholder = (message) => {
+    if (!occTableBody) {
+      return;
+    }
+    occTableBody.innerHTML = '';
+    const row = document.createElement('tr');
+    row.className = 'table__row table__row--empty';
+    const cell = document.createElement('td');
+    cell.className = 'table__cell';
+    cell.colSpan = occColumnCount;
+    cell.textContent = message;
+    row.appendChild(cell);
+    occTableBody.appendChild(row);
+  };
+
+  // --- Keyset pagination state (client-side) ---
+  const plansPager = {
+    page: 1,
+    pageSize: DEFAULT_PLAN_PAGE_SIZE,
+    nextCursor: null,
+    prevCursor: null,
+    hasMore: false,
+    totalCount: null,
+    totalPages: null,
+    showingFrom: 0,
+    showingTo: 0,
+  };
+
+  const plansPagerPrevBtn = document.getElementById('plansPagerPrev');
+  const plansPagerNextBtn = document.getElementById('plansPagerNext');
+  const plansPagerLabel = document.getElementById('plansPagerLabel');
+  const plansPagerRange = document.getElementById('plansPagerRange');
+
+  // Occurrences pager UI elements
+  const occPagerPrevBtn = document.getElementById('occPagerPrev');
+  const occPagerNextBtn = document.getElementById('occPagerNext');
+  const occPagerLabel = document.getElementById('occPagerLabel');
+  const occPagerRange = document.getElementById('occPagerRange');
+
+  const updatePlansPagerUI = () => {
+    if (plansPagerLabel) {
+      const totalPages = plansPager.totalPages ?? null;
+      const totalPagesLabel = totalPages && Number.isFinite(totalPages) ? String(totalPages) : '?';
+      plansPagerLabel.textContent = `pág. ${plansPager.page} de ${totalPagesLabel}`;
+    }
+    if (plansPagerRange) {
+      const totalKnown = plansPager.totalCount !== null && plansPager.totalCount !== undefined;
+      const totalLabel = totalKnown ? String(plansPager.totalCount) : `~${Math.max(plansPager.showingTo, 0)}`;
+      const from = plansPager.showingFrom || 0;
+      const to = plansPager.showingTo || 0;
+      plansPagerRange.textContent = `exibindo ${from}–${to} de ${totalLabel}`;
+    }
+    if (plansPagerPrevBtn) {
+      const canGoPrev = plansPager.page > 1;
+      plansPagerPrevBtn.disabled = !canGoPrev;
+      plansPagerPrevBtn.setAttribute('aria-disabled', String(!canGoPrev));
+    }
+    if (plansPagerNextBtn) {
+      const canGoNext = !!plansPager.hasMore;
+      plansPagerNextBtn.disabled = !canGoNext;
+      plansPagerNextBtn.setAttribute('aria-disabled', String(!canGoNext));
+    }
+  };
+
+  const updateOccPagerUI = (occCount) => {
+    if (occPagerLabel) {
+      occPagerLabel.textContent = `pág. ${plansPager.page} de ?`;
+    }
+    if (occPagerRange) {
+      const from = occCount > 0 ? 1 : 0;
+      const to = occCount;
+      const totalLabel = `~${occCount}`;
+      occPagerRange.textContent = `exibindo ${from}–${to} de ${totalLabel}`;
+    }
+    if (occPagerPrevBtn) {
+      const canGoPrev = plansPager.page > 1;
+      occPagerPrevBtn.disabled = !canGoPrev;
+      occPagerPrevBtn.setAttribute('aria-disabled', String(!canGoPrev));
+    }
+    if (occPagerNextBtn) {
+      const canGoNext = !!plansPager.hasMore;
+      occPagerNextBtn.disabled = !canGoNext;
+      occPagerNextBtn.setAttribute('aria-disabled', String(!canGoNext));
+    }
+  };
+
+  const buildPlansRequestUrl = ({ direction = null } = {}) => {
     const baseUrl =
       window.location.origin && window.location.origin !== 'null'
         ? window.location.origin
         : window.location.href;
     const url = new URL(PLANS_ENDPOINT, baseUrl);
-    url.searchParams.set('limit', String(DEFAULT_PLAN_PAGE_SIZE));
-    url.searchParams.set('offset', '0');
+    // Keyset pagination params
+    url.searchParams.set('page', String(plansPager.page));
+    url.searchParams.set('page_size', String(plansPager.pageSize));
+    if (direction === 'next' && plansPager.nextCursor) {
+      url.searchParams.set('cursor', plansPager.nextCursor);
+      url.searchParams.set('direction', 'next');
+    } else if (direction === 'prev' && plansPager.prevCursor) {
+      url.searchParams.set('cursor', plansPager.prevCursor);
+      url.searchParams.set('direction', 'prev');
+    }
     if (currentPlansSearchTerm) {
       url.searchParams.set('q', currentPlansSearchTerm);
     }
     return url.toString();
   };
 
-  const refreshPlans = async ({ showLoading } = {}) => {
+  const refreshPlans = async ({ showLoading, direction = null } = {}) => {
     if (!plansTableBody || isFetchingPlans) {
       return;
     }
@@ -281,7 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (matricula) {
         requestHeaders.set('X-User-Registration', matricula);
       }
-      const response = await fetch(buildPlansRequestUrl(), {
+      const response = await fetch(buildPlansRequestUrl({ direction }), {
         headers: requestHeaders,
         signal: plansFetchController.signal,
       });
@@ -290,7 +452,40 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const payload = await response.json();
       const items = Array.isArray(payload?.items) ? payload.items : [];
+      const occItems = items.filter((it) => (it?.status || '') !== 'P. RESCISAO');
       renderPlanRows(items);
+      renderOccurrenceRows(occItems);
+      // Update pager state from response
+      const paging = payload?.paging || {};
+      if (paging && typeof paging === 'object') {
+        plansPager.page = Number(paging.page) || plansPager.page;
+        plansPager.pageSize = Number(paging.page_size) || plansPager.pageSize;
+        plansPager.hasMore = Boolean(paging.has_more);
+        plansPager.nextCursor = paging.next_cursor || null;
+        plansPager.prevCursor = paging.prev_cursor || null;
+        plansPager.showingFrom = Number(paging.showing_from) || (items.length ? 1 : 0);
+        plansPager.showingTo = Number(paging.showing_to) || (items.length ? items.length : 0);
+        plansPager.totalCount = typeof paging.total_count === 'number' ? paging.total_count : null;
+        plansPager.totalPages = typeof paging.total_pages === 'number' ? paging.total_pages : null;
+        // When navigating backward, server's has_more may reference the previous direction.
+        // Ensure the Next button remains available after going back a page.
+        if (direction === 'prev') {
+          plansPager.hasMore = true;
+        }
+      } else {
+        // Fallback when server doesn't send paging (legacy path)
+        plansPager.page = 1;
+        plansPager.pageSize = DEFAULT_PLAN_PAGE_SIZE;
+        plansPager.hasMore = false;
+        plansPager.nextCursor = null;
+        plansPager.prevCursor = null;
+        plansPager.showingFrom = items.length ? 1 : 0;
+        plansPager.showingTo = items.length;
+        plansPager.totalCount = typeof payload?.total === 'number' ? payload.total : null;
+        plansPager.totalPages = plansPager.totalCount ? 1 : null;
+      }
+      updatePlansPagerUI();
+      updateOccPagerUI(occItems.length);
       plansLoaded = true;
     } catch (error) {
       if (error?.name === 'AbortError') {
@@ -619,6 +814,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     currentPlansSearchTerm = normalized;
     tableSearchState.plans = normalized;
+    // Reset pager when the search changes
+    plansPager.page = 1;
+    plansPager.nextCursor = null;
+    plansPager.prevCursor = null;
     void refreshPlans({ showLoading: true });
   };
 
@@ -629,6 +828,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (activeTableSearchTarget === 'occurrences') {
         handleOccurrencesSearch(value);
       } else {
+        // On submit, start from first page
+        plansPager.page = 1;
+        plansPager.nextCursor = null;
+        plansPager.prevCursor = null;
         handlePlansSearch(value, { forceRefresh: true });
       }
     });
@@ -643,8 +846,52 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       if (!value.trim() && currentPlansSearchTerm) {
+        // Clear search resets pager and reloads first page
+        plansPager.page = 1;
+        plansPager.nextCursor = null;
+        plansPager.prevCursor = null;
         handlePlansSearch('', { forceRefresh: true });
       }
+    });
+  }
+
+  // Pager buttons behavior
+  if (plansPagerPrevBtn) {
+    plansPagerPrevBtn.addEventListener('click', () => {
+      if (plansPager.page <= 1) {
+        return;
+      }
+      plansPager.page = Math.max(1, plansPager.page - 1);
+      void refreshPlans({ showLoading: true, direction: 'prev' });
+    });
+  }
+  if (plansPagerNextBtn) {
+    plansPagerNextBtn.addEventListener('click', () => {
+      if (!plansPager.hasMore) {
+        return;
+      }
+      plansPager.page = plansPager.page + 1;
+      void refreshPlans({ showLoading: true, direction: 'next' });
+    });
+  }
+
+  // Occurrences pager mirrors the same dataset navigation
+  if (occPagerPrevBtn) {
+    occPagerPrevBtn.addEventListener('click', () => {
+      if (plansPager.page <= 1) {
+        return;
+      }
+      plansPager.page = Math.max(1, plansPager.page - 1);
+      void refreshPlans({ showLoading: true, direction: 'prev' });
+    });
+  }
+  if (occPagerNextBtn) {
+    occPagerNextBtn.addEventListener('click', () => {
+      if (!plansPager.hasMore) {
+        return;
+      }
+      plansPager.page = plansPager.page + 1;
+      void refreshPlans({ showLoading: true, direction: 'next' });
     });
   }
 

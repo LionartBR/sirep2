@@ -151,11 +151,12 @@
 
             <div class="table-footer">
               <div class="pager" role="navigation" aria-label="Paginação">
-                <button class="pager__btn" type="button" aria-disabled="true" disabled>
+                <button id="plansPagerPrev" class="pager__btn" type="button" aria-disabled="true" disabled>
                   <i data-feather="chevron-left" aria-hidden="true"></i>
                 </button>
-                <span class="pager__label">pág. 1 de 1</span>
-                <button class="pager__btn" type="button" aria-disabled="true" disabled>
+                <span id="plansPagerLabel" class="pager__label">pág. 1 de ?</span>
+                <span id="plansPagerRange" class="pager__label" aria-live="polite">exibindo 0–0 de ~0</span>
+                <button id="plansPagerNext" class="pager__btn" type="button" aria-disabled="true" disabled>
                   <i data-feather="chevron-right" aria-hidden="true"></i>
                 </button>
               </div>
@@ -199,11 +200,12 @@
 
             <div class="table-footer">
               <div class="pager" role="navigation" aria-label="Paginação de ocorrências">
-                <button class="pager__btn" type="button" aria-disabled="true" disabled>
+                <button id="occPagerPrev" class="pager__btn" type="button" aria-disabled="true" disabled>
                   <i data-feather="chevron-left" aria-hidden="true"></i>
                 </button>
-                <span class="pager__label">pág. 1 de 1</span>
-                <button class="pager__btn" type="button" aria-disabled="true" disabled>
+                <span id="occPagerLabel" class="pager__label">pág. 1 de ?</span>
+                <span id="occPagerRange" class="pager__label" aria-live="polite">exibindo 0–0 de ~0</span>
+                <button id="occPagerNext" class="pager__btn" type="button" aria-disabled="true" disabled>
                   <i data-feather="chevron-right" aria-hidden="true"></i>
                 </button>
               </div>
