@@ -505,6 +505,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  let scheduleOccurrencesCountUpdate = () => {};
+
   const applyOccurrencesFilter = (term) => {
     const occurrencesPanel = document.getElementById('occurrencesTablePanel');
     if (!occurrencesPanel) {
@@ -567,6 +569,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       placeholderRow.hidden = visibleRows > 0;
     }
+
+    scheduleOccurrencesCountUpdate();
   };
 
   const handleOccurrencesSearch = (term) => {
@@ -847,6 +851,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const occurrencesPanel = document.getElementById('occurrencesTablePanel');
 
     if (!countElement || !occurrencesPanel) {
+      scheduleOccurrencesCountUpdate = () => {};
       return;
     }
 
@@ -867,9 +872,51 @@ document.addEventListener('DOMContentLoaded', () => {
       countElement.classList.toggle('section-switch__count--alert', total > 0);
     };
 
-    updateCount();
+    let pendingHandle = null;
+    const supportsAnimationFrame = typeof window.requestAnimationFrame === 'function';
 
-    const observer = new MutationObserver(updateCount);
+    const runPendingUpdate = () => {
+      pendingHandle = null;
+      updateCount();
+    };
+
+    const cancelScheduledUpdate = () => {
+      if (pendingHandle === null) {
+        return;
+      }
+
+      if (supportsAnimationFrame) {
+        window.cancelAnimationFrame(pendingHandle);
+      } else {
+        window.clearTimeout(pendingHandle);
+      }
+
+      pendingHandle = null;
+    };
+
+    scheduleOccurrencesCountUpdate = () => {
+      if (pendingHandle !== null) {
+        return;
+      }
+
+      if (supportsAnimationFrame) {
+        pendingHandle = window.requestAnimationFrame(runPendingUpdate);
+        return;
+      }
+
+      pendingHandle = window.setTimeout(runPendingUpdate, 0);
+    };
+
+    const forceUpdateCount = () => {
+      cancelScheduledUpdate();
+      updateCount();
+    };
+
+    forceUpdateCount();
+
+    const observer = new MutationObserver(() => {
+      scheduleOccurrencesCountUpdate();
+    });
     observer.observe(occurrencesPanel, {
       childList: true,
       subtree: true,
