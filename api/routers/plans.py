@@ -83,7 +83,7 @@ PLAN_SEARCH_BY_DOCUMENT_QUERY = """
         COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      WHERE documento = %(document)s
-       AND tipo_doc IN ('CNPJ', 'CEI')
+       AND tipo_doc IN ('CNPJ', 'CPF', 'CEI')
      ORDER BY saldo DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
