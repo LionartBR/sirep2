@@ -1,4 +1,4 @@
-name: Análise de Contexto do Repositório
+name: Análise Avançada de Contexto
 
 on:
   pull_request:
@@ -7,67 +7,242 @@ on:
     branches:
       - main
       - develop
+  workflow_dispatch:  # Permite execução manual
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  checks: write
 
 jobs:
-  analise-contexto:
+  analise-contexto-avancada:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: write
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout código
+      - name: 📥 Checkout código completo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Histórico completo para análise
+          fetch-depth: 0  # Histórico completo para análise de evolução
 
-      - name: Setup Python
+      - name: 🐍 Setup Python otimizado
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Instalar dependências
+      - name: 📦 Instalar dependências de análise
         run: |
-          pip install --upgrade pip
-          pip install ast-parser radon pylint black isort bandit safety
-          pip install -r requirements.txt || echo "Sem requirements.txt"
+          python -m pip install --upgrade pip
+          pip install radon pylint black isort bandit safety mypy
+          
+          # Instalar dependências do projeto (se existir)
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          elif [ -f setup.py ]; then
+            pip install -e .
+          elif [ -f pyproject.toml ]; then
+            pip install .
+          fi
 
-      - name: Baixar script de análise
-        run: |
-          curl -o context_analyzer.py https://raw.githubusercontent.com/SEU_USER/SEU_REPO/main/.github/scripts/context_analyzer.py
-
-      - name: Executar análise de contexto
+      - name: 🔍 Executar análise avançada de contexto
         id: analise
         run: |
-          python context_analyzer.py --output report.md
+          python .github/scripts/context_analyzer.py \
+            --output report.md \
+            --json analysis_data.json
         continue-on-error: true
 
-      - name: Comentar no PR
-        if: github.event_name == 'pull_request'
+      - name: 📊 Gerar badge de saúde
+        if: always()
+        run: |
+          # Extrair score do relatório
+          if [ -f report.md ]; then
+            SCORE=$(grep -oP 'Score de Saúde: \K\d+' report.md || echo "0")
+            echo "HEALTH_SCORE=$SCORE" >> $GITHUB_ENV
+            
+            if [ "$SCORE" -ge 80 ]; then
+              echo "BADGE_COLOR=brightgreen" >> $GITHUB_ENV
+            elif [ "$SCORE" -ge 60 ]; then
+              echo "BADGE_COLOR=yellow" >> $GITHUB_ENV
+            else
+              echo "BADGE_COLOR=red" >> $GITHUB_ENV
+            fi
+          fi
+
+      - name: 💬 Comentar no PR com análise completa
+        if: github.event_name == 'pull_request' && always()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const report = fs.readFileSync('report.md', 'utf8');
             
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
+            // Ler relatório
+            let report = '## 🔬 Análise Avançada de Contexto\n\n';
+            
+            if (fs.existsSync('report.md')) {
+              report += fs.readFileSync('report.md', 'utf8');
+            } else {
+              report += '❌ Erro ao gerar relatório de análise.';
+            }
+            
+            // Adicionar link para artifacts
+            report += '\n\n---\n';
+            report += `📎 [Ver análise completa nos Artifacts](${context.payload.repository.html_url}/actions/runs/${context.runId})\n`;
+            
+            // Buscar comentário anterior
+            const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: report
+              issue_number: context.issue.number,
             });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('Análise Avançada de Contexto')
+            );
+            
+            // Atualizar ou criar comentário
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: report
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report
+              });
+            }
 
-      - name: Upload relatório como artifact
+      - name: 📈 Análises complementares
+        if: always()
+        run: |
+          echo "🔍 Executando análises complementares..."
+          
+          # Radon - Complexidade ciclomática
+          echo "## Complexidade por arquivo:" > complexity.txt
+          radon cc . -a -s || echo "Sem análise de complexidade"
+          
+          # Radon - Maintainability Index
+          echo "## Índice de Manutenibilidade:" >> complexity.txt
+          radon mi . -s || echo "Sem análise de manutenibilidade"
+          
+          # Bandit - Segurança
+          echo "## Análise de Segurança:" > security.txt
+          bandit -r . -f txt -o security.txt || echo "Sem problemas de segurança"
+          
+          # MyPy - Type hints (se houver)
+          if find . -name "*.py" -exec grep -l "from typing import\|: str\|: int\|: bool" {} \; | head -1; then
+            echo "## Type Checking:" > types.txt
+            mypy . --ignore-missing-imports --no-error-summary || echo "Type hints OK"
+          fi
+
+      - name: 📦 Upload relatórios como artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: relatorio-analise
-          path: report.md
+          name: relatorio-completo-${{ github.sha }}
+          path: |
+            report.md
+            analysis_data.json
+            complexity.txt
+            security.txt
+            types.txt
+          retention-days: 30
 
-      - name: Verificar problemas críticos
+      - name: 🚨 Verificar problemas críticos
+        if: always()
         run: |
-          if grep -q "🚨 CRÍTICO" report.md; then
-            echo "Problemas críticos detectados!"
-            exit 1
+          if [ -f report.md ]; then
+            # Contar problemas críticos
+            CRITICAL=$(grep -c "🚨" report.md || echo "0")
+            
+            echo "Problemas críticos encontrados: $CRITICAL"
+            
+            if [ "$CRITICAL" -gt 0 ]; then
+              echo "::error::$CRITICAL problema(s) crítico(s) detectado(s)! Verifique o relatório."
+              exit 1
+            fi
           fi
+
+      - name: 📊 Gerar summary
+        if: always()
+        run: |
+          if [ -f analysis_data.json ]; then
+            echo "## 📊 Resumo da Análise" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Extrair dados do JSON
+            TOTAL_FUNCS=$(jq -r '.stats.total_functions' analysis_data.json)
+            TOTAL_CLASSES=$(jq -r '.stats.total_classes' analysis_data.json)
+            TOTAL_ISSUES=$(jq -r '.stats.total_issues' analysis_data.json)
+            
+            echo "| Métrica | Valor |" >> $GITHUB_STEP_SUMMARY
+            echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Funções | $TOTAL_FUNCS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Classes | $TOTAL_CLASSES |" >> $GITHUB_STEP_SUMMARY
+            echo "| Problemas | $TOTAL_ISSUES |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Top 5 problemas
+            echo "### 🎯 Top 5 Problemas" >> $GITHUB_STEP_SUMMARY
+            jq -r '.issues[:5] | .[] | "- **[\(.severity)]** \(.message)"' analysis_data.json >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: 💾 Salvar métricas históricas (opcional)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p .metrics
+          cp analysis_data.json .metrics/analysis_$(date +%Y%m%d_%H%M%S).json
+          
+          # Manter apenas últimas 10 análises
+          ls -t .metrics/analysis_*.json | tail -n +11 | xargs -r rm
+          
+          # Commit se houver mudanças (requer configuração adicional)
+          # git config --local user.email "action@github.com"
+          # git config --local user.name "GitHub Action"
+          # git add .metrics/
+          # git commit -m "chore: atualizar métricas de análise" || echo "Sem mudanças"
+          # git push
+
+  analise-diff:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔄 Analisar apenas arquivos modificados
+        run: |
+          echo "## 📝 Arquivos Modificados" > diff_analysis.md
+          
+          # Obter lista de arquivos Python modificados
+          git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '\.py$' > changed_files.txt || true
+          
+          if [ -s changed_files.txt ]; then
+            echo "" >> diff_analysis.md
+            echo "Arquivos Python modificados neste PR:" >> diff_analysis.md
+            cat changed_files.txt | while read file; do
+              if [ -f "$file" ]; then
+                LINES=$(wc -l < "$file")
+                echo "- \`$file\` ($LINES linhas)" >> diff_analysis.md
+              fi
+            done
+          else
+            echo "Nenhum arquivo Python modificado." >> diff_analysis.md
+          fi
+
+      - name: 📤 Upload análise de diff
+        uses: actions/upload-artifact@v4
+        with:
+          name: diff-analysis
+          path: diff_analysis.md
