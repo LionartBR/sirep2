@@ -1,39 +1,44 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `domain/` hosts immutable business models and rules; keep them framework-free.
-- `services/` orchestrates domain logic and talks to infrastructure via domain-defined interfaces.
-- `infra/` contains adapters for databases, queues, and external services; prefer environment-driven config.
-- `api/` exposes FastAPI routers and dependencies; delegate logic to services.
-- `ui/` serves the static web app; capture before/after screenshots when UI changes.
-- `tests/` mirrors the source layout with pytest suites and shared fixtures in `conftest.py`.
+- `domain/`: immutable business models and rules; framework‑free; prefer `@dataclass(frozen=True)`.
+- `services/`: orchestrate domain logic; depend on domain interfaces; no infra details.
+- `infra/`: adapters for DB/queues/external services; env‑driven config.
+- `api/`: FastAPI app factory, routers, and dependencies; delegate to services.
+- `ui/`: static web app; capture before/after screenshots when UI changes.
+- `tests/`: pytest suites mirroring source; shared fixtures in `conftest.py`.
+- `scripts/`: auxiliary CLIs; document in `docs/` when added.
 
 ## Build, Test, and Development Commands
-- `uvicorn api.app:create_app --reload` spins up the local FastAPI server with auto-reload.
-- `pytest` runs the unit and integration test suite.
-- `ruff check .` and `ruff format .` enforce linting and formatting.
-- `mypy .` validates typing across the project.
-- `scripts/` holds auxiliary CLIs; document any new script in `docs/`.
+- Start API: `uvicorn api.app:create_app --reload`
+- Run tests: `pytest`
+- Lint: `ruff check .` | Format: `ruff format .`
+- Type check: `mypy .`
+Run all from repo root.
 
 ## Coding Style & Naming Conventions
-- Follow PEP 8 with 4-space indentation and descriptive English identifiers (UI strings may stay in Portuguese).
-- Apply complete type hints to public functions, methods, and module-level state.
-- Prefer `@dataclass(frozen=True)` or tuples for domain models to keep immutability explicit.
-- Group imports by stdlib, third-party, and project modules, separated by blank lines.
-- Document public modules, classes, and functions with concise docstrings describing purpose and contracts.
+- PEP 8, 4‑space indentation, descriptive English identifiers (UI strings may be Portuguese).
+- Full type hints for public APIs and module state.
+- Domain models: `@dataclass(frozen=True)` or tuples.
+- Imports grouped: stdlib, third‑party, project (blank lines between).
+- Docstring public modules/classes/functions with purpose and contracts.
 
 ## Testing Guidelines
-- Name tests after the behavior under test (e.g., `test_service_returns_error_on_missing_case`).
-- Cover both success and failure branches for asynchronous paths.
-- Refresh golden files or snapshots deliberately; keep deterministic data.
-- Target meaningful coverage and ensure new behaviors ship with focused tests.
+- Name by behavior, e.g., `test_service_returns_error_on_missing_case`.
+- Cover success and failure paths, including async branches.
+- Keep data deterministic; refresh snapshots/golden files deliberately.
 
 ## Commit & Pull Request Guidelines
-- Write imperative commit messages summarizing the primary change; avoid mixing refactors with new behavior unless justified.
-- Keep branches current with `main` and resolve conflicts locally before opening a PR.
-- Run linting, typing, and test commands before pushing; note their status in the PR description.
-- Use the `make_pr` helper to generate PR titles/bodies, and document contract changes, rollout steps, and any required screenshots.
+- Commits: imperative mood summarizing the primary change; avoid mixing refactors with new behavior unless justified.
+- Keep branches current with `main`; resolve conflicts locally.
+- Before pushing: `ruff check .`, `ruff format .`, `mypy .`, `pytest`; note status in PR description.
+- Use `make_pr` to generate titles/bodies; document contract changes, rollout steps, and required screenshots.
 
-## Security & Configuration Notes
-- Never commit secrets; load credentials through environment variables consumed in `infra/` components.
-- Store configuration defaults in `.env.example` or documentation rather than source code.
+## Security & Configuration
+- Never commit secrets. Load credentials via environment variables in `infra/`.
+- Put defaults in `.env.example` or docs; do not hard‑code config.
+
+## Agent‑Specific Notes
+- Scope: this file applies repo‑wide; nested `AGENTS.md` takes precedence.
+- Keep changes minimal and focused; follow the structure above and update tests/docs with behavior changes.
+
