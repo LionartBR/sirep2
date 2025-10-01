@@ -245,8 +245,13 @@ document.addEventListener('DOMContentLoaded', () => {
         plansFetchController.abort();
       }
       plansFetchController = new AbortController();
+      const requestHeaders = new Headers({ Accept: 'application/json' });
+      const matricula = currentUser?.username?.trim();
+      if (matricula) {
+        requestHeaders.set('X-User-Registration', matricula);
+      }
       const response = await fetch(buildPlansRequestUrl(), {
-        headers: { Accept: 'application/json' },
+        headers: requestHeaders,
         signal: plansFetchController.signal,
       });
       if (!response.ok) {
