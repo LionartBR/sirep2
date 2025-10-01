@@ -50,7 +50,10 @@
         <div id="panel-base" class="card__panel" role="tabpanel" aria-labelledby="tab-base">
           <div class="controls" role="group" aria-label="Controles de execução">
             <div class="controls__group">
-              <button class="btn btn--primary" id="btnStart" type="button">Iniciar</button>
+              <div class="controls__start">
+                <button class="btn btn--primary" id="btnStart" type="button">Iniciar</button>
+                <p class="controls__info" id="lastUpdateInfo" aria-live="polite"></p>
+              </div>
               <button class="btn btn--ghost" id="btnPause" type="button" disabled>Pausar</button>
               <button class="btn btn--ghost" id="btnContinue" type="button" disabled>Continuar</button>
             </div>

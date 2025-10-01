@@ -42,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     plansTableElement?.tHead?.rows?.[0]?.cells?.length ??
     plansTableElement?.rows?.[0]?.cells?.length ??
     8;
+  const lastUpdateLabel = document.getElementById('lastUpdateInfo');
 
   const PIPELINE_ENDPOINT = '/api/pipeline';
   const PLANS_ENDPOINT = '/api/plans';
@@ -50,6 +51,9 @@ document.addEventListener('DOMContentLoaded', () => {
     plans: '',
     occurrences: '',
   };
+  if (lastUpdateLabel) {
+    lastUpdateLabel.textContent = 'última atualização em —';
+  }
   let currentPlansSearchTerm = '';
   let currentOccurrencesSearchTerm = '';
   let activeTableSearchTarget = 'plans';
@@ -69,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let isFetchingPlans = false;
   let plansLoaded = false;
   let shouldRefreshPlansAfterRun = false;
+  let lastSuccessfulFinishedAt = null;
 
   const setStatus = (text) => {
     statusText.textContent = `Estado: ${text}`;
@@ -133,6 +138,32 @@ document.addEventListener('DOMContentLoaded', () => {
       return parsed.toLocaleDateString('pt-BR');
     }
     return text;
+  };
+
+  const formatDateTimeLabel = (value) => {
+    if (!value) {
+      return '—';
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '—';
+    }
+    return date.toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  };
+
+  const updateLastUpdateInfo = (state) => {
+    if (!lastUpdateLabel) {
+      return;
+    }
+    if (state?.status === 'succeeded' && state?.finished_at) {
+      lastSuccessfulFinishedAt = state.finished_at;
+    }
+    const timestamp = lastSuccessfulFinishedAt ?? null;
+    const formatted = formatDateTimeLabel(timestamp);
+    lastUpdateLabel.textContent = `última atualização em ${formatted}`;
   };
 
   const renderPlansPlaceholder = (message, modifier = 'empty') => {
@@ -926,6 +957,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const applyState = (state) => {
     const message = state.message || defaultMessages[state.status] || defaultMessages.idle;
     updateProgressFromState(state);
+    updateLastUpdateInfo(state);
     switch (state.status) {
       case 'running':
         toggleButtons({ start: false, pause: true, cont: false });

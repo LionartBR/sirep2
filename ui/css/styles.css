@@ -198,6 +198,18 @@ input:focus {
 .controls__group {
   display: flex;
   gap: 12px;
+  align-items: flex-start;
+}
+
+.controls__start {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.controls__info {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .btn {
