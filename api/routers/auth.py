@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import logging
-from contextlib import AbstractAsyncContextManager
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
-from psycopg import AsyncConnection
 from psycopg.errors import InvalidAuthorizationSpecification
 
-from infra.db import bind_session, get_connection
+from api.dependencies import get_connection_manager
+from infra.db import bind_session
 
 logger = logging.getLogger(__name__)
 
@@ -27,18 +26,11 @@ class LoginResponse(BaseModel):
 
     matricula: str
 
-
-def _get_connection_manager() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Return the connection context manager used to authenticate."""
-
-    return get_connection()
-
-
 @router.post("/login", response_model=LoginResponse)
 async def login(payload: LoginPayload) -> LoginResponse:
     """Autentica o usuário verificando a matrícula no banco de dados."""
 
-    connection_manager = _get_connection_manager()
+    connection_manager = get_connection_manager()
 
     try:
         async with connection_manager as connection:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from contextlib import AbstractAsyncContextManager
 from decimal import Decimal
 from typing import Any
 
@@ -11,7 +10,8 @@ from psycopg.errors import InvalidAuthorizationSpecification
 from psycopg.rows import dict_row
 
 from api.models import PlanSummaryResponse, PlansResponse
-from infra.db import bind_session, get_connection
+from api.dependencies import get_connection_manager
+from infra.db import bind_session
 from infra.repositories._helpers import (
     extract_date_from_timestamp,
     only_digits,
@@ -92,17 +92,6 @@ PLAN_SEARCH_BY_DOCUMENT_QUERY = """
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
-
-
-def _get_connection_manager() -> AbstractAsyncContextManager[AsyncConnection]:
-    """Return the connection manager used by this router.
-
-    The indirection allows tests to patch the dependency easily.
-    """
-
-    return get_connection()
-
-
 _REQUEST_PRINCIPAL_HEADER_CANDIDATES = (
     "x-user-registration",
     "x-user-id",
@@ -252,7 +241,7 @@ async def list_plans(
             detail="Credenciais de acesso ausentes.",
         )
 
-    connection_manager = _get_connection_manager()
+    connection_manager = get_connection_manager()
     try:
         async with connection_manager as connection:
             await bind_session(connection, matricula)
