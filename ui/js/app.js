@@ -60,8 +60,18 @@ document.addEventListener('DOMContentLoaded', () => {
     occTableElement?.rows?.[0]?.cells?.length ??
     8;
 
+  // Treatment table elements (Tratamento)
+  const treatmentPanelEl = document.getElementById('panel-treatment');
+  const treatmentTableElement = treatmentPanelEl?.querySelector('table.data-table') ?? null;
+  const treatmentTableBody = treatmentTableElement?.tBodies?.[0] ?? null;
+  const treatmentColumnCount =
+    treatmentTableElement?.tHead?.rows?.[0]?.cells?.length ??
+    treatmentTableElement?.rows?.[0]?.cells?.length ??
+    6;
+
   const PIPELINE_ENDPOINT = '/api/pipeline';
   const PLANS_ENDPOINT = '/api/plans';
+  const TREATMENT_ENDPOINT = '/api/treatment';
   const DEFAULT_PLAN_PAGE_SIZE = 10;
   const tableSearchState = {
     plans: '',
@@ -88,8 +98,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let isFetchingPipelineMeta = false;
   let isFetchingPlans = false;
   let isFetchingOccurrences = false;
+  let isFetchingTreatment = false;
   let plansLoaded = false;
   let occurrencesLoaded = false;
+  let treatmentLoaded = false;
   let shouldRefreshPlansAfterRun = false;
   let lastSuccessfulFinishedAt = null;
 
@@ -473,6 +485,72 @@ document.addEventListener('DOMContentLoaded', () => {
       row.appendChild(actionsCell);
 
       occTableBody.appendChild(row);
+    });
+  };
+
+  const renderTreatmentPlaceholder = (message, modifier = 'empty') => {
+    if (!treatmentTableBody) {
+      return;
+    }
+    treatmentTableBody.innerHTML = '';
+    const row = document.createElement('tr');
+    row.className = 'table__row table__row--empty';
+    if (modifier) {
+      row.classList.add(`table__row--${modifier}`);
+    }
+    const cell = document.createElement('td');
+    cell.className = 'table__cell';
+    cell.colSpan = treatmentColumnCount;
+    cell.textContent = message;
+    row.appendChild(cell);
+    treatmentTableBody.appendChild(row);
+  };
+
+  const renderTreatmentRows = (items) => {
+    if (!treatmentTableBody) {
+      return;
+    }
+    treatmentTableBody.innerHTML = '';
+    const plans = Array.isArray(items) ? items : [];
+    if (!plans.length) {
+      renderTreatmentPlaceholder('nada a exibir por aqui.');
+      return;
+    }
+    plans.forEach((item) => {
+      const row = document.createElement('tr');
+      row.className = 'table__row';
+
+      const planCell = document.createElement('td');
+      planCell.className = 'table__cell';
+      planCell.textContent = item?.number ?? '';
+      row.appendChild(planCell);
+
+      const documentCell = document.createElement('td');
+      documentCell.className = 'table__cell';
+      documentCell.textContent = item?.document ?? '';
+      row.appendChild(documentCell);
+
+      const companyCell = document.createElement('td');
+      companyCell.className = 'table__cell';
+      companyCell.textContent = item?.company_name ?? '';
+      row.appendChild(companyCell);
+
+      const balanceCell = document.createElement('td');
+      balanceCell.className = 'table__cell';
+      balanceCell.textContent = formatCurrencyValue(item?.balance);
+      row.appendChild(balanceCell);
+
+      const statusDateCell = document.createElement('td');
+      statusDateCell.className = 'table__cell';
+      statusDateCell.textContent = formatDateLabel(item?.status_date);
+      row.appendChild(statusDateCell);
+
+      const actionsCell = document.createElement('td');
+      actionsCell.className = 'table__cell';
+      actionsCell.textContent = '—';
+      row.appendChild(actionsCell);
+
+      treatmentTableBody.appendChild(row);
     });
   };
 
@@ -1204,6 +1282,49 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  const refreshTreatment = async ({ showLoading } = {}) => {
+    if (!treatmentTableBody || isFetchingTreatment) {
+      return;
+    }
+    const shouldShowLoading = showLoading ?? !treatmentLoaded;
+    if (shouldShowLoading) {
+      renderTreatmentPlaceholder('carregando planos...', 'loading');
+    }
+
+    isFetchingTreatment = true;
+    try {
+      const baseUrl =
+        window.location.origin && window.location.origin !== 'null'
+          ? window.location.origin
+          : window.location.href;
+      const url = new URL(`${TREATMENT_ENDPOINT}/plans`, baseUrl);
+      const requestHeaders = new Headers({ Accept: 'application/json' });
+      const matricula = currentUser?.username?.trim();
+      if (matricula) {
+        requestHeaders.set('X-User-Registration', matricula);
+      }
+      const response = await fetch(url.toString(), { headers: requestHeaders });
+      if (!response.ok) {
+        throw new Error('Não foi possível carregar os planos.');
+      }
+      const payload = await response.json();
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      renderTreatmentRows(items);
+      const total = typeof payload?.total === 'number' ? payload.total : items.length;
+      if (kpiQueueEl) {
+        kpiQueueEl.textContent = formatIntCount(total);
+      }
+      treatmentLoaded = true;
+    } catch (error) {
+      console.error('Erro ao carregar planos de tratamento.', error);
+      if (!treatmentLoaded) {
+        renderTreatmentPlaceholder('Não foi possível carregar os planos.', 'error');
+      }
+    } finally {
+      isFetchingTreatment = false;
+    }
+  };
+
   const setupOccurrencesSearchObserver = () => {
     const occurrencesPanel = document.getElementById('occurrencesTablePanel');
     if (!occurrencesPanel) {
@@ -1626,6 +1747,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setStatus(defaultMessages.idle);
   void refreshPlans();
   void refreshOccurrences();
+  void refreshTreatment();
   // Initialize KPI values with zeros; backend wiring can update these later
   updateKpiCounts({ queueCount: 0, rescindedCount: 0, remainingCount: 0 });
 
@@ -1739,6 +1861,32 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleButtons({ start: false, pause: true, cont: false });
     setStatus('Executando');
   });
+
+  const btnMigratePlans = document.getElementById('btnMigratePlans');
+  if (btnMigratePlans) {
+    btnMigratePlans.addEventListener('click', async () => {
+      try {
+        const baseUrl =
+          window.location.origin && window.location.origin !== 'null'
+            ? window.location.origin
+            : window.location.href;
+        const url = new URL(`${TREATMENT_ENDPOINT}/migrate`, baseUrl);
+        const headers = new Headers({ 'Accept': 'application/json', 'Content-Type': 'application/json' });
+        const matricula = currentUser?.username?.trim();
+        if (matricula) {
+          headers.set('X-User-Registration', matricula);
+        }
+        const response = await fetch(url.toString(), { method: 'POST', headers });
+        if (!response.ok) {
+          throw new Error('Falha ao migrar planos.');
+        }
+        // On success, refresh Treatment table and KPI
+        void refreshTreatment({ showLoading: true });
+      } catch (error) {
+        console.error('Erro ao migrar planos para tratamento.', error);
+      }
+    });
+  }
 
   (async () => {
     void refreshPipelineMeta();
