@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Iterator, Optional
 
-from psycopg.connection import AsyncConnection, Connection
+from psycopg import AsyncConnection, Connection
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 

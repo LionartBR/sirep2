@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from psycopg.connection import AsyncConnection
+from psycopg import AsyncConnection
 from psycopg.errors import InvalidAuthorizationSpecification
 from psycopg.rows import dict_row
 
