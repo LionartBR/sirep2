@@ -5,7 +5,7 @@ from contextlib import AbstractAsyncContextManager
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from psycopg import AsyncConnection
 from psycopg.rows import dict_row
 
@@ -32,7 +32,8 @@ PLAN_DEFAULT_QUERY = """
         dias_em_atraso,
         saldo_total,
         dt_situacao,
-        valor_atrasado
+        valor_atrasado,
+        COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      ORDER BY valor_atrasado DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
@@ -47,7 +48,8 @@ PLAN_SEARCH_BY_NUMBER_QUERY = """
         dias_em_atraso,
         saldo_total,
         dt_situacao,
-        valor_atrasado
+        valor_atrasado,
+        COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      WHERE numero_plano = %(number)s
         OR numero_plano LIKE %(number)s || '%'
@@ -64,7 +66,8 @@ PLAN_SEARCH_BY_NAME_QUERY = """
         dias_em_atraso,
         saldo_total,
         dt_situacao,
-        valor_atrasado
+        valor_atrasado,
+        COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      WHERE razao_social ILIKE '%%' || %(term)s || '%%'
      ORDER BY valor_atrasado DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
@@ -80,7 +83,8 @@ PLAN_SEARCH_BY_DOCUMENT_QUERY = """
         dias_em_atraso,
         saldo_total,
         dt_situacao,
-        valor_atrasado
+        valor_atrasado,
+        COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      WHERE documento = %(document)s
        AND tipo_doc IN ('CNPJ', 'CEI')
@@ -99,6 +103,14 @@ def _get_connection_manager() -> AbstractAsyncContextManager[AsyncConnection]:
     """
 
     return get_connection()
+
+
+_REQUEST_PRINCIPAL_HEADER_CANDIDATES = (
+    "x-user-registration",
+    "x-user-id",
+    "x-app-user-registration",
+    "x-app-user-id",
+)
 
 
 def _normalize_days(value: Any) -> int | None:
@@ -168,6 +180,22 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
     )
 
 
+def _resolve_request_matricula(request: Request | None) -> str | None:
+    """Retrieve the matricula provided by the caller or fallback to defaults."""
+
+    if request is not None:
+        for header in _REQUEST_PRINCIPAL_HEADER_CANDIDATES:
+            value = request.headers.get(header)
+            if value:
+                candidate = value.split(",", 1)[0].strip()
+                if candidate:
+                    return candidate
+
+    principal = get_principal_settings()
+    matricula = (principal.matricula or "").strip() if principal.matricula else ""
+    return matricula or None
+
+
 async def _fetch_plan_rows(
     connection: AsyncConnection,
     *,
@@ -201,6 +229,7 @@ async def _fetch_plan_rows(
 
 @router.get("", response_model=PlansResponse)
 async def list_plans(
+    request: Request,
     q: str | None = Query(None, max_length=255, description="Termo de busca"),
     limit: int = Query(
         DEFAULT_LIMIT,
@@ -212,8 +241,7 @@ async def list_plans(
 ) -> PlansResponse:
     """Return the consolidated plans available for the dashboard."""
 
-    principal = get_principal_settings()
-    matricula = (principal.matricula or "").strip() if principal.matricula else None
+    matricula = _resolve_request_matricula(request)
     if not matricula:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -238,7 +266,12 @@ async def list_plans(
         ) from exc
 
     items = [_row_to_plan_summary(row) for row in rows]
-    return PlansResponse(items=items, total=len(items))
+    if rows:
+        total_raw = rows[0].get("total_count")
+        total = int(total_raw) if total_raw is not None else len(rows)
+    else:
+        total = 0
+    return PlansResponse(items=items, total=total)
 
 
 __all__ = ["router", "list_plans"]
