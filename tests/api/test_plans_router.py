@@ -7,6 +7,8 @@ from typing import Any
 import sys
 
 import pytest
+
+pytest.importorskip("psycopg")
 from psycopg.rows import dict_row
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,6 +29,7 @@ class _DummyCursor:
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self._rows = rows
         self.executed_sql: str | None = None
+        self.executed_params: dict[str, Any] | None = None
 
     async def __aenter__(self) -> "_DummyCursor":
         return self
@@ -36,6 +39,12 @@ class _DummyCursor:
 
     async def execute(self, sql: str, *args: Any, **kwargs: Any) -> None:
         self.executed_sql = sql
+        if args:
+            self.executed_params = args[0]
+        else:
+            params = kwargs.get("params")
+            if params is not None:
+                self.executed_params = params
 
     async def fetchall(self) -> list[dict[str, Any]]:
         return self._rows
@@ -44,18 +53,24 @@ class _DummyCursor:
 class _DummyConnection:
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self._rows = rows
+        self.last_cursor: _DummyCursor | None = None
 
     def cursor(self, *, row_factory):
         assert row_factory is dict_row
-        return _DummyCursor(self._rows)
+        cursor = _DummyCursor(self._rows)
+        self.last_cursor = cursor
+        return cursor
 
 
 class _DummyManager:
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self._rows = rows
+        self.last_connection: _DummyConnection | None = None
 
     async def __aenter__(self) -> _DummyConnection:
-        return _DummyConnection(self._rows)
+        connection = _DummyConnection(self._rows)
+        self.last_connection = connection
+        return connection
 
     async def __aexit__(self, exc_type, exc, tb) -> bool:
         return False
@@ -134,6 +149,87 @@ async def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     connection, matricula = bind_calls[0]
     assert isinstance(connection, _DummyConnection)
     assert matricula == "abc123"
+
+
+@pytest.mark.anyio
+async def test_list_plans_search_by_number_builds_like(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows: list[dict[str, Any]] = []
+
+    manager = _DummyManager(rows)
+    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+
+    async def _fake_bind(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    response = await plans.list_plans(
+        request=_make_request(),
+        q="12345",
+        limit=plans.DEFAULT_LIMIT,
+        offset=0,
+    )
+
+    assert isinstance(response, PlansResponse)
+    assert response.total == 0
+    assert response.items == []
+    assert manager.last_connection is not None
+    cursor = manager.last_connection.last_cursor
+    assert cursor is not None
+    assert cursor.executed_params is not None
+    assert cursor.executed_params["number"] == "12345"
+    assert cursor.executed_params["number_like"] == "12345%"
+
+
+@pytest.mark.anyio
+async def test_list_plans_search_by_name_builds_wildcard(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows: list[dict[str, Any]] = []
+
+    manager = _DummyManager(rows)
+    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+
+    async def _fake_bind(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    response = await plans.list_plans(
+        request=_make_request(),
+        q="Acme",
+        limit=plans.DEFAULT_LIMIT,
+        offset=0,
+    )
+
+    assert isinstance(response, PlansResponse)
+    assert response.total == 0
+    assert response.items == []
+    assert manager.last_connection is not None
+    cursor = manager.last_connection.last_cursor
+    assert cursor is not None
+    assert cursor.executed_params is not None
+    assert cursor.executed_params["term"] == "%Acme%"
 
 
 @pytest.mark.anyio
