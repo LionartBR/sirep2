@@ -2,15 +2,24 @@ from __future__ import annotations
 
 import logging
 import unicodedata
+import base64
+import json
+import math
+import time
 from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from psycopg import AsyncConnection
 from psycopg.errors import InvalidAuthorizationSpecification
+try:  # pragma: no cover - allow running under test stubs
+    from psycopg.errors import QueryCanceled  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - fallback for tests without full psycopg
+    class QueryCanceled(Exception):
+        ...
 from psycopg.rows import dict_row
 
-from api.models import PlanSummaryResponse, PlansResponse
+from api.models import PlanSummaryResponse, PlansPaging, PlansResponse
 from api.dependencies import get_connection_manager
 from infra.db import bind_session
 from infra.repositories._helpers import (
@@ -103,12 +112,18 @@ PLAN_SEARCH_BY_DOCUMENT_QUERY = """
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
+KEYSET_DEFAULT_PAGE_SIZE = 10
+KEYSET_MAX_PAGE_SIZE = 200
 _REQUEST_PRINCIPAL_HEADER_CANDIDATES = (
     "x-user-registration",
     "x-user-id",
     "x-app-user-registration",
     "x-app-user-id",
 )
+
+
+# Simple in-memory TTL cache for total counts
+_total_count_cache: dict[str, tuple[float, int]] = {}
 
 
 def _normalize_days(value: Any) -> int | None:
@@ -204,6 +219,194 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
     )
 
 
+def _get_query_params(request: Request | None) -> set[str]:
+    """Return the normalized set of query parameter names if available."""
+
+    try:
+        qp = getattr(request, "query_params", None)
+        if qp is None:
+            return set()
+        # FastAPI provides a Mapping-like object
+        return {str(k).lower() for k in dict(qp).keys()}
+    except Exception:  # pragma: no cover - defensive
+        return set()
+
+
+def _should_use_keyset(request: Request | None) -> bool:
+    """Decide whether to use keyset pagination based on request query params."""
+
+    params = _get_query_params(request)
+    # Opt-in to keyset when any of the new params are provided.
+    return any(k in params for k in {"cursor", "direction", "page", "page_size", "tipo_doc"})
+
+
+def _b64url_encode_json(obj: dict[str, Any]) -> str:
+    data = json.dumps(obj, separators=(",", ":")).encode("utf-8")
+    token = base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+    return token
+
+
+def _b64url_decode_json(token: str) -> dict[str, Any] | None:
+    if not token:
+        return None
+    try:
+        padding = "=" * (-len(token) % 4)
+        data = base64.urlsafe_b64decode(token + padding)
+        return json.loads(data.decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _build_filters(search: str | None, *, tipo_doc: str | None) -> tuple[str, dict[str, Any]]:
+    """Return SQL WHERE clause and params according to filtering semantics.
+
+    - document number: digits only (length 11, 12 or 14) -> compare to documento
+      with optional tipo_doc in {'CNPJ','CPF','CEI'} when provided.
+    - numero_plano: exact or prefix (LIKE)
+    - razao_social: ILIKE contains
+    """
+
+    normalized_search = (search or "").strip()
+    digits = only_digits(normalized_search)
+    params: dict[str, Any] = {}
+
+    if digits and len(digits) in (11, 12, 14):
+        where = ["documento = %(document)s"]
+        params["document"] = digits
+        if tipo_doc and tipo_doc in {"CNPJ", "CPF", "CEI"}:
+            where.append("tipo_doc = %(tipo_doc)s")
+            params["tipo_doc"] = tipo_doc
+        else:
+            # keep legacy behavior when not specified
+            where.append("tipo_doc IN ('CNPJ','CPF','CEI')")
+        return " WHERE " + " AND ".join(where), params
+
+    if normalized_search.isdigit() and normalized_search:
+        params["number"] = normalized_search
+        params["number_prefix"] = f"{normalized_search}%"
+        where = " WHERE numero_plano = %(number)s OR numero_plano LIKE %(number_prefix)s"
+        return where, params
+
+    if normalized_search:
+        params["name_pattern"] = f"%{normalized_search}%"
+        where = " WHERE razao_social ILIKE %(name_pattern)s"
+        return where, params
+
+    return "", params
+
+
+async def _fast_total_count(
+    connection: AsyncConnection,
+    *,
+    where_sql: str,
+    params: dict[str, Any],
+    cache_key: str,
+) -> int | None:
+    """Attempt a fast COUNT(*) with a short statement timeout, else cache.
+
+    - Try with statement_timeout ≈ 1500ms.
+    - On timeout, return a cached value (if available). If no cache, return None.
+    - On success, update cache (TTL 60s) and return the value.
+    """
+
+    try:
+        async with connection.cursor(row_factory=dict_row) as cur:
+            # Ensure a local, short timeout to avoid slow counts
+            await cur.execute("BEGIN")
+            await cur.execute("SET LOCAL statement_timeout = '1500ms'")
+            await cur.execute(
+                f"SELECT COUNT(*) AS cnt FROM app.vw_planos_busca{where_sql}", params
+            )
+            row = await cur.fetchone()
+            await cur.execute("COMMIT")
+        count_raw = row.get("cnt") if row else None
+        value = int(count_raw) if count_raw is not None else 0
+        _total_count_cache[cache_key] = (time.time() + 60.0, value)
+        return value
+    except QueryCanceled:
+        # Timed out: try cache
+        cached = _total_count_cache.get(cache_key)
+        if cached and cached[0] > time.time():
+            return cached[1]
+        return None
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Falha ao executar COUNT(*) para grid de planos")
+        cached = _total_count_cache.get(cache_key)
+        if cached and cached[0] > time.time():
+            return cached[1]
+        return None
+
+
+async def _fetch_keyset_page(
+    connection: AsyncConnection,
+    *,
+    search: str | None,
+    tipo_doc: str | None,
+    page_size: int,
+    cursor_token: str | None,
+    direction: str | None,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Fetch a keyset page ordered by saldo desc then numero_plano asc.
+
+    Returns (rows, has_more) where `rows` are in display order.
+    """
+
+    where_sql, params = _build_filters(search, tipo_doc=tipo_doc)
+    seek_sql = ""
+    order_sql = " ORDER BY COALESCE(saldo,0) DESC, numero_plano ASC"
+    is_prev = direction == "prev"
+
+    if cursor_token:
+        payload = _b64url_decode_json(cursor_token) or {}
+        saldo_raw = payload.get("s")
+        numero_raw = payload.get("n")
+        # Treat saldo NULL as 0 and keep precision by passing as text to DB
+        try:
+            saldo_val = Decimal(str(saldo_raw)) if saldo_raw is not None else Decimal(0)
+        except Exception:
+            saldo_val = Decimal(0)
+        numero_val = str(numero_raw or "")
+        if is_prev:
+            seek_sql = (
+                " AND (COALESCE(saldo,0) > %(first_saldo)s"
+                " OR (COALESCE(saldo,0) = %(first_saldo)s AND numero_plano < %(first_numero)s))"
+            )
+            params.update({"first_saldo": saldo_val, "first_numero": numero_val})
+            order_sql = " ORDER BY COALESCE(saldo,0) ASC, numero_plano DESC"
+        else:
+            seek_sql = (
+                " AND (COALESCE(saldo,0) < %(last_saldo)s"
+                " OR (COALESCE(saldo,0) = %(last_saldo)s AND numero_plano > %(last_numero)s))"
+            )
+            params.update({"last_saldo": saldo_val, "last_numero": numero_val})
+
+    limit_sql = " LIMIT %(limit)s"
+    params["limit"] = page_size + 1  # fetch sentinel to detect has_more
+
+    sql = (
+        "SELECT numero_plano, documento, razao_social, situacao, dias_em_atraso, saldo, dt_situacao"
+        " FROM app.vw_planos_busca"
+        f"{where_sql}{seek_sql}{order_sql}{limit_sql}"
+    )
+
+    async with connection.cursor(row_factory=dict_row) as cur:
+        await cur.execute(sql, params)
+        fetched = await cur.fetchall()
+
+    has_more = len(fetched) > page_size
+
+    if is_prev:
+        # Results are in inverse order; trim then restore display order
+        # Trim based on sentinel
+        trimmed = fetched[: page_size]
+        trimmed.reverse()
+        rows = trimmed
+    else:
+        rows = fetched[: page_size]
+
+    return rows, has_more
+
+
 def _resolve_request_matricula(request: Request | None) -> str | None:
     """Retrieve the matricula provided by the caller or fallback to defaults."""
 
@@ -273,6 +476,17 @@ async def list_plans(
         description="Quantidade de itens por página",
     ),
     offset: int = Query(0, ge=0, description="Deslocamento para paginação"),
+    # Keyset pagination params (opt-in; keeps legacy limit/offset working)
+    page: int = Query(1, ge=1, description="Página atual (base 1)"),
+    page_size: int = Query(
+        KEYSET_DEFAULT_PAGE_SIZE,
+        ge=1,
+        le=KEYSET_MAX_PAGE_SIZE,
+        description="Itens por página (keyset)",
+    ),
+    cursor: str | None = Query(None, description="Cursor de paginação (base64 url-safe)"),
+    direction: str | None = Query(None, pattern="^(next|prev)$", description="Direção da navegação"),
+    tipo_doc: str | None = Query(None, pattern="^(CNPJ|CPF|CEI)$", description="Tipo do documento quando 'q' for numérico"),
 ) -> PlansResponse:
     """Return the consolidated plans available for the dashboard."""
 
@@ -284,15 +498,32 @@ async def list_plans(
         )
 
     connection_manager = get_connection_manager()
+    use_keyset = _should_use_keyset(request)
     try:
         async with connection_manager as connection:
             await bind_session(connection, matricula)
-            rows = await _fetch_plan_rows(
-                connection,
-                search=q,
-                limit=limit,
-                offset=offset,
-            )
+            if use_keyset:
+                rows, has_more = await _fetch_keyset_page(
+                    connection,
+                    search=q,
+                    tipo_doc=tipo_doc,
+                    page_size=page_size,
+                    cursor_token=cursor,
+                    direction=direction or "next",
+                )
+                # total count with timeout + cache
+                where_sql, count_params = _build_filters(q, tipo_doc=tipo_doc)
+                cache_key = f"{matricula}|{q or ''}|{tipo_doc or ''}"
+                total_count = await _fast_total_count(
+                    connection, where_sql=where_sql, params=count_params, cache_key=cache_key
+                )
+            else:
+                rows = await _fetch_plan_rows(
+                    connection,
+                    search=q,
+                    limit=limit,
+                    offset=offset,
+                )
     except (PermissionError, InvalidAuthorizationSpecification) as exc:
         logger.exception("Erro ao carregar planos do banco de dados")
         raise HTTPException(
@@ -307,12 +538,56 @@ async def list_plans(
         ) from exc
 
     items = [_row_to_plan_summary(row) for row in rows]
+
+    if use_keyset:
+        # Compute paging metadata
+        showing_from = (page - 1) * page_size + 1 if items else 0
+        showing_to = showing_from + len(items) - 1 if items else 0
+
+        next_cursor_val = None
+        prev_cursor_val = None
+        if items:
+            # saldo for cursor treats None as 0
+            first = rows[0]
+            last = rows[-1]
+            first_s = first.get("saldo")
+            last_s = last.get("saldo")
+            first_s = Decimal(str(first_s)) if first_s is not None else Decimal(0)
+            last_s = Decimal(str(last_s)) if last_s is not None else Decimal(0)
+            prev_cursor_val = _b64url_encode_json({
+                "s": str(first_s),
+                "n": str(first.get("numero_plano") or ""),
+            })
+            next_cursor_val = _b64url_encode_json({
+                "s": str(last_s),
+                "n": str(last.get("numero_plano") or ""),
+            })
+
+        total_known = total_count is not None
+        total_pages = math.ceil((total_count or 0) / page_size) if total_known else None
+        paging = PlansPaging(
+            page=page,
+            page_size=page_size,
+            has_more=has_more,
+            next_cursor=next_cursor_val,
+            prev_cursor=prev_cursor_val,
+            showing_from=showing_from,
+            showing_to=showing_to,
+            total_count=total_count if total_known else None,
+            total_pages=total_pages,
+        )
+
+        # Keep 'total' for backward compatibility: when known use total_count else len(items)
+        total_compat = (total_count or 0) if total_known else len(items)
+        return PlansResponse(items=items, total=total_compat, paging=paging)
+
+    # Legacy offset-based path preserved for compatibility
     if rows:
         total_raw = rows[0].get("total_count")
         total = int(total_raw) if total_raw is not None else len(rows)
     else:
         total = 0
-    return PlansResponse(items=items, total=total)
+    return PlansResponse(items=items, total=total, paging=None)
 
 
 __all__ = ["router", "list_plans"]

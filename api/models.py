@@ -53,8 +53,27 @@ class PlanSummaryResponse(BaseModel):
     status_date: Optional[date] = None
 
 
+class PlansPaging(BaseModel):
+    """Pagination metadata for the plans listing.
+
+    Designed for keyset navigation while remaining backward compatible
+    with existing consumers.
+    """
+
+    page: int | None = None
+    page_size: int | None = None
+    has_more: bool | None = None
+    next_cursor: str | None = None
+    prev_cursor: str | None = None
+    showing_from: int | None = None
+    showing_to: int | None = None
+    total_count: int | None = None
+    total_pages: int | None = None
+
+
 class PlansResponse(BaseModel):
     """Container returned by the plans listing endpoint."""
 
     items: list[PlanSummaryResponse]
     total: int
+    paging: PlansPaging | None = None
