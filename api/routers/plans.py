@@ -352,7 +352,7 @@ async def _fetch_keyset_page(
     """
 
     where_sql, params = _build_filters(search, tipo_doc=tipo_doc)
-    seek_sql = ""
+    seek_condition = ""
     order_sql = " ORDER BY COALESCE(saldo,0) DESC, numero_plano ASC"
     is_prev = direction == "prev"
 
@@ -367,15 +367,15 @@ async def _fetch_keyset_page(
             saldo_val = Decimal(0)
         numero_val = str(numero_raw or "")
         if is_prev:
-            seek_sql = (
-                " AND (COALESCE(saldo,0) > %(first_saldo)s"
+            seek_condition = (
+                "(COALESCE(saldo,0) > %(first_saldo)s"
                 " OR (COALESCE(saldo,0) = %(first_saldo)s AND numero_plano < %(first_numero)s))"
             )
             params.update({"first_saldo": saldo_val, "first_numero": numero_val})
             order_sql = " ORDER BY COALESCE(saldo,0) ASC, numero_plano DESC"
         else:
-            seek_sql = (
-                " AND (COALESCE(saldo,0) < %(last_saldo)s"
+            seek_condition = (
+                "(COALESCE(saldo,0) < %(last_saldo)s"
                 " OR (COALESCE(saldo,0) = %(last_saldo)s AND numero_plano > %(last_numero)s))"
             )
             params.update({"last_saldo": saldo_val, "last_numero": numero_val})
@@ -383,10 +383,17 @@ async def _fetch_keyset_page(
     limit_sql = " LIMIT %(limit)s"
     params["limit"] = page_size + 1  # fetch sentinel to detect has_more
 
+    # Build WHERE/AND composition correctly
+    where_clause = where_sql  # includes leading " WHERE " or empty
+    if seek_condition:
+        where_clause = (
+            f"{where_clause} AND {seek_condition}" if where_clause else f" WHERE {seek_condition}"
+        )
+
     sql = (
         "SELECT numero_plano, documento, razao_social, situacao, dias_em_atraso, saldo, dt_situacao"
         " FROM app.vw_planos_busca"
-        f"{where_sql}{seek_sql}{order_sql}{limit_sql}"
+        f"{where_clause}{order_sql}{limit_sql}"
     )
 
     async with connection.cursor(row_factory=dict_row) as cur:

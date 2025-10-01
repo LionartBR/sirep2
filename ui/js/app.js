@@ -358,14 +358,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (plansPagerLabel) {
       const totalPages = plansPager.totalPages ?? null;
       const totalPagesLabel = totalPages && Number.isFinite(totalPages) ? String(totalPages) : '?';
-      plansPagerLabel.textContent = `pág. ${plansPager.page} de ${totalPagesLabel}`;
+      plansPagerLabel.textContent = `page ${plansPager.page} of ${totalPagesLabel}`;
     }
     if (plansPagerRange) {
       const totalKnown = plansPager.totalCount !== null && plansPager.totalCount !== undefined;
       const totalLabel = totalKnown ? String(plansPager.totalCount) : `~${Math.max(plansPager.showingTo, 0)}`;
       const from = plansPager.showingFrom || 0;
       const to = plansPager.showingTo || 0;
-      plansPagerRange.textContent = `exibindo ${from}–${to} de ${totalLabel}`;
+      plansPagerRange.textContent = `displaying ${from}–${to} of ${totalLabel} plans`;
     }
     if (plansPagerPrevBtn) {
       const canGoPrev = plansPager.page > 1;
@@ -381,13 +381,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const updateOccPagerUI = (occCount) => {
     if (occPagerLabel) {
-      occPagerLabel.textContent = `pág. ${plansPager.page} de ?`;
+      const totalPages = plansPager.totalPages ?? null;
+      const totalPagesLabel = totalPages && Number.isFinite(totalPages) ? String(totalPages) : '?';
+      occPagerLabel.textContent = `pág. ${plansPager.page} de ${totalPagesLabel}`;
     }
     if (occPagerRange) {
+      const totalKnown = plansPager.totalCount !== null && plansPager.totalCount !== undefined;
+      const totalLabel = totalKnown ? String(plansPager.totalCount) : `~${Math.max(occCount, 0)}`;
       const from = occCount > 0 ? 1 : 0;
       const to = occCount;
-      const totalLabel = `~${occCount}`;
-      occPagerRange.textContent = `exibindo ${from}–${to} de ${totalLabel}`;
+      occPagerRange.textContent = `exibindo ${from}–${to} de ${totalLabel} planos`;
     }
     if (occPagerPrevBtn) {
       const canGoPrev = plansPager.page > 1;

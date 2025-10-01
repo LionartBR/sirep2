@@ -744,6 +744,11 @@ input:focus {
   align-items: center;
   justify-content: center;
   color: var(--muted);
+  cursor: pointer;
+}
+
+.pager__btn[aria-disabled="true"],
+.pager__btn:disabled {
   cursor: not-allowed;
 }
 
