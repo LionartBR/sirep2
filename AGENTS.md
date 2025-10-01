@@ -25,6 +25,12 @@
 - Rode `pytest` antes de submeter alterações que impactem regras de negócio ou API.
 - Inclua testes unitários para novos comportamentos e atualize snapshots conforme necessário.
 - Ao tocar em código assíncrono, cubra caminhos de sucesso e de erro.
+- Sempre que possível valide tipagens com `mypy` e formatação com `ruff` ou `black` antes de abrir um PR.
+
+## Commits e versionamento
+- Utilize mensagens de commit curtas e no imperativo descrevendo claramente a alteração principal.
+- Evite commits que misturem refatorações e mudanças de comportamento sem justificativa clara.
+- Garanta que a branch esteja sincronizada com `main` antes de abrir um novo PR, resolvendo conflitos localmente.
 
 ## Documentação
 - Atualize `docs/` ao introduzir novos fluxos, endpoints ou comandos.
@@ -33,6 +39,7 @@
 ## Mensagens finais e PRs
 - No resumo final para o usuário, liste mudanças relevantes e testes executados. Inclua comandos realmente executados e marque-os como ✅/⚠️/❌ conforme o resultado.
 - Após commitar, utilize a ferramenta `make_pr` para gerar título e corpo do Pull Request cobrindo o que foi feito e como validar.
+- Ao redigir o corpo do PR, liste quaisquer impactos em contratos públicos (APIs, eventos ou esquemas) e passos de rollout se relevantes.
 
 ## Scripts úteis
 - `uvicorn api.app:create_app --reload` para desenvolvimento local.
