@@ -44,6 +44,3 @@ exclude = ["tests", "tests.*", "scripts", "scripts.*"]
 
 [tool.setuptools.package-data]
 ui = ["**/*"]
-
-[tool.pytest.ini_options]
-pythonpath = ["."]
