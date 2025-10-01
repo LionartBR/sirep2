@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import unicodedata
 from decimal import Decimal
 from typing import Any
 
@@ -14,6 +15,7 @@ from api.dependencies import get_connection_manager
 from infra.db import bind_session
 from infra.repositories._helpers import (
     extract_date_from_timestamp,
+    normalizar_situacao,
     only_digits,
     to_decimal,
 )
@@ -23,6 +25,15 @@ from shared.text import normalize_document
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/plans", tags=["plans"])
+
+
+_STATUS_LABELS = {
+    "P_RESCISAO": "P. RESCISAO",
+    "SIT_ESPECIAL": "SIT. ESPECIAL",
+    "GRDE_EMITIDA": "GRDE Emitida",
+    "LIQUIDADO": "LIQUIDADO",
+    "RESCINDIDO": "RESCINDIDO",
+}
 
 
 PLAN_DEFAULT_QUERY = """
@@ -125,6 +136,31 @@ def _normalize_document(value: Any) -> str | None:
     return normalize_document(value)
 
 
+def _remove_accents(value: str) -> str:
+    """Return the ASCII representation of ``value`` without diacritics."""
+
+    decomposed = unicodedata.normalize("NFKD", value)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
+def _format_status(value: Any) -> str | None:
+    """Normalize status descriptions to the expected dashboard labels."""
+
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    ascii_text = _remove_accents(text)
+    normalized = normalizar_situacao(ascii_text)
+    label = _STATUS_LABELS.get(normalized)
+    if label is not None:
+        return label
+    return text
+
+
 def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
     """Transform a database row into the API response model."""
 
@@ -137,7 +173,7 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
     company_name_raw = row.get("razao_social") or row.get("razao")
     company_name = str(company_name_raw).strip() or None if company_name_raw else None
     status_raw = row.get("situacao") or row.get("status")
-    status = str(status_raw).strip() or None if status_raw else None
+    status = _format_status(status_raw)
     days_overdue = _normalize_days(
         row.get("dias_em_atraso")
         or row.get("dias_atraso")
