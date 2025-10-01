@@ -40,10 +40,10 @@ from pathlib import Path
 from typing import Iterable
 
 # Pastas a ignorar, em qualquer nível
-IGNORE_DIRS = {".venv", "__pycache__", "txt_export", "tools", "logs", ".git"}
+IGNORE_DIRS = {".venv", "__pycache__", "txt_export", "tools", "logs", ".git", "gestao_base"}
 
 # Arquivos específicos a ignorar (por nome exato)
-IGNORE_FILES = {".env", ".env.example", "pyproject.toml", "sirep.db", ".gitignore", "AGENTS.md"}
+IGNORE_FILES = {".env", ".env.example", "pyproject.toml", "sirep.db", ".gitignore", "AGENTS.md", "pw3270.py"}
 
 # Extensões que normalmente são binárias e devem ser puladas
 LIKELY_BINARY_EXTS = {
