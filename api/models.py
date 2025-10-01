@@ -4,11 +4,9 @@ from typing import Optional
 
 import pydantic
 
-BaseModel = getattr(pydantic, "BaseModel")
+BaseModel = pydantic.BaseModel
 ConfigDict = getattr(pydantic, "ConfigDict", dict)
 _HAS_MODEL_VALIDATE = hasattr(BaseModel, "model_validate")
-
-from pydantic import BaseModel
 from domain.pipeline import PipelineState, PipelineStatus
 
 
@@ -32,8 +30,6 @@ class PipelineStateResponse(BaseModel):
     else:  # pragma: no cover - exercised when running with Pydantic v1
         class Config:  # type: ignore[no-redef]
             orm_mode = True
-
-    model_config = {"from_attributes": True}
 
 
     @classmethod
