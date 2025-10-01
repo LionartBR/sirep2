@@ -111,7 +111,7 @@ async def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
 
     manager = _DummyManager(rows)
-    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
 
     bind_calls: list[tuple[Any, str]] = []
 
@@ -158,7 +158,7 @@ async def test_list_plans_search_by_number_builds_like(monkeypatch: pytest.Monke
     rows: list[dict[str, Any]] = []
 
     manager = _DummyManager(rows)
-    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
 
     async def _fake_bind(*_: Any) -> None:
         return None
@@ -199,7 +199,7 @@ async def test_list_plans_search_by_name_builds_wildcard(monkeypatch: pytest.Mon
     rows: list[dict[str, Any]] = []
 
     manager = _DummyManager(rows)
-    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
 
     async def _fake_bind(*_: Any) -> None:
         return None
@@ -252,7 +252,7 @@ async def test_get_plans_search_by_number_returns_success(
     ]
 
     manager = _DummyManager(rows)
-    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
 
     async def _fake_bind(*_: Any) -> None:
         return None
@@ -308,7 +308,7 @@ async def test_get_plans_search_by_number_prefix_returns_success(
     ]
 
     manager = _DummyManager(rows)
-    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
 
     async def _fake_bind(*_: Any) -> None:
         return None
@@ -351,7 +351,7 @@ async def test_list_plans_requires_credentials(monkeypatch: pytest.MonkeyPatch) 
     def _unexpected_manager() -> _DummyManager:
         raise AssertionError("Connection should not be requested when credentials are missing")
 
-    monkeypatch.setattr(plans, "_get_connection_manager", _unexpected_manager)
+    monkeypatch.setattr(plans, "get_connection_manager", _unexpected_manager)
 
     async def _unexpected_bind(*_: Any) -> None:
         raise AssertionError("bind_session should not be called when credentials are missing")
@@ -381,7 +381,7 @@ async def test_list_plans_accepts_header_override(monkeypatch: pytest.MonkeyPatc
     rows: list[dict[str, Any]] = []
 
     manager = _DummyManager(rows)
-    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
 
     bind_calls: list[tuple[Any, str]] = []
 
@@ -423,7 +423,7 @@ async def test_list_plans_returns_unauthorized_when_binding_fails(
     rows: list[dict[str, Any]] = []
 
     manager = _DummyManager(rows)
-    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
 
     async def _raise_permission(*_: Any) -> None:
         raise PermissionError("Access denied")

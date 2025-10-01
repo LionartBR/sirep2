@@ -34,7 +34,7 @@ def _setup_auth(monkeypatch, side_effect=None):
     manager = _ConnectionManager(connection)
     bind_mock = AsyncMock(side_effect=side_effect)
 
-    monkeypatch.setattr(auth_router, "_get_connection_manager", lambda: manager)
+    monkeypatch.setattr(auth_router, "get_connection_manager", lambda: manager)
     monkeypatch.setattr(auth_router, "bind_session", bind_mock)
 
     return connection, bind_mock
