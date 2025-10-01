@@ -1,10 +1,10 @@
 """Ferramentas para exportar o código fonte do repositório para arquivos ``.txt``.
 
-Além da exportação "aberta" dos arquivos de texto (com cabeçalho indicando o caminho
-original), o script também oferece um fluxo de exportação criptografada. O conteúdo é
-ofuscado com uma cifra simétrica simples baseada em derivação PBKDF2 e um gerador de
-keystream utilizando SHA-256. A descriptografia é realizada executando o script
-neste mesmo módulo utilizando o modo ``decrypt``.
+Além da exportação "aberta" dos arquivos de texto (sem cabeçalho), o script também 
+oferece um fluxo de exportação criptografada. O conteúdo é ofuscado com uma cifra 
+simétrica simples baseada em derivação PBKDF2 e um gerador de keystream utilizando 
+SHA-256. A descriptografia é realizada executando o script neste mesmo módulo 
+utilizando o modo ``decrypt``.
 
 Ignora por padrão:
 
@@ -170,11 +170,11 @@ def parse_header(header_line: str) -> Path | None:
 def split_header_and_body(text: str) -> tuple[str, str]:
     """Separa o cabeçalho da carga útil."""
 
-    lines = text.splitlines(keepends=True)
-    if not lines:
-        return "", ""
-    header = lines[0]
-    body = "".join(lines[1:])
+    first_newline = text.find('\n')
+    if first_newline == -1:
+        return text, ""
+    header = text[:first_newline + 1]
+    body = text[first_newline + 1:]
     return header, body
 
 
@@ -300,14 +300,16 @@ def run_plain_or_encrypted_export(
             out_path.parent.mkdir(parents=True, exist_ok=True)
 
             try:
-                header = build_header(rel_path)
                 body = content
                 reason = "ok"
                 if mode is ExportMode.ENCRYPT:
                     assert passphrase is not None
+                    header = build_header(rel_path)
                     body = encrypt_payload(content, passphrase)
+                    body = header + body
                     reason = "encrypted"
-                out_path.write_text(header + body, encoding="utf-8")
+                
+                out_path.write_text(body, encoding="utf-8")
                 stats.exported += 1
                 manifest_lines.append(
                     f"{rel_path},exported,{reason},{len(content.encode('utf-8'))}\n"
@@ -355,7 +357,7 @@ def run_decryption(
         out_path = make_out_path(out_base, rel_from_header, ExportMode.PLAIN)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            out_path.write_text(build_header(rel_from_header) + plaintext, encoding="utf-8")
+            out_path.write_text(plaintext, encoding="utf-8")
         except Exception as exc:  # pragma: no cover - exceção rara/ambiente
             stats.errors += 1
             manifest_lines.append(f"{rel_from_header},error,write-failed:{exc},\n")
