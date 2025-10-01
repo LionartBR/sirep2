@@ -1,0 +1,73 @@
+name: Análise de Contexto do Repositório
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  analise-contexto:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Histórico completo para análise
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Instalar dependências
+        run: |
+          pip install --upgrade pip
+          pip install ast-parser radon pylint black isort bandit safety
+          pip install -r requirements.txt || echo "Sem requirements.txt"
+
+      - name: Baixar script de análise
+        run: |
+          curl -o context_analyzer.py https://raw.githubusercontent.com/SEU_USER/SEU_REPO/main/.github/scripts/context_analyzer.py
+
+      - name: Executar análise de contexto
+        id: analise
+        run: |
+          python context_analyzer.py --output report.md
+        continue-on-error: true
+
+      - name: Comentar no PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+
+      - name: Upload relatório como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-analise
+          path: report.md
+
+      - name: Verificar problemas críticos
+        run: |
+          if grep -q "🚨 CRÍTICO" report.md; then
+            echo "Problemas críticos detectados!"
+            exit 1
+          fi
