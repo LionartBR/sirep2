@@ -917,17 +917,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-
-    const runPendingUpdate = () => {
-      pendingHandle = null;
-      updateCount();
-    };
-
-    const cancelScheduledUpdate = () => {
-      if (pendingHandle === null) {
-        return;
-      }
-
       if (supportsAnimationFrame) {
         window.cancelAnimationFrame(pendingHandle);
       } else {
