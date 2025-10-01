@@ -2,9 +2,8 @@ from pathlib import Path
 from typing import Any, MutableMapping
 
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import Response
 
 # Local alias replicating ``starlette.types.Scope`` to avoid depending on optional typing helpers at runtime.
 Scope = MutableMapping[str, Any]

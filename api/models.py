@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
@@ -10,6 +8,7 @@ BaseModel = getattr(pydantic, "BaseModel")
 ConfigDict = getattr(pydantic, "ConfigDict", dict)
 _HAS_MODEL_VALIDATE = hasattr(BaseModel, "model_validate")
 
+from pydantic import BaseModel
 from domain.pipeline import PipelineState, PipelineStatus
 
 
@@ -33,6 +32,9 @@ class PipelineStateResponse(BaseModel):
     else:  # pragma: no cover - exercised when running with Pydantic v1
         class Config:  # type: ignore[no-redef]
             orm_mode = True
+
+    model_config = {"from_attributes": True}
+
 
     @classmethod
     def from_state(cls, state: PipelineState) -> "PipelineStateResponse":
