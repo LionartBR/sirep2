@@ -18,6 +18,7 @@ from infra.repositories._helpers import (
     to_decimal,
 )
 from shared.config import get_principal_settings
+from shared.text import normalize_document
 
 logger = logging.getLogger(__name__)
 
@@ -132,13 +133,7 @@ def _normalize_balance(value: Any) -> Decimal | None:
 def _normalize_document(value: Any) -> str | None:
     """Return a cleaned document identifier (digits only when available)."""
 
-    if value is None:
-        return None
-    digits = only_digits(value)
-    texto = str(value).strip()
-    if digits:
-        return digits
-    return texto or None
+    return normalize_document(value)
 
 
 def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:

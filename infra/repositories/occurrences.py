@@ -8,8 +8,7 @@ from psycopg import Connection
 from psycopg.rows import dict_row
 
 from infra.audit import log_event
-
-from ._helpers import only_digits
+from shared.text import normalize_document
 
 
 class OccurrenceRepository:
@@ -37,7 +36,7 @@ class OccurrenceRepository:
                 return
 
             mensagem = f"Ocorrência {situacao} para plano {numero_plano}"
-            documento = only_digits(cnpj) or (cnpj or "").strip() or None
+            documento = normalize_document(cnpj)
             if isinstance(saldo, Decimal):
                 saldo_json: Optional[str | float] = str(saldo)
             else:
