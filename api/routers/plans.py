@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from psycopg import AsyncConnection
+from psycopg.errors import InvalidAuthorizationSpecification
 from psycopg.rows import dict_row
 
 from api.models import PlanSummaryResponse, PlansResponse
@@ -258,6 +259,12 @@ async def list_plans(
                 limit=limit,
                 offset=offset,
             )
+    except (PermissionError, InvalidAuthorizationSpecification) as exc:
+        logger.exception("Erro ao carregar planos do banco de dados")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais de acesso inválidas.",
+        ) from exc
     except Exception as exc:  # pragma: no cover - defensive programming
         logger.exception("Erro ao carregar planos do banco de dados")
         raise HTTPException(
