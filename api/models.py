@@ -2,8 +2,13 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel
+import pydantic
 
+BaseModel = getattr(pydantic, "BaseModel")
+ConfigDict = getattr(pydantic, "ConfigDict", dict)
+_HAS_MODEL_VALIDATE = hasattr(BaseModel, "model_validate")
+
+from pydantic import BaseModel
 from domain.pipeline import PipelineState, PipelineStatus
 
 
@@ -22,13 +27,22 @@ class PipelineStateResponse(BaseModel):
     finished_at: Optional[datetime] = None
     message: Optional[str] = None
 
+    if _HAS_MODEL_VALIDATE:
+        model_config = ConfigDict(from_attributes=True)
+    else:  # pragma: no cover - exercised when running with Pydantic v1
+        class Config:  # type: ignore[no-redef]
+            orm_mode = True
+
     model_config = {"from_attributes": True}
+
 
     @classmethod
     def from_state(cls, state: PipelineState) -> "PipelineStateResponse":
         """Build response model from a domain state object."""
 
-        return cls.model_validate(state)
+        if _HAS_MODEL_VALIDATE:
+            return cls.model_validate(state)
+        return cls.from_orm(state)  # type: ignore[return-value]
 
 
 class PlanSummaryResponse(BaseModel):
