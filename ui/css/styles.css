@@ -816,6 +816,40 @@ input:focus {
 .stat--success { background: #ecfdf5; }
 .stat--error { background: #fef2f2; }
 
+/* KPI Card */
+.kpi-card {
+  background: #f3f4f6; /* light gray */
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px; /* vertical spacing between rows */
+  font-family: Inter, Roboto, "Segoe UI", Arial, sans-serif;
+}
+
+.kpi-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kpi-label {
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.kpi-value {
+  font-size: 20px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.kpi-row--warning { color: #F2C94C; }
+.kpi-row--success { color: #27AE60; }
+.kpi-row--danger { color: #EB5757; }
+
 .filters {
   display: flex;
   align-items: flex-end;

@@ -340,23 +340,21 @@
                   <span class="kv__value" id="currentPlanStage">—</span>
                 </div>
               </div>
-              <div class="running-plan__col" aria-label="Resumo da fila de execução">
-                <table class="data-table data-table--compact" aria-label="Resumo de processamento de planos">
-                  <tbody>
-                    <tr class="stat stat--queue">
-                      <th scope="row">NA FILA</th>
-                      <td><span id="queueCount">0</span> planos</td>
-                    </tr>
-                    <tr class="stat stat--success">
-                      <th scope="row">RESCINDIDOS</th>
-                      <td><span id="rescindedCount">0</span> planos</td>
-                    </tr>
-                    <tr class="stat stat--error">
-                      <th scope="row">FALHAS</th>
-                      <td><span id="failedCount">0</span> planos</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div class="running-plan__col" aria-label="Indicadores de execução">
+                <div class="kpi-card" role="group" aria-label="Indicadores de execução">
+                  <div class="kpi-row kpi-row--warning">
+                    <span class="kpi-label">Planos na fila</span>
+                    <span class="kpi-value" id="kpiQueueCount">0</span>
+                  </div>
+                  <div class="kpi-row kpi-row--success">
+                    <span class="kpi-label">Rescindidos</span>
+                    <span class="kpi-value" id="kpiRescindedCount">0</span>
+                  </div>
+                  <div class="kpi-row kpi-row--danger">
+                    <span class="kpi-label">Falhas</span>
+                    <span class="kpi-value" id="kpiFailuresCount">0</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

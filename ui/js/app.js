@@ -430,6 +430,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const occPagerNextBtn = document.getElementById('occPagerNext');
   const occPagerLabel = document.getElementById('occPagerLabel');
   const occPagerRange = document.getElementById('occPagerRange');
+  // KPI elements (Treatment)
+  const kpiQueueEl = document.getElementById('kpiQueueCount');
+  const kpiRescindedEl = document.getElementById('kpiRescindedCount');
+  const kpiFailuresEl = document.getElementById('kpiFailuresCount');
 
   // Independent keyset pager for occurrences
   const occPager = {
@@ -1459,6 +1463,26 @@ document.addEventListener('DOMContentLoaded', () => {
     activateTable(initialTarget);
   };
 
+  // --- KPI helpers ---
+  const formatIntCount = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return '0';
+    if (n >= 1000) return n.toLocaleString('pt-BR');
+    return String(Math.trunc(n));
+  };
+
+  const updateKpiCounts = ({ queueCount, rescindedCount, remainingCount }) => {
+    if (kpiQueueEl) {
+      kpiQueueEl.textContent = formatIntCount(queueCount ?? 0);
+    }
+    if (kpiRescindedEl) {
+      kpiRescindedEl.textContent = formatIntCount(rescindedCount ?? 0);
+    }
+    if (kpiFailuresEl) {
+      kpiFailuresEl.textContent = formatIntCount(remainingCount ?? 0);
+    }
+  };
+
   const setupMainTabsSwitching = () => {
     const baseTab = document.getElementById('tab-base');
     const treatmentTab = document.getElementById('tab-treatment');
@@ -1515,6 +1539,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setStatus(defaultMessages.idle);
   void refreshPlans();
   void refreshOccurrences();
+  // Initialize KPI values with zeros; backend wiring can update these later
+  updateKpiCounts({ queueCount: 0, rescindedCount: 0, remainingCount: 0 });
 
   const schedulePolling = () => {
     stopPolling();
