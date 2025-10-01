@@ -1,7 +1,5 @@
 """Shared dependencies for the API layer."""
 
-from __future__ import annotations
-
 from contextlib import AbstractAsyncContextManager
 
 from psycopg import AsyncConnection
