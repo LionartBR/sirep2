@@ -32,3 +32,8 @@ def normalize_document(value: Any, *, allow_empty: bool = False) -> str | None:
         return ""
 
     return None
+
+def only_digits(value: Any) -> str:
+    """Return the digits extracted from ``value`` as a contiguous string."""
+
+    return "".join(character for character in str(value or "") if character.isdigit())

@@ -37,6 +37,12 @@ def create_app() -> FastAPI:
 
     app.state.pipeline_orchestrator = PipelineOrchestrator()
 
+    @app.get("/app", include_in_schema=False)
+    async def app_redirect() -> RedirectResponse:
+        """Ensure `/app` always resolves to the static app index with trailing slash."""
+
+        return RedirectResponse(url="/app/")
+
     static_dir = Path(__file__).resolve().parents[1] / "ui"
     static_handler = (
         NoCacheStaticFiles(directory=static_dir, html=True)

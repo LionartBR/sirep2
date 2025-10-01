@@ -5,9 +5,7 @@ import re
 from datetime import date, datetime
 from typing import Any, Optional
 
-
-def only_digits(raw: str | None) -> str:
-    return re.sub(r"\D", "", raw or "")
+from shared.text import only_digits
 
 
 def parse_date_any(raw: str | None) -> Optional[date]:
