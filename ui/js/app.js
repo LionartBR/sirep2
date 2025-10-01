@@ -44,8 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const plansColumnCount =
     plansTableElement?.tHead?.rows?.[0]?.cells?.length ??
     plansTableElement?.rows?.[0]?.cells?.length ??
-    8;
-  const lastUpdateLabel = document.getElementById('lastUpdateInfo');
+    8;  
 
   // Occurrences table elements
   const occTablePanel = document.getElementById('occurrencesTablePanel');
@@ -63,9 +62,6 @@ document.addEventListener('DOMContentLoaded', () => {
     plans: '',
     occurrences: '',
   };
-  if (lastUpdateLabel) {
-    lastUpdateLabel.textContent = 'Última atualização em: —';
-  }
   let currentPlansSearchTerm = '';
   let currentOccurrencesSearchTerm = '';
   let activeTableSearchTarget = 'plans';
@@ -207,19 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const text = value ? value : '—';
     el.textContent = `${prefix} ${text}`;
   };
-
-  const updateLastUpdateInfo = (state) => {
-    if (!lastUpdateLabel) {
-      return;
-    }
-    if (state?.status === 'succeeded' && state?.finished_at) {
-      lastSuccessfulFinishedAt = state.finished_at;
-    }
-    const timestamp = lastSuccessfulFinishedAt ?? null;
-    const formatted = formatDateTimeLabel(timestamp);
-    lastUpdateLabel.textContent = `Última atualização em: ${formatted}`;
-  };
-
+ 
   const refreshPipelineMeta = async () => {
     if (isFetchingPipelineMeta) {
       return null;
