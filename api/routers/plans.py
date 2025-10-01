@@ -257,7 +257,12 @@ def _b64url_decode_json(token: str) -> dict[str, Any] | None:
         return None
 
 
-def _build_filters(search: str | None, *, tipo_doc: str | None) -> tuple[str, dict[str, Any]]:
+def _build_filters(
+    search: str | None,
+    *,
+    tipo_doc: str | None,
+    occurrences_only: bool = False,
+) -> tuple[str, dict[str, Any]]:
     """Return SQL WHERE clause and params according to filtering semantics.
 
     - document number: digits only (length 11, 12 or 14) -> compare to documento
@@ -279,19 +284,31 @@ def _build_filters(search: str | None, *, tipo_doc: str | None) -> tuple[str, di
         else:
             # keep legacy behavior when not specified
             where.append("tipo_doc IN ('CNPJ','CPF','CEI')")
+        if occurrences_only:
+            where.append("situacao_codigo <> 'P_RESCISAO'")
         return " WHERE " + " AND ".join(where), params
 
     if normalized_search.isdigit() and normalized_search:
         params["number"] = normalized_search
         params["number_prefix"] = f"{normalized_search}%"
-        where = " WHERE numero_plano = %(number)s OR numero_plano LIKE %(number_prefix)s"
+        where_clauses = [
+            "(numero_plano = %(number)s OR numero_plano LIKE %(number_prefix)s)",
+        ]
+        if occurrences_only:
+            where_clauses.append("situacao_codigo <> 'P_RESCISAO'")
+        where = " WHERE " + " AND ".join(where_clauses)
         return where, params
 
     if normalized_search:
         params["name_pattern"] = f"%{normalized_search}%"
-        where = " WHERE razao_social ILIKE %(name_pattern)s"
+        where_clauses = ["razao_social ILIKE %(name_pattern)s"]
+        if occurrences_only:
+            where_clauses.append("situacao_codigo <> 'P_RESCISAO'")
+        where = " WHERE " + " AND ".join(where_clauses)
         return where, params
 
+    if occurrences_only:
+        return " WHERE situacao_codigo <> 'P_RESCISAO'", params
     return "", params
 
 
@@ -342,6 +359,7 @@ async def _fetch_keyset_page(
     *,
     search: str | None,
     tipo_doc: str | None,
+    occurrences_only: bool,
     page_size: int,
     cursor_token: str | None,
     direction: str | None,
@@ -351,7 +369,7 @@ async def _fetch_keyset_page(
     Returns (rows, has_more) where `rows` are in display order.
     """
 
-    where_sql, params = _build_filters(search, tipo_doc=tipo_doc)
+    where_sql, params = _build_filters(search, tipo_doc=tipo_doc, occurrences_only=occurrences_only)
     seek_condition = ""
     order_sql = " ORDER BY COALESCE(saldo,0) DESC, numero_plano ASC"
     is_prev = direction == "prev"
@@ -494,6 +512,7 @@ async def list_plans(
     cursor: str | None = Query(None, description="Cursor de paginação (base64 url-safe)"),
     direction: str | None = Query(None, pattern="^(next|prev)$", description="Direção da navegação"),
     tipo_doc: str | None = Query(None, pattern="^(CNPJ|CPF|CEI)$", description="Tipo do documento quando 'q' for numérico"),
+    occurrences_only: bool = Query(False, description="Quando verdadeiro, retorna apenas planos com ocorrências (exclui P. RESCISAO)"),
 ) -> PlansResponse:
     """Return the consolidated plans available for the dashboard."""
 
@@ -514,13 +533,14 @@ async def list_plans(
                     connection,
                     search=q,
                     tipo_doc=tipo_doc,
+                    occurrences_only=occurrences_only,
                     page_size=page_size,
                     cursor_token=cursor,
                     direction=direction or "next",
                 )
                 # total count with timeout + cache
-                where_sql, count_params = _build_filters(q, tipo_doc=tipo_doc)
-                cache_key = f"{matricula}|{q or ''}|{tipo_doc or ''}"
+                where_sql, count_params = _build_filters(q, tipo_doc=tipo_doc, occurrences_only=occurrences_only)
+                cache_key = f"{matricula}|{q or ''}|{tipo_doc or ''}|occ={occurrences_only}"
                 total_count = await _fast_total_count(
                     connection, where_sql=where_sql, params=count_params, cache_key=cache_key
                 )

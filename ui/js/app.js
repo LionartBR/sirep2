@@ -67,6 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentOccurrencesSearchTerm = '';
   let activeTableSearchTarget = 'plans';
   let plansFetchController = null;
+  let occFetchController = null;
   const currencyFormatter = new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
@@ -80,7 +81,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let pollHandle = null;
   let isFetchingPlans = false;
+  let isFetchingOccurrences = false;
   let plansLoaded = false;
+  let occurrencesLoaded = false;
   let shouldRefreshPlansAfterRun = false;
   let lastSuccessfulFinishedAt = null;
 
@@ -315,13 +318,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
-  const renderOccurrencesPlaceholder = (message) => {
+  const renderOccurrencesPlaceholder = (message, modifier = 'empty') => {
     if (!occTableBody) {
       return;
     }
     occTableBody.innerHTML = '';
     const row = document.createElement('tr');
     row.className = 'table__row table__row--empty';
+    if (modifier) {
+      row.classList.add(`table__row--${modifier}`);
+    }
     const cell = document.createElement('td');
     cell.className = 'table__cell';
     cell.colSpan = occColumnCount;
@@ -354,6 +360,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const occPagerLabel = document.getElementById('occPagerLabel');
   const occPagerRange = document.getElementById('occPagerRange');
 
+  // Independent keyset pager for occurrences
+  const occPager = {
+    page: 1,
+    pageSize: DEFAULT_PLAN_PAGE_SIZE,
+    nextCursor: null,
+    prevCursor: null,
+    hasMore: false,
+    totalCount: null,
+    totalPages: null,
+    showingFrom: 0,
+    showingTo: 0,
+  };
+
   const updatePlansPagerUI = () => {
     if (plansPagerLabel) {
       const totalPages = plansPager.totalPages ?? null;
@@ -379,26 +398,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  const updateOccPagerUI = (occCount) => {
+  const updateOccPagerUI = () => {
     if (occPagerLabel) {
-      const totalPages = plansPager.totalPages ?? null;
+      const totalPages = occPager.totalPages ?? null;
       const totalPagesLabel = totalPages && Number.isFinite(totalPages) ? String(totalPages) : '?';
-      occPagerLabel.textContent = `pág. ${plansPager.page} de ${totalPagesLabel}`;
+      occPagerLabel.textContent = `pág. ${occPager.page} de ${totalPagesLabel}`;
     }
     if (occPagerRange) {
-      const totalKnown = plansPager.totalCount !== null && plansPager.totalCount !== undefined;
-      const totalLabel = totalKnown ? String(plansPager.totalCount) : `~${Math.max(occCount, 0)}`;
-      const from = occCount > 0 ? 1 : 0;
-      const to = occCount;
-      occPagerRange.textContent = `exibindo ${from}–${to} de ${totalLabel} planos`;
+      const totalKnown = occPager.totalCount !== null && occPager.totalCount !== undefined;
+      const totalLabel = totalKnown ? String(occPager.totalCount) : `~${Math.max(occPager.showingTo, 0)}`;
+      const from = occPager.showingFrom || 0;
+      const to = occPager.showingTo || 0;
+      occPagerRange.textContent = `exibindo ${from}–${to} de ${totalLabel} planos para tratamento manual`;
     }
     if (occPagerPrevBtn) {
-      const canGoPrev = plansPager.page > 1;
+      const canGoPrev = occPager.page > 1;
       occPagerPrevBtn.disabled = !canGoPrev;
       occPagerPrevBtn.setAttribute('aria-disabled', String(!canGoPrev));
     }
     if (occPagerNextBtn) {
-      const canGoNext = !!plansPager.hasMore;
+      const canGoNext = !!occPager.hasMore;
       occPagerNextBtn.disabled = !canGoNext;
       occPagerNextBtn.setAttribute('aria-disabled', String(!canGoNext));
     }
@@ -455,9 +474,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const payload = await response.json();
       const items = Array.isArray(payload?.items) ? payload.items : [];
-      const occItems = items.filter((it) => (it?.status || '') !== 'P. RESCISAO');
       renderPlanRows(items);
-      renderOccurrenceRows(occItems);
+      // Occurrences are now fetched independently
       // Update pager state from response
       const paging = payload?.paging || {};
       if (paging && typeof paging === 'object') {
@@ -488,7 +506,7 @@ document.addEventListener('DOMContentLoaded', () => {
         plansPager.totalPages = plansPager.totalCount ? 1 : null;
       }
       updatePlansPagerUI();
-      updateOccPagerUI(occItems.length);
+      // Occurrences pager updated via refreshOccurrences()
       plansLoaded = true;
     } catch (error) {
       if (error?.name === 'AbortError') {
@@ -677,6 +695,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const tableSearchForm = document.getElementById('tableSearchForm');
   const tableSearchInput = document.getElementById('tableSearchInput');
+  const SEARCH_DEBOUNCE_MS = 350;
+  let searchDebounceHandle = null;
 
   const syncSearchInputValue = (target) => {
     if (!target || !tableSearchInput) {
@@ -803,11 +823,18 @@ document.addEventListener('DOMContentLoaded', () => {
     scheduleOccurrencesCountUpdate();
   };
 
-  const handleOccurrencesSearch = (term) => {
+  const handleOccurrencesSearch = (term, { forceRefresh = false } = {}) => {
     const normalized = (term || '').trim();
+    if (!forceRefresh && normalized === currentOccurrencesSearchTerm) {
+      return;
+    }
     currentOccurrencesSearchTerm = normalized;
     tableSearchState.occurrences = normalized;
-    applyOccurrencesFilter(normalized);
+    // Reset pager when the search changes
+    occPager.page = 1;
+    occPager.nextCursor = null;
+    occPager.prevCursor = null;
+    void refreshOccurrences({ showLoading: true });
   };
 
   const handlePlansSearch = (term, { forceRefresh = false } = {}) => {
@@ -827,6 +854,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (tableSearchForm) {
     tableSearchForm.addEventListener('submit', (event) => {
       event.preventDefault();
+      if (searchDebounceHandle !== null) {
+        window.clearTimeout(searchDebounceHandle);
+        searchDebounceHandle = null;
+      }
       const value = tableSearchInput?.value ?? '';
       if (activeTableSearchTarget === 'occurrences') {
         handleOccurrencesSearch(value);
@@ -844,17 +875,28 @@ document.addEventListener('DOMContentLoaded', () => {
     tableSearchInput.addEventListener('input', (event) => {
       const value = event.target?.value ?? '';
       tableSearchState[activeTableSearchTarget] = value;
-      if (activeTableSearchTarget === 'occurrences') {
-        handleOccurrencesSearch(value);
-        return;
+      if (searchDebounceHandle !== null) {
+        window.clearTimeout(searchDebounceHandle);
       }
-      if (!value.trim() && currentPlansSearchTerm) {
-        // Clear search resets pager and reloads first page
-        plansPager.page = 1;
-        plansPager.nextCursor = null;
-        plansPager.prevCursor = null;
-        handlePlansSearch('', { forceRefresh: true });
-      }
+      searchDebounceHandle = window.setTimeout(() => {
+        searchDebounceHandle = null;
+        if (activeTableSearchTarget === 'occurrences') {
+          handleOccurrencesSearch(value);
+          return;
+        }
+        if (value.trim()) {
+          handlePlansSearch(value);
+        } else if (currentPlansSearchTerm) {
+          // Clear search resets pager and reloads first page
+          plansPager.page = 1;
+          plansPager.nextCursor = null;
+          plansPager.prevCursor = null;
+          handlePlansSearch('', { forceRefresh: true });
+        }
+        if (!value.trim() && currentOccurrencesSearchTerm) {
+          handleOccurrencesSearch('', { forceRefresh: true });
+        }
+      }, SEARCH_DEBOUNCE_MS);
     });
   }
 
@@ -878,25 +920,127 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Occurrences pager mirrors the same dataset navigation
   if (occPagerPrevBtn) {
     occPagerPrevBtn.addEventListener('click', () => {
-      if (plansPager.page <= 1) {
+      if (occPager.page <= 1) {
         return;
       }
-      plansPager.page = Math.max(1, plansPager.page - 1);
-      void refreshPlans({ showLoading: true, direction: 'prev' });
+      occPager.page = Math.max(1, occPager.page - 1);
+      void refreshOccurrences({ showLoading: true, direction: 'prev' });
     });
   }
   if (occPagerNextBtn) {
     occPagerNextBtn.addEventListener('click', () => {
-      if (!plansPager.hasMore) {
+      if (!occPager.hasMore) {
         return;
       }
-      plansPager.page = plansPager.page + 1;
-      void refreshPlans({ showLoading: true, direction: 'next' });
+      occPager.page = occPager.page + 1;
+      void refreshOccurrences({ showLoading: true, direction: 'next' });
     });
   }
+
+  const buildOccurrencesRequestUrl = ({ direction = null } = {}) => {
+    const baseUrl =
+      window.location.origin && window.location.origin !== 'null'
+        ? window.location.origin
+        : window.location.href;
+    const url = new URL(PLANS_ENDPOINT, baseUrl);
+    url.searchParams.set('occurrences_only', 'true');
+    url.searchParams.set('page', String(occPager.page));
+    url.searchParams.set('page_size', String(occPager.pageSize));
+    if (direction === 'next' && occPager.nextCursor) {
+      url.searchParams.set('cursor', occPager.nextCursor);
+      url.searchParams.set('direction', 'next');
+    } else if (direction === 'prev' && occPager.prevCursor) {
+      url.searchParams.set('cursor', occPager.prevCursor);
+      url.searchParams.set('direction', 'prev');
+    }
+    if (currentOccurrencesSearchTerm) {
+      url.searchParams.set('q', currentOccurrencesSearchTerm);
+    }
+    return url.toString();
+  };
+
+  const refreshOccurrences = async ({ showLoading, direction = null } = {}) => {
+    if (!occTableBody || isFetchingOccurrences) {
+      return;
+    }
+    const shouldShowLoading = showLoading ?? !occurrencesLoaded;
+    if (shouldShowLoading) {
+      renderOccurrencesPlaceholder('carregando ocorrências...', 'loading');
+    }
+
+    isFetchingOccurrences = true;
+    try {
+      if (occFetchController) {
+        occFetchController.abort();
+      }
+      occFetchController = new AbortController();
+      const requestHeaders = new Headers({ Accept: 'application/json' });
+      const matricula = currentUser?.username?.trim();
+      if (matricula) {
+        requestHeaders.set('X-User-Registration', matricula);
+      }
+      const response = await fetch(buildOccurrencesRequestUrl({ direction }), {
+        headers: requestHeaders,
+        signal: occFetchController.signal,
+      });
+      if (!response.ok) {
+        throw new Error('Não foi possível carregar as ocorrências.');
+      }
+      const payload = await response.json();
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      renderOccurrenceRows(items);
+
+      const paging = payload?.paging || {};
+      if (paging && typeof paging === 'object') {
+        occPager.page = Number(paging.page) || occPager.page;
+        occPager.pageSize = Number(paging.page_size) || occPager.pageSize;
+        occPager.hasMore = Boolean(paging.has_more);
+        occPager.nextCursor = paging.next_cursor || null;
+        occPager.prevCursor = paging.prev_cursor || null;
+        occPager.showingFrom = Number(paging.showing_from) || (items.length ? 1 : 0);
+        occPager.showingTo = Number(paging.showing_to) || (items.length ? items.length : 0);
+        occPager.totalCount = typeof paging.total_count === 'number' ? paging.total_count : null;
+        occPager.totalPages = typeof paging.total_pages === 'number' ? paging.total_pages : null;
+        if (direction === 'prev') {
+          occPager.hasMore = true;
+        }
+      } else {
+        occPager.page = 1;
+        occPager.pageSize = DEFAULT_PLAN_PAGE_SIZE;
+        occPager.hasMore = false;
+        occPager.nextCursor = null;
+        occPager.prevCursor = null;
+        occPager.showingFrom = items.length ? 1 : 0;
+        occPager.showingTo = items.length;
+        occPager.totalCount = typeof payload?.total === 'number' ? payload.total : null;
+        occPager.totalPages = occPager.totalCount ? 1 : null;
+      }
+      updateOccPagerUI();
+
+      // Update occurrences badge with total count (not visible rows)
+      const countElement = document.getElementById('occurrencesCount');
+      if (countElement) {
+        const total = typeof occPager.totalCount === 'number' ? occPager.totalCount : items.length;
+        countElement.textContent = `(${total})`;
+        countElement.classList.toggle('section-switch__count--alert', total > 0);
+      }
+
+      occurrencesLoaded = true;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        return;
+      }
+      console.error('Erro ao carregar ocorrências.', error);
+      if (!occurrencesLoaded) {
+        renderOccurrencesPlaceholder('Não foi possível carregar as ocorrências.', 'error');
+      }
+    } finally {
+      occFetchController = null;
+      isFetchingOccurrences = false;
+    }
+  };
 
   const setupOccurrencesSearchObserver = () => {
     const occurrencesPanel = document.getElementById('occurrencesTablePanel');
@@ -904,11 +1048,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const observer = new MutationObserver(() => {
-      if (currentOccurrencesSearchTerm) {
-        applyOccurrencesFilter(currentOccurrencesSearchTerm);
-      }
-    });
+    // Server-side filtering handles occurrences; no client observer needed.
+    const observer = new MutationObserver(() => {});
 
     observer.observe(occurrencesPanel, {
       childList: true,
@@ -1138,18 +1279,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const updateCount = () => {
-      const tbody = occurrencesPanel.querySelector('tbody');
-      const rows = tbody ? Array.from(tbody.rows ?? []) : [];
-      const total = rows.filter((row) => {
-        if (row.classList.contains('table__row--empty')) {
-          return false;
-        }
-        if (row.hasAttribute('hidden')) {
-          return false;
-        }
-        return true;
-      }).length;
-
+      const total = typeof occPager.totalCount === 'number' ? occPager.totalCount : 0;
       countElement.textContent = `(${total})`;
       countElement.classList.toggle('section-switch__count--alert', total > 0);
     };
@@ -1196,15 +1326,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     forceUpdateCount();
 
-    const observer = new MutationObserver(() => {
-      scheduleOccurrencesCountUpdate();
-    });
-    observer.observe(occurrencesPanel, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['class', 'hidden'],
-    });
+    // No observers needed: the total comes from the API via occPager
   };
 
   const setupTableSwitching = () => {
@@ -1239,8 +1361,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       setActiveSearchTarget(target);
       syncSearchInputValue(target);
-      if (target === 'occurrences') {
-        applyOccurrencesFilter(currentOccurrencesSearchTerm);
+      if (target === 'occurrences' && !occurrencesLoaded) {
+        void refreshOccurrences({ showLoading: true });
       }
     };
 
@@ -1269,6 +1391,7 @@ document.addEventListener('DOMContentLoaded', () => {
   toggleButtons({ start: true, pause: false, cont: false });
   setStatus(defaultMessages.idle);
   void refreshPlans();
+  void refreshOccurrences();
 
   const schedulePolling = () => {
     stopPolling();
@@ -1300,6 +1423,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (shouldRefreshPlansAfterRun) {
           shouldRefreshPlansAfterRun = false;
           void refreshPlans({ showLoading: false });
+          void refreshOccurrences({ showLoading: false });
         }
         break;
     }
