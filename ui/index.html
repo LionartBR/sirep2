@@ -48,21 +48,21 @@
         </div>
 
         <div id="panel-base" class="card__panel" role="tabpanel" aria-labelledby="tab-base">
-          <div class="controls" role="group" aria-label="Controles de execução">
-            <div class="controls__group">
-              <div class="controls__start">
-                <div class="controls__start-row">
+            <div class="controls" role="group" aria-label="Controles de execução">
+              <div class="controls__group">
+                <div class="controls__start">
                   <button class="btn btn--primary" id="btnStart" type="button">Iniciar</button>
                   <div id="pipeline-meta" class="pipeline-meta">
                     <span id="lbl-last-update">Última atualização em: —</span>
                     <span id="lbl-last-duration">Duração da última atualização: —</span>
                   </div>
+                  <p class="controls__info" id="lastUpdateInfo" aria-live="polite"></p>
                 </div>
-                <p class="controls__info" id="lastUpdateInfo" aria-live="polite"></p>
+                <div class="controls__actions">
+                  <button class="btn btn--ghost" id="btnPause" type="button" disabled>Pausar</button>
+                  <button class="btn btn--ghost" id="btnContinue" type="button" disabled>Continuar</button>
+                </div>
               </div>
-              <button class="btn btn--ghost" id="btnPause" type="button" disabled>Pausar</button>
-              <button class="btn btn--ghost" id="btnContinue" type="button" disabled>Continuar</button>
-            </div>
             <div class="status" id="statusText">Estado: Ocioso</div>
           </div>
 
