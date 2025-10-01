@@ -204,3 +204,40 @@ async def test_list_plans_accepts_header_override(monkeypatch: pytest.MonkeyPatc
     assert len(bind_calls) == 1
     _, matricula = bind_calls[0]
     assert matricula == "789xyz"
+
+
+@pytest.mark.anyio
+async def test_list_plans_returns_unauthorized_when_binding_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows: list[dict[str, Any]] = []
+
+    manager = _DummyManager(rows)
+    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+
+    async def _raise_permission(*_: Any) -> None:
+        raise PermissionError("Access denied")
+
+    monkeypatch.setattr(plans, "bind_session", _raise_permission)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    with pytest.raises(plans.HTTPException) as excinfo:
+        await plans.list_plans(
+            request=_make_request(),
+            q=None,
+            limit=plans.DEFAULT_LIMIT,
+            offset=0,
+        )
+
+    assert excinfo.value.status_code == plans.status.HTTP_401_UNAUTHORIZED
+    assert excinfo.value.detail == "Credenciais de acesso inválidas."
