@@ -1,6 +1,6 @@
 # SIREP DB — Documentação do Esquema (PostgreSQL)
 
-- **Versão PG:** 17.6  
+- **Versão PG:** 15.6+  
 - **Banco de Dados:** `sirep_db`  
 - **Timezone:** `America/Sao_Paulo`
 - **Encoding:** `UTF8`  
@@ -34,7 +34,7 @@
 - Soft-audit: `created_at timestamptz DEFAULT now()`, `created_by uuid`, `updated_at timestamptz`, `updated_by uuid`, `deleted_at timestamptz`, `deleted_by uuid`
 - Tabelas `ref.*`: `codigo citext UNIQUE`, `descricao text NOT NULL`, `sort_order smallint`, `ativo boolean DEFAULT true`
 
-## 1) Catálogos — `ref.*`
+## 1 Catálogos — `ref.*`
 
 ### 1.1 `ref.tipo_inscricao`
 
@@ -71,7 +71,7 @@
 - Catálogo de etapas do pipeline
 - Códigos: `CAPTURA_PLANOS`, `SITUACAO_ESPECIAL`, `GUIA_GRDE`
 
-## 2) Negócio — `app.*`
+## 2 Negócio — `app.*`
 
 ### 2.1 `app.tenant`
 
@@ -123,7 +123,7 @@
 - Campos: `id`, `tenant_id`, `plano_id`, `metodo_id` (FK `ref.metodo_comunicacao`), `assunto text`, `corpo text`, `enviado_em timestamptz`, `status text`, soft-audit
 - RLS: `SELECT` por tenant; `INSERT/UPDATE/DELETE` `admin/tech`
 
-## 3) Auditoria/Logs — `audit.*` (particionado)
+## 3 Auditoria/Logs — `audit.*` (particionado)
 
 > Nota: Em tabelas particionadas por `RANGE`, a PK/UNIQUE deve incluir a coluna de partição.
 
@@ -153,7 +153,7 @@
 - Índices: `(tenant_id, event_time)`, `(entity, event_time)`
 - RLS/Helpers: `audit.ensure_evento_partition`, trigger `tg_ensure_evento_partition`
 
-## 4) Funções — `app.*`
+## 4 Funções — `app.*`
 
 ### Sessão/Contexto & RLS
 
@@ -186,7 +186,7 @@
 - `app.tg_plano_log_situacao()` — insere linha em `plano_situacao_hist` ao `INSERT/UPDATE` de `plano`. Usa `current_setting('app.situacao_effective_ts', true)` se definido; caso contrário, `now()`.
 - `app.tg_parcela_recalc_plano_atraso()` — ao `INSERT/UPDATE/DELETE` em `app.parcela`, chama `app.recalc_plano_atraso(...)`.
 
-## 5) Views úteis
+## 5 Views úteis
 
 ### 5.1 `app.vw_planos_busca`
 
@@ -200,13 +200,13 @@
 
 > As views de export respeitam RLS via `app.current_tenant_id()`.
 
-## 6) Policies de RLS (resumo)
+## 6 Policies de RLS (resumo)
 
 - Regra padrão nas tabelas `app.*`: `USING (tenant_id = app.current_tenant_id() OR app.is_tech())` com `WITH CHECK` similar.
 - Para `UPDATE/DELETE`, exige perfil conforme tabela.
 - Leitura de views: `GRANT SELECT` para `sirep_app`, `sirep_admin`, `sirep_worker`.
 
-## 7) Índices recomendados (resumo)
+## 7 Índices recomendados (resumo)
 
 - `app.plano`: `UNIQUE(numero_plano)`; `(tenant_id, numero_plano)`; `(empregador_id)`; `(situacao_plano_id)`
 - `app.empregador`: `UNIQUE(tenant_id, tipo_inscricao_id, numero_inscricao)`; `GIN (razao_social gin_trgm_ops)`; `(tenant_id, numero_inscricao)`
@@ -216,7 +216,7 @@
 - `audit.job_step`: `(tenant_id, job_started_at DESC, job_id)`; `(step_code)`
 - `audit.evento`: `(tenant_id, event_time)`; `(entity, event_time)`
 
-## 8) Padrões de uso no backend
+## 8 Padrões de uso no backend
 
 - Ligar sessão pelo usuário (matrícula):
   ```sql
@@ -233,7 +233,7 @@
 - Histórico de situação: usar `SET LOCAL app.situacao_effective_ts = :data_iso` para gravar data oficial.
 - Logs/etapas: `audit.job_run` + `audit.job_step` + `audit.evento` (particionado, RLS).
 
-## 9) Exemplos rápidos
+## 9 Exemplos rápidos
 
 ### Login de sessão
 
