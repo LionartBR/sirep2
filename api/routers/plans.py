@@ -154,7 +154,13 @@ def _format_status(value: Any) -> str | None:
         return None
 
     ascii_text = _remove_accents(text)
+    upper_ascii = ascii_text.upper()
+    if "PASSIV" in upper_ascii and "RESC" in upper_ascii:
+        normalized = "P_RESCISAO"
+    else:
+        normalized = normalizar_situacao(ascii_text)
     normalized = normalizar_situacao(ascii_text)
+
     label = _STATUS_LABELS.get(normalized)
     if label is not None:
         return label
