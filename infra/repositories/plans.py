@@ -8,6 +8,8 @@ from typing import Any, Iterable, Optional
 from psycopg import Connection
 from psycopg.rows import dict_row
 
+from shared.text import normalize_document
+
 from ._helpers import (
     calcular_atraso_desde,
     extract_date_from_timestamp,
@@ -173,7 +175,7 @@ class PlansRepository:
         if not numero:
             return campos.get("empregador_id")
 
-        numero_normalizado = self._only_digits(numero) or str(numero).strip()
+        numero_normalizado = normalize_document(numero)
         if not numero_normalizado:
             return campos.get("empregador_id")
 

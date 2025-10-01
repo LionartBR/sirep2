@@ -11,18 +11,18 @@ from domain.enums import PlanStatus, Step
 from infra.config import settings
 from infra.repositories import OccurrenceRepository
 from services.base import StepJobContext
+from shared.text import normalize_document
 
 from .models import GestaoBaseData, ProgressCallback
 from .parcelas import normalize_parcelas_atraso
-from .utils import only_digits, parse_date_any, parse_money_brl
+from .utils import parse_date_any, parse_money_brl
 
 logger = logging.getLogger(__name__)
 
 
 def clean_inscricao(raw: str | None) -> str:
-    texto = (raw or "").strip()
-    digits = only_digits(texto)
-    return digits or texto
+    normalized = normalize_document(raw, allow_empty=True)
+    return normalized if normalized is not None else ""
 
 
 def _representacao_value(raw: str | None, fallback: str | None) -> str | None:
