@@ -159,6 +159,8 @@ def _format_status(value: Any) -> str | None:
         normalized = "P_RESCISAO"
     else:
         normalized = normalizar_situacao(ascii_text)
+    normalized = normalizar_situacao(ascii_text)
+
     label = _STATUS_LABELS.get(normalized)
     if label is not None:
         return label

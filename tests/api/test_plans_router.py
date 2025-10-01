@@ -320,6 +320,31 @@ def test_row_to_plan_summary_handles_missing_status() -> None:
     assert summary.status is None
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Passivel de Rescisao", "P. RESCISAO"),
+        ("Passível de Rescisão", "P. RESCISAO"),
+        ("Situacao especial", "SIT. ESPECIAL"),
+        ("Situação especial", "SIT. ESPECIAL"),
+        ("GRDE emitida", "GRDE Emitida"),
+        ("Liquidado", "LIQUIDADO"),
+        ("Rescindido", "RESCINDIDO"),
+        ("EM_DIA", "EM_DIA"),
+    ],
+)
+def test_row_to_plan_summary_formats_status(raw: str, expected: str) -> None:
+    summary = plans._row_to_plan_summary({"numero_plano": "42", "situacao": raw})
+
+    assert summary.status == expected
+
+
+def test_row_to_plan_summary_handles_missing_status() -> None:
+    summary = plans._row_to_plan_summary({"numero_plano": "42"})
+
+    assert summary.status is None
+
+
 class _DummyCursor:
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self._rows = rows
