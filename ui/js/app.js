@@ -358,14 +358,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (plansPagerLabel) {
       const totalPages = plansPager.totalPages ?? null;
       const totalPagesLabel = totalPages && Number.isFinite(totalPages) ? String(totalPages) : '?';
-      plansPagerLabel.textContent = `page ${plansPager.page} of ${totalPagesLabel}`;
+      plansPagerLabel.textContent = `pág. ${plansPager.page} de ${totalPagesLabel}`;
     }
     if (plansPagerRange) {
       const totalKnown = plansPager.totalCount !== null && plansPager.totalCount !== undefined;
       const totalLabel = totalKnown ? String(plansPager.totalCount) : `~${Math.max(plansPager.showingTo, 0)}`;
       const from = plansPager.showingFrom || 0;
       const to = plansPager.showingTo || 0;
-      plansPagerRange.textContent = `displaying ${from}–${to} of ${totalLabel} plans`;
+      plansPagerRange.textContent = `exibindo ${from}–${to} de ${totalLabel} planos`;
     }
     if (plansPagerPrevBtn) {
       const canGoPrev = plansPager.page > 1;
