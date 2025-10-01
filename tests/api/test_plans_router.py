@@ -23,100 +23,137 @@ def _ensure_psycopg_stub() -> None:
         "psycopg_pool",
     ]
 
+    missing_modules: set[str] = set()
     for module_name in required_modules:
         try:
             importlib.import_module(module_name)
         except ModuleNotFoundError:
-            break
-    else:
+            missing_modules.add(module_name)
+
+    if not missing_modules:
         return
 
-    psycopg_module = ModuleType("psycopg")
+    def _build_errors_module() -> ModuleType:
+        errors_module = ModuleType("psycopg.errors")
 
-    class AsyncConnection:  # noqa: D401 - stub class
-        """Stub for psycopg.AsyncConnection used in type hints."""
+        class InvalidAuthorizationSpecification(Exception):
+            """Stub exception mirroring psycopg.errors.InvalidAuthorizationSpecification."""
 
-        ...
+            ...
 
-    class Connection:  # noqa: D401 - stub class
-        """Stub for psycopg.Connection used in type hints."""
+        class UniqueViolation(Exception):
+            """Stub exception mirroring psycopg.errors.UniqueViolation."""
 
-        ...
+            ...
 
-    errors_module = ModuleType("psycopg.errors")
+        errors_module.InvalidAuthorizationSpecification = InvalidAuthorizationSpecification
+        errors_module.UniqueViolation = UniqueViolation
+        return errors_module
 
-    class InvalidAuthorizationSpecification(Exception):
-        """Stub exception mirroring psycopg.errors.InvalidAuthorizationSpecification."""
+    def _build_rows_module() -> ModuleType:
+        rows_module = ModuleType("psycopg.rows")
 
-        ...
+        def dict_row(row: Any) -> Any:  # noqa: D401 - stub function
+            """Return the row unchanged, mimicking psycopg.rows.dict_row behavior."""
 
-    class UniqueViolation(Exception):
-        """Stub exception mirroring psycopg.errors.UniqueViolation."""
+            return row
 
-        ...
+        rows_module.dict_row = dict_row
+        return rows_module
 
-    errors_module.InvalidAuthorizationSpecification = InvalidAuthorizationSpecification
-    errors_module.UniqueViolation = UniqueViolation
+    def _build_types_modules() -> tuple[ModuleType, ModuleType]:
+        types_module = ModuleType("psycopg.types")
+        json_module = ModuleType("psycopg.types.json")
 
-    rows_module = ModuleType("psycopg.rows")
+        class Json:  # noqa: D401 - stub class
+            """Stub for psycopg.types.json.Json wrapper."""
 
-    def dict_row(row: Any) -> Any:  # noqa: D401 - stub function
-        """Return the row unchanged, mimicking psycopg.rows.dict_row behavior."""
+            def __init__(self, value: Any) -> None:
+                self.value = value
 
-        return row
+        json_module.Json = Json
+        types_module.json = json_module
+        return types_module, json_module
 
-    rows_module.dict_row = dict_row
+    def _build_pq_module() -> ModuleType:
+        pq_module = ModuleType("psycopg.pq")
 
-    types_module = ModuleType("psycopg.types")
-    json_module = ModuleType("psycopg.types.json")
+        class TransactionStatus:
+            IDLE = "IDLE"
+            INTRANS = "INTRANS"
+            INERROR = "INERROR"
+            UNKNOWN = "UNKNOWN"
 
-    class Json:  # noqa: D401 - stub class
-        """Stub for psycopg.types.json.Json wrapper."""
+        pq_module.TransactionStatus = TransactionStatus
+        return pq_module
 
-        def __init__(self, value: Any) -> None:
-            self.value = value
+    def _build_pool_module() -> ModuleType:
+        psycopg_pool_module = ModuleType("psycopg_pool")
 
-    json_module.Json = Json
-    types_module.json = json_module
+        class AsyncConnectionPool:  # noqa: D401 - stub class
+            """Stub for psycopg_pool.AsyncConnectionPool."""
 
-    pq_module = ModuleType("psycopg.pq")
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                self.args = args
+                self.kwargs = kwargs
 
-    class TransactionStatus:
-        IDLE = "IDLE"
-        INTRANS = "INTRANS"
-        INERROR = "INERROR"
-        UNKNOWN = "UNKNOWN"
+            async def close(self) -> None:  # pragma: no cover - unused
+                return None
 
-    pq_module.TransactionStatus = TransactionStatus
+        psycopg_pool_module.AsyncConnectionPool = AsyncConnectionPool
+        return psycopg_pool_module
 
-    psycopg_pool_module = ModuleType("psycopg_pool")
+    if "psycopg" in missing_modules or "psycopg" not in sys.modules:
+        psycopg_module = ModuleType("psycopg")
 
-    class AsyncConnectionPool:  # noqa: D401 - stub class
-        """Stub for psycopg_pool.AsyncConnectionPool."""
+        class AsyncConnection:  # noqa: D401 - stub class
+            """Stub for psycopg.AsyncConnection used in type hints."""
 
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            self.args = args
-            self.kwargs = kwargs
+            ...
 
-        async def close(self) -> None:  # pragma: no cover - unused
-            return None
+        class Connection:  # noqa: D401 - stub class
+            """Stub for psycopg.Connection used in type hints."""
 
-    psycopg_pool_module.AsyncConnectionPool = AsyncConnectionPool
+            ...
 
-    psycopg_module.AsyncConnection = AsyncConnection
-    psycopg_module.Connection = Connection
-    psycopg_module.errors = errors_module
-    psycopg_module.rows = rows_module
-    psycopg_module.types = types_module
-    psycopg_module.pq = pq_module
+        psycopg_module.AsyncConnection = AsyncConnection
+        psycopg_module.Connection = Connection
+        sys.modules["psycopg"] = psycopg_module
+    else:
+        psycopg_module = sys.modules["psycopg"]
 
-    sys.modules["psycopg"] = psycopg_module
-    sys.modules["psycopg.errors"] = errors_module
-    sys.modules["psycopg.rows"] = rows_module
-    sys.modules["psycopg.types"] = types_module
-    sys.modules["psycopg.types.json"] = json_module
-    sys.modules["psycopg.pq"] = pq_module
-    sys.modules["psycopg_pool"] = psycopg_pool_module
+    if "psycopg.errors" in missing_modules:
+        errors_module = _build_errors_module()
+        sys.modules["psycopg.errors"] = errors_module
+        setattr(psycopg_module, "errors", errors_module)
+
+    if "psycopg.rows" in missing_modules:
+        rows_module = _build_rows_module()
+        sys.modules["psycopg.rows"] = rows_module
+        setattr(psycopg_module, "rows", rows_module)
+
+    if "psycopg.types" in missing_modules or "psycopg.types.json" in missing_modules:
+        types_module, json_module = _build_types_modules()
+        if "psycopg.types" in missing_modules:
+            sys.modules["psycopg.types"] = types_module
+            setattr(psycopg_module, "types", types_module)
+        if "psycopg.types.json" in missing_modules:
+            sys.modules["psycopg.types.json"] = json_module
+            # Ensure the parent module reference is present even if it originally existed.
+            types_parent = sys.modules.get("psycopg.types")
+            if types_parent is None:
+                types_parent = types_module
+                sys.modules["psycopg.types"] = types_parent
+                setattr(psycopg_module, "types", types_parent)
+            types_parent.json = json_module
+
+    if "psycopg.pq" in missing_modules:
+        pq_module = _build_pq_module()
+        sys.modules["psycopg.pq"] = pq_module
+        setattr(psycopg_module, "pq", pq_module)
+
+    if "psycopg_pool" in missing_modules:
+        sys.modules["psycopg_pool"] = _build_pool_module()
 
 
 _ensure_psycopg_stub()
