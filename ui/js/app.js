@@ -1481,8 +1481,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const applyState = (state) => {
     const message = state.message || defaultMessages[state.status] || defaultMessages.idle;
-    updateProgressFromState(state);
-    updateLastUpdateInfo(state);
+    updateProgressFromState(state);    
     switch (state.status) {
       case 'running':
         toggleButtons({ start: false, pause: true, cont: false });
