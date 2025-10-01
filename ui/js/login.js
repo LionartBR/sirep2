@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (Auth.isAuthenticated()) {
-    window.location.replace('index.html');
+    window.location.replace('/app/index.html');
     return;
   }
 
@@ -146,6 +146,6 @@ document.addEventListener('DOMContentLoaded', () => {
       password: credentials.password,
     });
     form.reset();
-    window.location.replace('index.html');
+    window.location.replace('/app/index.html');
   });
 });

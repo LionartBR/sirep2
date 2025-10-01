@@ -1,7 +1,7 @@
 /* global flatpickr */
 document.addEventListener('DOMContentLoaded', () => {
   if (!window.Auth || !Auth.isAuthenticated()) {
-    window.location.replace('login.html');
+    window.location.replace('/app/login.html');
     return;
   }
 
@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     signOutLink.addEventListener('click', (event) => {
       event.preventDefault();
       Auth.logout();
-      window.location.replace('login.html');
+      window.location.replace('/app/login.html');
     });
   }
 
