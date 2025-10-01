@@ -1459,6 +1459,58 @@ document.addEventListener('DOMContentLoaded', () => {
     activateTable(initialTarget);
   };
 
+  const setupMainTabsSwitching = () => {
+    const baseTab = document.getElementById('tab-base');
+    const treatmentTab = document.getElementById('tab-treatment');
+    const basePanel = document.getElementById('panel-base');
+    const treatmentPanel = document.getElementById('panel-treatment');
+
+    if (!baseTab || !treatmentTab || !basePanel || !treatmentPanel) {
+      return;
+    }
+
+    const activate = (target) => {
+      const isBase = target === 'base';
+      baseTab.classList.toggle('tabs__item--active', isBase);
+      treatmentTab.classList.toggle('tabs__item--active', !isBase);
+      baseTab.setAttribute('aria-selected', String(isBase));
+      baseTab.setAttribute('tabindex', isBase ? '0' : '-1');
+      treatmentTab.setAttribute('aria-selected', String(!isBase));
+      treatmentTab.setAttribute('tabindex', isBase ? '-1' : '0');
+
+      basePanel.classList.toggle('card__panel--hidden', !isBase);
+      treatmentPanel.classList.toggle('card__panel--hidden', isBase);
+      if (isBase) {
+        basePanel.removeAttribute('hidden');
+        treatmentPanel.setAttribute('hidden', 'hidden');
+      } else {
+        treatmentPanel.removeAttribute('hidden');
+        basePanel.setAttribute('hidden', 'hidden');
+      }
+    };
+
+    baseTab.addEventListener('click', () => activate('base'));
+    treatmentTab.addEventListener('click', () => activate('treatment'));
+
+    const handleKeyNav = (event) => {
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        treatmentTab.focus();
+        activate('treatment');
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        baseTab.focus();
+        activate('base');
+      }
+    };
+    baseTab.addEventListener('keydown', handleKeyNav);
+    treatmentTab.addEventListener('keydown', handleKeyNav);
+
+    // Initialize from existing active class
+    const isBaseInitiallyActive = baseTab.classList.contains('tabs__item--active');
+    activate(isBaseInitiallyActive ? 'base' : 'treatment');
+  };
+
   toggleButtons({ start: true, pause: false, cont: false });
   setStatus(defaultMessages.idle);
   void refreshPlans();
@@ -1729,4 +1781,5 @@ document.addEventListener('DOMContentLoaded', () => {
   setupOccurrencesSearchObserver();
   setupOccurrencesCounter();
   setupTableSwitching();
+  setupMainTabsSwitching();
 });
