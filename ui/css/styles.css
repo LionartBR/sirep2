@@ -205,6 +205,7 @@ input:focus {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  align-items: flex-start;
 }
 
 .controls__info {
@@ -214,8 +215,9 @@ input:focus {
 
 .pipeline-meta {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .pipeline-meta span {
