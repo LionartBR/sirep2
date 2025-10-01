@@ -30,12 +30,11 @@ PLAN_DEFAULT_QUERY = """
         razao_social,
         situacao,
         dias_em_atraso,
-        saldo_total,
+        saldo,
         dt_situacao,
-        valor_atrasado,
         COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
-     ORDER BY valor_atrasado DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
+     ORDER BY saldo DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
 
@@ -46,14 +45,13 @@ PLAN_SEARCH_BY_NUMBER_QUERY = """
         razao_social,
         situacao,
         dias_em_atraso,
-        saldo_total,
+        saldo,
         dt_situacao,
-        valor_atrasado,
         COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      WHERE numero_plano = %(number)s
         OR numero_plano LIKE %(number)s || '%'
-     ORDER BY valor_atrasado DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
+     ORDER BY saldo DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
 
@@ -64,13 +62,12 @@ PLAN_SEARCH_BY_NAME_QUERY = """
         razao_social,
         situacao,
         dias_em_atraso,
-        saldo_total,
+        saldo,
         dt_situacao,
-        valor_atrasado,
         COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      WHERE razao_social ILIKE '%%' || %(term)s || '%%'
-     ORDER BY valor_atrasado DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
+     ORDER BY saldo DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
 
@@ -81,14 +78,13 @@ PLAN_SEARCH_BY_DOCUMENT_QUERY = """
         razao_social,
         situacao,
         dias_em_atraso,
-        saldo_total,
+        saldo,
         dt_situacao,
-        valor_atrasado,
         COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      WHERE documento = %(document)s
        AND tipo_doc IN ('CNPJ', 'CEI')
-     ORDER BY valor_atrasado DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
+     ORDER BY saldo DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
 
@@ -162,11 +158,12 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
         or row.get("dias_atraso")
         or row.get("dias_atrasados")
     )
-    balance = _normalize_balance(
-        row.get("saldo_total")
-        or row.get("saldo")
-        or row.get("valor_atrasado")
-    )
+    balance_raw = row.get("saldo")
+    if balance_raw is None:
+        balance_raw = row.get("saldo_total")
+    if balance_raw is None:
+        balance_raw = row.get("valor_atrasado")
+    balance = _normalize_balance(balance_raw)
     status_date = extract_date_from_timestamp(row.get("dt_situacao"))
 
     return PlanSummaryResponse(
