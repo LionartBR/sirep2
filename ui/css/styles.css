@@ -199,6 +199,7 @@ input:focus {
   display: flex;
   gap: 12px;
   align-items: flex-start;
+  flex-wrap: wrap;
 }
 
 .controls__start {
@@ -208,13 +209,6 @@ input:focus {
   align-items: flex-start;
 }
 
-.controls__start-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
 .controls__info {
   font-size: 12px;
   color: var(--muted);
@@ -222,14 +216,20 @@ input:focus {
 
 .pipeline-meta {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .pipeline-meta span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.controls__actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 
 .btn {
