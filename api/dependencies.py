@@ -2,7 +2,7 @@
 
 from contextlib import AbstractAsyncContextManager
 
-from psycopg import AsyncConnection
+from psycopg.connection import AsyncConnection
 
 from infra.db import get_connection
 
