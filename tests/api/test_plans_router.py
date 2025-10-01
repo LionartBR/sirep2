@@ -13,18 +13,23 @@ import pytest
 
 
 def _ensure_psycopg_stub() -> None:
-    try:
-        importlib.import_module("psycopg")
-        importlib.import_module("psycopg.errors")
-        importlib.import_module("psycopg.rows")
-        importlib.import_module("psycopg.types")
-        importlib.import_module("psycopg.types.json")
-        importlib.import_module("psycopg.pq")
-        importlib.import_module("psycopg_pool")
+    required_modules = [
+        "psycopg",
+        "psycopg.errors",
+        "psycopg.rows",
+        "psycopg.types",
+        "psycopg.types.json",
+        "psycopg.pq",
+        "psycopg_pool",
+    ]
+
+    for module_name in required_modules:
+        try:
+            importlib.import_module(module_name)
+        except ModuleNotFoundError:
+            break
+    else:
         return
-    except ModuleNotFoundError:
-        if "psycopg" in sys.modules:
-            return
 
     psycopg_module = ModuleType("psycopg")
 
