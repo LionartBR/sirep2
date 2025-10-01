@@ -1,48 +1,39 @@
-# Diretrizes para agentes na base `sirep2`
+# Repository Guidelines
 
-## Contexto geral
-- Este repositório implementa serviços e APIs do projeto SIREP usando Python 3.10+, FastAPI e uma arquitetura em camadas (domínio, serviços, infraestrutura e UI).
-- Utilize sempre anotações de tipo completas em novas funções, métodos e variáveis públicas.
-- Prefira imutabilidade (tuplas, dataclasses congeladas) para modelos de domínio quando fizer sentido.
-- Nunca adicione artefatos gerados automaticamente (por exemplo, `__pycache__`, arquivos temporários de editor ou dados de teste) ao controle de versão.
+## Project Structure & Module Organization
+- `domain/` hosts immutable business models and rules; keep them framework-free.
+- `services/` orchestrates domain logic and talks to infrastructure via domain-defined interfaces.
+- `infra/` contains adapters for databases, queues, and external services; prefer environment-driven config.
+- `api/` exposes FastAPI routers and dependencies; delegate logic to services.
+- `ui/` serves the static web app; capture before/after screenshots when UI changes.
+- `tests/` mirrors the source layout with pytest suites and shared fixtures in `conftest.py`.
 
-## Convenções de código
-- Siga PEP 8 para estilo de código Python e mantenha nomes descritivos em inglês (exceto strings exibidas ao usuário final).
-- Organize imports padrão/terceiros/projeto com uma linha em branco entre os grupos. Não envolva imports em blocos `try/except`.
-- Utilize `async`/`await` quando interagir com APIs assíncronas do FastAPI.
-- Sempre valide dados de entrada com Pydantic ou modelos de domínio antes de propagá-los.
-- Documente funções e classes com docstrings concisas explicando propósito e contratos.
+## Build, Test, and Development Commands
+- `uvicorn api.app:create_app --reload` spins up the local FastAPI server with auto-reload.
+- `pytest` runs the unit and integration test suite.
+- `ruff check .` and `ruff format .` enforce linting and formatting.
+- `mypy .` validates typing across the project.
+- `scripts/` holds auxiliary CLIs; document any new script in `docs/`.
 
-## Estrutura das camadas
-- `domain/`: Regras de negócio e modelos. Não acesse bibliotecas externas de I/O aqui.
-- `services/`: Orquestra regras de negócio, pode falar com infra. Dependa de interfaces definidas em `domain`.
-- `infra/`: Integrações com bancos de dados, filas, etc. Mantenha configurações via variáveis de ambiente.
-- `api/`: Rotas FastAPI e dependências. Delegue lógica aos serviços.
-- `ui/`: Aplicação web estática. Alterações visuais exigem captura de tela no PR.
-- `tests/`: Utilize `pytest`. Organize fixtures em `conftest.py`.
+## Coding Style & Naming Conventions
+- Follow PEP 8 with 4-space indentation and descriptive English identifiers (UI strings may stay in Portuguese).
+- Apply complete type hints to public functions, methods, and module-level state.
+- Prefer `@dataclass(frozen=True)` or tuples for domain models to keep immutability explicit.
+- Group imports by stdlib, third-party, and project modules, separated by blank lines.
+- Document public modules, classes, and functions with concise docstrings describing purpose and contracts.
 
-## Testes e qualidade
-- Rode `pytest` antes de submeter alterações que impactem regras de negócio ou API.
-- Inclua testes unitários para novos comportamentos e atualize snapshots conforme necessário.
-- Ao tocar em código assíncrono, cubra caminhos de sucesso e de erro.
-- Sempre que possível valide tipagens com `mypy` e formatação com `ruff` ou `black` antes de abrir um PR.
+## Testing Guidelines
+- Name tests after the behavior under test (e.g., `test_service_returns_error_on_missing_case`).
+- Cover both success and failure branches for asynchronous paths.
+- Refresh golden files or snapshots deliberately; keep deterministic data.
+- Target meaningful coverage and ensure new behaviors ship with focused tests.
 
-## Commits e versionamento
-- Utilize mensagens de commit curtas e no imperativo descrevendo claramente a alteração principal.
-- Evite commits que misturem refatorações e mudanças de comportamento sem justificativa clara.
-- Garanta que a branch esteja sincronizada com `main` antes de abrir um novo PR, resolvendo conflitos localmente.
+## Commit & Pull Request Guidelines
+- Write imperative commit messages summarizing the primary change; avoid mixing refactors with new behavior unless justified.
+- Keep branches current with `main` and resolve conflicts locally before opening a PR.
+- Run linting, typing, and test commands before pushing; note their status in the PR description.
+- Use the `make_pr` helper to generate PR titles/bodies, and document contract changes, rollout steps, and any required screenshots.
 
-## Documentação
-- Atualize `docs/` ao introduzir novos fluxos, endpoints ou comandos.
-- Forneça exemplos de uso na documentação sempre que adicionar endpoints ou scripts.
-
-## Mensagens finais e PRs
-- No resumo final para o usuário, liste mudanças relevantes e testes executados. Inclua comandos realmente executados e marque-os como ✅/⚠️/❌ conforme o resultado.
-- Após commitar, utilize a ferramenta `make_pr` para gerar título e corpo do Pull Request cobrindo o que foi feito e como validar.
-- Ao redigir o corpo do PR, liste quaisquer impactos em contratos públicos (APIs, eventos ou esquemas) e passos de rollout se relevantes.
-
-## Scripts úteis
-- `uvicorn api.app:create_app --reload` para desenvolvimento local.
-- `pytest` para testes automatizados.
-
-Siga estas diretrizes em todas as subpastas, a menos que haja um `AGENTS.md` mais específico.
+## Security & Configuration Notes
+- Never commit secrets; load credentials through environment variables consumed in `infra/` components.
+- Store configuration defaults in `.env.example` or documentation rather than source code.
