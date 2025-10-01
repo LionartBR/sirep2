@@ -1,13 +1,13 @@
 """Shared dependencies for the API layer."""
 
-from contextlib import AbstractAsyncContextManager
+from typing import AsyncContextManager
 
 from psycopg import AsyncConnection
 
 from infra.db import get_connection
 
 
-def get_connection_manager() -> AbstractAsyncContextManager[AsyncConnection]:
+def get_connection_manager() -> AsyncContextManager[AsyncConnection]:
     """Return the shared database connection context manager."""
 
     return get_connection()
