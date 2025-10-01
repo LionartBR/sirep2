@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     occurrences: '',
   };
   if (lastUpdateLabel) {
-    lastUpdateLabel.textContent = 'última atualização em —';
+    lastUpdateLabel.textContent = 'Última atualização em: —';
   }
   let currentPlansSearchTerm = '';
   let currentOccurrencesSearchTerm = '';
@@ -217,7 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const timestamp = lastSuccessfulFinishedAt ?? null;
     const formatted = formatDateTimeLabel(timestamp);
-    lastUpdateLabel.textContent = `última atualização em ${formatted}`;
+    lastUpdateLabel.textContent = `Última atualização em: ${formatted}`;
   };
 
   const refreshPipelineMeta = async () => {
