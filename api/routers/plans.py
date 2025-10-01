@@ -5,7 +5,7 @@ from contextlib import AbstractAsyncContextManager
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from psycopg import AsyncConnection
 from psycopg.rows import dict_row
 
@@ -105,6 +105,14 @@ def _get_connection_manager() -> AbstractAsyncContextManager[AsyncConnection]:
     return get_connection()
 
 
+_REQUEST_PRINCIPAL_HEADER_CANDIDATES = (
+    "x-user-registration",
+    "x-user-id",
+    "x-app-user-registration",
+    "x-app-user-id",
+)
+
+
 def _normalize_days(value: Any) -> int | None:
     """Convert the raw ``dias_em_atraso`` value to an integer."""
 
@@ -172,6 +180,22 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
     )
 
 
+def _resolve_request_matricula(request: Request | None) -> str | None:
+    """Retrieve the matricula provided by the caller or fallback to defaults."""
+
+    if request is not None:
+        for header in _REQUEST_PRINCIPAL_HEADER_CANDIDATES:
+            value = request.headers.get(header)
+            if value:
+                candidate = value.split(",", 1)[0].strip()
+                if candidate:
+                    return candidate
+
+    principal = get_principal_settings()
+    matricula = (principal.matricula or "").strip() if principal.matricula else ""
+    return matricula or None
+
+
 async def _fetch_plan_rows(
     connection: AsyncConnection,
     *,
@@ -205,6 +229,7 @@ async def _fetch_plan_rows(
 
 @router.get("", response_model=PlansResponse)
 async def list_plans(
+    request: Request,
     q: str | None = Query(None, max_length=255, description="Termo de busca"),
     limit: int = Query(
         DEFAULT_LIMIT,
@@ -216,8 +241,7 @@ async def list_plans(
 ) -> PlansResponse:
     """Return the consolidated plans available for the dashboard."""
 
-    principal = get_principal_settings()
-    matricula = (principal.matricula or "").strip() if principal.matricula else None
+    matricula = _resolve_request_matricula(request)
     if not matricula:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

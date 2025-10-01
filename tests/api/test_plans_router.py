@@ -61,6 +61,23 @@ class _DummyManager:
         return False
 
 
+class _DummyHeaders:
+    def __init__(self, headers: dict[str, str] | None = None) -> None:
+        self._headers = {k.lower(): v for k, v in (headers or {}).items()}
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._headers.get(key.lower(), default)
+
+
+class _DummyRequest:
+    def __init__(self, headers: dict[str, str] | None = None) -> None:
+        self.headers = _DummyHeaders(headers)
+
+
+def _make_request(headers: dict[str, str] | None = None) -> _DummyRequest:
+    return _DummyRequest(headers)
+
+
 @pytest.mark.anyio
 async def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     rows = [
@@ -98,6 +115,7 @@ async def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     response = await plans.list_plans(
+        request=_make_request(),
         q=None,
         limit=plans.DEFAULT_LIMIT,
         offset=0,
@@ -142,7 +160,47 @@ async def test_list_plans_requires_credentials(monkeypatch: pytest.MonkeyPatch) 
     )
 
     with pytest.raises(plans.HTTPException) as excinfo:
-        await plans.list_plans()
+        await plans.list_plans(request=_make_request())
 
     assert excinfo.value.status_code == plans.status.HTTP_401_UNAUTHORIZED
     assert excinfo.value.detail == "Credenciais de acesso ausentes."
+
+
+@pytest.mark.anyio
+async def test_list_plans_accepts_header_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows: list[dict[str, Any]] = []
+
+    manager = _DummyManager(rows)
+    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+
+    bind_calls: list[tuple[Any, str]] = []
+
+    async def _fake_bind(connection: Any, matricula: str) -> None:
+        bind_calls.append((connection, matricula))
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula=None,
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    response = await plans.list_plans(
+        request=_make_request({"X-User-Registration": "  789xyz  "}),
+        q=None,
+        limit=plans.DEFAULT_LIMIT,
+        offset=10,
+    )
+
+    assert isinstance(response, PlansResponse)
+    assert response.total == 0
+    assert response.items == []
+    assert len(bind_calls) == 1
+    _, matricula = bind_calls[0]
+    assert matricula == "789xyz"
