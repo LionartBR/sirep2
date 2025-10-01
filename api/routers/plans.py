@@ -51,7 +51,7 @@ PLAN_SEARCH_BY_NUMBER_QUERY = """
         COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
      WHERE numero_plano = %(number)s
-        OR numero_plano LIKE %(number_like)s
+        OR numero_plano LIKE %(number_prefix)s
      ORDER BY saldo DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
@@ -67,7 +67,7 @@ PLAN_SEARCH_BY_NAME_QUERY = """
         dt_situacao,
         COUNT(*) OVER () AS total_count
       FROM app.vw_planos_busca
-     WHERE razao_social ILIKE %(term)s
+     WHERE razao_social ILIKE %(name_pattern)s
      ORDER BY saldo DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
@@ -211,16 +211,18 @@ async def _fetch_plan_rows(
         params = {"document": digits, "limit": limit, "offset": offset}
     elif normalized_search.isdigit() and normalized_search:
         query = PLAN_SEARCH_BY_NUMBER_QUERY
+        number_prefix = f"{normalized_search}%"
         params = {
             "number": normalized_search,
-            "number_like": f"{normalized_search}%",
+            "number_prefix": number_prefix,
             "limit": limit,
             "offset": offset,
         }
     elif normalized_search:
         query = PLAN_SEARCH_BY_NAME_QUERY
+        name_pattern = f"%{normalized_search}%"
         params = {
-            "term": f"%{normalized_search}%",
+            "name_pattern": name_pattern,
             "limit": limit,
             "offset": offset,
         }

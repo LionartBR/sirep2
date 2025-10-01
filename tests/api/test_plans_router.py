@@ -10,6 +10,7 @@ import pytest
 
 pytest.importorskip("psycopg")
 from psycopg.rows import dict_row
+from httpx import AsyncClient
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -17,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from api.models import PlansResponse
 from api.routers import plans
+from api.app import create_app
 from shared.config import PrincipalSettings
 
 
@@ -189,7 +191,7 @@ async def test_list_plans_search_by_number_builds_like(monkeypatch: pytest.Monke
     assert cursor is not None
     assert cursor.executed_params is not None
     assert cursor.executed_params["number"] == "12345"
-    assert cursor.executed_params["number_like"] == "12345%"
+    assert cursor.executed_params["number_prefix"] == "12345%"
 
 
 @pytest.mark.anyio
@@ -229,7 +231,119 @@ async def test_list_plans_search_by_name_builds_wildcard(monkeypatch: pytest.Mon
     cursor = manager.last_connection.last_cursor
     assert cursor is not None
     assert cursor.executed_params is not None
-    assert cursor.executed_params["term"] == "%Acme%"
+    assert cursor.executed_params["name_pattern"] == "%Acme%"
+
+
+@pytest.mark.anyio
+async def test_get_plans_search_by_number_returns_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [
+        {
+            "numero_plano": "12345",
+            "numero_inscricao": "12.345.678/0001-90",
+            "razao_social": "Empresa Teste",
+            "situacao": "EM_DIA",
+            "dias_em_atraso": 0,
+            "saldo": Decimal("0"),
+            "dt_situacao": datetime(2024, 5, 1, tzinfo=timezone.utc),
+            "total_count": 1,
+        }
+    ]
+
+    manager = _DummyManager(rows)
+    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+
+    async def _fake_bind(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula=None,
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    app = create_app()
+    async with AsyncClient(app=app, base_url="http://testserver") as client:
+        response = await client.get(
+            "/api/plans",
+            params={"q": "12345"},
+            headers={"X-User-Registration": "abc123"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["number"] == "12345"
+    assert manager.last_connection is not None
+    cursor = manager.last_connection.last_cursor
+    assert cursor is not None
+    assert cursor.executed_params is not None
+    assert cursor.executed_params["number"] == "12345"
+    assert cursor.executed_params["number_prefix"] == "12345%"
+
+
+@pytest.mark.anyio
+async def test_get_plans_search_by_number_prefix_returns_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [
+        {
+            "numero_plano": "12345",
+            "numero_inscricao": "12.345.678/0001-90",
+            "razao_social": "Empresa Teste",
+            "situacao": "EM_DIA",
+            "dias_em_atraso": 0,
+            "saldo": Decimal("0"),
+            "dt_situacao": datetime(2024, 5, 1, tzinfo=timezone.utc),
+            "total_count": 1,
+        }
+    ]
+
+    manager = _DummyManager(rows)
+    monkeypatch.setattr(plans, "_get_connection_manager", lambda: manager)
+
+    async def _fake_bind(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula=None,
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    app = create_app()
+    async with AsyncClient(app=app, base_url="http://testserver") as client:
+        response = await client.get(
+            "/api/plans",
+            params={"q": "123"},
+            headers={"X-User-Registration": "abc123"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["number"] == "12345"
+    assert manager.last_connection is not None
+    cursor = manager.last_connection.last_cursor
+    assert cursor is not None
+    assert cursor.executed_params is not None
+    assert cursor.executed_params["number"] == "123"
+    assert cursor.executed_params["number_prefix"] == "123%"
 
 
 @pytest.mark.anyio
