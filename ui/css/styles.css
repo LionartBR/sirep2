@@ -816,6 +816,11 @@ input:focus {
   flex-wrap: wrap;
 }
 
+.accordion--compact .accordion__header {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
 .accordion__toggle {
   display: flex;
   align-items: center;
