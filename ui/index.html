@@ -48,21 +48,21 @@
         </div>
 
         <div id="panel-base" class="card__panel" role="tabpanel" aria-labelledby="tab-base">
-            <div class="controls" role="group" aria-label="Controles de execução">
-              <div class="controls__group">
-                <div class="controls__start">
+          <div class="controls" role="group" aria-label="Controles de execução">
+            <div class="controls__group">
+              <div class="controls__start">
+                <div class="controls__buttons">
                   <button class="btn btn--primary" id="btnStart" type="button">Iniciar</button>
-                  <div id="pipeline-meta" class="pipeline-meta">
-                    <span id="lbl-last-update">Última atualização em: —</span>
-                    <span id="lbl-last-duration">Duração da última atualização: —</span>
-                  </div>
-                  <p class="controls__info" id="lastUpdateInfo" aria-live="polite"></p>
-                </div>
-                <div class="controls__actions">
                   <button class="btn btn--ghost" id="btnPause" type="button" disabled>Pausar</button>
                   <button class="btn btn--ghost" id="btnContinue" type="button" disabled>Continuar</button>
                 </div>
+                <div id="pipeline-meta" class="pipeline-meta">
+                  <span id="lbl-last-update">Última atualização em: —</span>
+                  <span id="lbl-last-duration">Duração da última atualização: —</span>
+                </div>
+                <p class="controls__info" id="lastUpdateInfo" aria-live="polite"></p>
               </div>
+            </div>
             <div class="status" id="statusText">Estado: Ocioso</div>
           </div>
 
@@ -307,14 +307,14 @@
           <div class="controls" role="group" aria-label="Controles de execução do Tratamento">
             <div class="controls__group">
               <div class="controls__start">
-                <div class="controls__start-row">
+                <div class="controls__buttons">
                   <button class="btn btn--ghost" id="btnMigratePlans" type="button">Migrar planos</button>
                   <button class="btn btn--primary" id="btnStartTreatment" type="button">Iniciar</button>
+                  <button class="btn btn--ghost" id="btnPauseTreatment" type="button" disabled>Pausar</button>
+                  <button class="btn btn--ghost" id="btnContinueTreatment" type="button" disabled>Continuar</button>
                 </div>
                 <p class="controls__info" id="treatmentInfo" aria-live="polite">Tratamento ocioso</p>
               </div>
-              <button class="btn btn--ghost" id="btnPauseTreatment" type="button" disabled>Pausar</button>
-              <button class="btn btn--ghost" id="btnContinueTreatment" type="button" disabled>Continuar</button>
             </div>
             <div class="status" id="treatmentStatusText">Estado: Ocioso</div>
           </div>
