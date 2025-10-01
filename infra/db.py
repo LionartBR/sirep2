@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
-from psycopg.connection import AsyncConnection
+from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
 from .audit import bind_session_by_matricula_async

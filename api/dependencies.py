@@ -2,7 +2,7 @@
 
 from typing import AsyncContextManager
 
-from psycopg.connection import AsyncConnection
+from psycopg import AsyncConnection
 
 from infra.db import get_connection
 
