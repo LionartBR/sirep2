@@ -31,6 +31,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnContinue = document.getElementById('btnContinue');
   const progressContainer = document.querySelector('.progress');
   const progressBar = progressContainer?.querySelector('.progress__bar');
+  const runningPlanNumberEl = document.getElementById('currentPlanNumber');
+  const runningPlanDocumentEl = document.getElementById('currentPlanDocument');
+  const runningPlanCompanyEl = document.getElementById('currentPlanCompanyName');
+  const runningPlanStatusEl = document.getElementById('currentPlanStatus');
+  const runningPlanStageEl = document.getElementById('currentPlanStage');
   // Pipeline meta labels
   const lblLastUpdate = document.getElementById('lbl-last-update');
   const lblLastDuration = document.getElementById('lbl-last-duration');
@@ -184,6 +189,88 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (error) {
       return date.toLocaleString('pt-BR');
     }
+  };
+
+  const setElementText = (element, value) => {
+    if (!element) {
+      return;
+    }
+
+    if (value === null || value === undefined) {
+      element.textContent = '—';
+      return;
+    }
+
+    const text = String(value).trim();
+    element.textContent = text || '—';
+  };
+
+  const resolveRunningPlanFromState = (state) => {
+    if (!state || typeof state !== 'object') {
+      return null;
+    }
+
+    const candidate =
+      state.current_plan ??
+      state.currentPlan ??
+      state.plan_in_execution ??
+      state.planInExecution ??
+      state.running_plan ??
+      state.runningPlan ??
+      state.plan ??
+      null;
+
+    if (!candidate || typeof candidate !== 'object') {
+      return null;
+    }
+
+    return candidate;
+  };
+
+  const updateRunningPlanInfo = (plan) => {
+    const resolvedPlan = plan && typeof plan === 'object' ? plan : null;
+
+    const planNumber =
+      resolvedPlan?.number ??
+      resolvedPlan?.plan_number ??
+      resolvedPlan?.planNumber ??
+      resolvedPlan?.numero ??
+      resolvedPlan?.numero_plano ??
+      null;
+    setElementText(runningPlanNumberEl, planNumber);
+
+    const rawDocument =
+      resolvedPlan?.document ??
+      resolvedPlan?.documento ??
+      resolvedPlan?.document_number ??
+      resolvedPlan?.documentNumber ??
+      resolvedPlan?.numero_inscricao ??
+      null;
+    const formattedDocument = rawDocument ? formatDocument(rawDocument) : null;
+    setElementText(runningPlanDocumentEl, formattedDocument);
+
+    const companyName =
+      resolvedPlan?.company_name ??
+      resolvedPlan?.razao_social ??
+      resolvedPlan?.companyName ??
+      resolvedPlan?.razaoSocial ??
+      null;
+    setElementText(runningPlanCompanyEl, companyName);
+
+    const statusValue =
+      resolvedPlan?.status ??
+      resolvedPlan?.status_label ??
+      resolvedPlan?.situacao ??
+      null;
+    setElementText(runningPlanStatusEl, formatStatusLabel(statusValue));
+
+    const stageValue =
+      resolvedPlan?.stage ??
+      resolvedPlan?.stage_label ??
+      resolvedPlan?.stageLabel ??
+      resolvedPlan?.etapa ??
+      null;
+    setElementText(runningPlanStageEl, stageValue);
   };
 
   const pad2 = (n) => String(Math.trunc(Math.max(0, n))).padStart(2, '0');
@@ -1559,7 +1646,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const applyState = (state) => {
     const message = state.message || defaultMessages[state.status] || defaultMessages.idle;
-    updateProgressFromState(state);    
+    updateProgressFromState(state);
+    const runningPlan = resolveRunningPlanFromState(state);
+    updateRunningPlanInfo(runningPlan);
     switch (state.status) {
       case 'running':
         toggleButtons({ start: false, pause: true, cont: false });
