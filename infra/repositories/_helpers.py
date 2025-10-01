@@ -4,6 +4,8 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
+from shared.text import only_digits
+
 
 def calcular_atraso_desde(dias_em_atraso: Any) -> Optional[date]:
     """Converte dias em atraso para a data correspondente."""
@@ -67,14 +69,6 @@ def normalizar_situacao(texto: str) -> str:
     if normalizado.startswith("RESC") or "RESCINDIDO" in normalizado:
         return "RESCINDIDO"
     return "EM_DIA"
-
-
-def only_digits(valor: Any) -> str:
-    """Extrai somente os dígitos de um valor."""
-
-    return "".join(ch for ch in str(valor or "") if ch.isdigit())
-
-
 def safe_int(valor: Any) -> Optional[int]:
     """Converte valores textuais em inteiros de forma segura."""
 
