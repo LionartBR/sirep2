@@ -212,6 +212,17 @@ input:focus {
   color: var(--muted);
 }
 
+.pipeline-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pipeline-meta span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .btn {
   min-width: 110px;
   height: 40px;

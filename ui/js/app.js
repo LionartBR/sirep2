@@ -31,6 +31,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnContinue = document.getElementById('btnContinue');
   const progressContainer = document.querySelector('.progress');
   const progressBar = progressContainer?.querySelector('.progress__bar');
+  // Pipeline meta labels
+  const lblLastUpdate = document.getElementById('lbl-last-update');
+  const lblLastDuration = document.getElementById('lbl-last-duration');
   const dateFromInput = document.getElementById('date-from');
   const dateToInput = document.getElementById('date-to');
   const openDateFromButton = document.getElementById('open-date-from');
@@ -80,6 +83,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let progressIntervalHandle = null;
 
   let pollHandle = null;
+  let pipelineMetaController = null;
+  let isFetchingPipelineMeta = false;
   let isFetchingPlans = false;
   let isFetchingOccurrences = false;
   let plansLoaded = false;
@@ -166,6 +171,43 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
+  const formatDateTime = (value) => {
+    if (!value) {
+      return '—';
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '—';
+    }
+    try {
+      return new Intl.DateTimeFormat('pt-BR', {
+        dateStyle: 'short',
+        timeStyle: 'medium',
+        timeZone: 'America/Sao_Paulo',
+      }).format(date);
+    } catch (error) {
+      return date.toLocaleString('pt-BR');
+    }
+  };
+
+  const pad2 = (n) => String(Math.trunc(Math.max(0, n))).padStart(2, '0');
+  const formatDurationText = (ms) => {
+    if (!Number.isFinite(ms) || ms < 0) {
+      return '—';
+    }
+    const totalSeconds = Math.trunc(ms / 1000);
+    const hours = Math.trunc(totalSeconds / 3600);
+    const minutes = Math.trunc((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${hours}h ${pad2(minutes)}m ${pad2(seconds)}s`;
+  };
+
+  const setText = (el, prefix, value) => {
+    if (!el) return;
+    const text = value ? value : '—';
+    el.textContent = `${prefix} ${text}`;
+  };
+
   const updateLastUpdateInfo = (state) => {
     if (!lastUpdateLabel) {
       return;
@@ -176,6 +218,51 @@ document.addEventListener('DOMContentLoaded', () => {
     const timestamp = lastSuccessfulFinishedAt ?? null;
     const formatted = formatDateTimeLabel(timestamp);
     lastUpdateLabel.textContent = `última atualização em ${formatted}`;
+  };
+
+  const refreshPipelineMeta = async () => {
+    if (isFetchingPipelineMeta) {
+      return null;
+    }
+    isFetchingPipelineMeta = true;
+    try {
+      if (pipelineMetaController) {
+        pipelineMetaController.abort();
+      }
+      pipelineMetaController = new AbortController();
+      const baseUrl =
+        window.location.origin && window.location.origin !== 'null'
+          ? window.location.origin
+          : window.location.href;
+      const url = new URL(`${PIPELINE_ENDPOINT}/status`, baseUrl);
+      url.searchParams.set('job_name', 'gestao_base');
+      const headers = new Headers({ Accept: 'application/json' });
+      const matricula = currentUser?.username?.trim();
+      if (matricula) {
+        headers.set('X-User-Registration', matricula);
+      }
+      const response = await fetch(url.toString(), {
+        headers,
+        signal: pipelineMetaController.signal,
+      });
+      if (!response.ok) {
+        throw new Error('Não foi possível consultar o status da pipeline.');
+      }
+      const payload = await response.json();
+      const lastUpdateAt = payload?.last_update_at ?? null;
+      const durationText = payload?.duration_text ?? null;
+      setText(lblLastUpdate, 'Última atualização em:', formatDateTime(lastUpdateAt));
+      setText(lblLastDuration, 'Duração da última atualização:', durationText);
+      return payload;
+    } catch (error) {
+      console.error('Falha ao carregar metadados da pipeline.', error);
+      setText(lblLastUpdate, 'Última atualização em:', null);
+      setText(lblLastDuration, 'Duração da última atualização:', null);
+      return null;
+    } finally {
+      pipelineMetaController = null;
+      isFetchingPipelineMeta = false;
+    }
   };
 
   const renderPlansPlaceholder = (message, modifier = 'empty') => {
@@ -1399,6 +1486,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const state = await fetchPipelineState();
       if (state) {
         applyState(state);
+        // also refresh pipeline meta while running
+        await refreshPipelineMeta();
         if (state.status !== 'running') {
           stopPolling();
         }
@@ -1475,6 +1564,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const state = await response.json();
       applyState(state);
+      void refreshPipelineMeta();
       if (state.status === 'running') {
         schedulePolling();
       }
@@ -1501,6 +1591,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   (async () => {
+    void refreshPipelineMeta();
     const state = await fetchPipelineState();
     if (state) {
       applyState(state);
@@ -1512,6 +1603,22 @@ document.addEventListener('DOMContentLoaded', () => {
       setStatus(defaultMessages.idle);
     }
   })();
+
+  document.addEventListener('visibilitychange', async () => {
+    if (document.hidden) {
+      stopPolling();
+      return;
+    }
+    // On resume, refetch state and meta
+    const state = await fetchPipelineState();
+    if (state) {
+      applyState(state);
+      await refreshPipelineMeta();
+      if (state.status === 'running') {
+        schedulePolling();
+      }
+    }
+  });
 
   const disableCalendarButton = (button) => {
     if (!button) {

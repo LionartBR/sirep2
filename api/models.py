@@ -77,3 +77,14 @@ class PlansResponse(BaseModel):
     items: list[PlanSummaryResponse]
     total: int
     paging: PlansPaging | None = None
+
+
+class PipelineStatusViewResponse(BaseModel):
+    """Status information for the last pipeline run, per tenant/job."""
+
+    job_name: str
+    status: str
+    last_update_at: Optional[datetime] = None
+    duration_text: Optional[str] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
