@@ -25,6 +25,11 @@ Para descriptografar uma pasta previamente exportada (``*.enc.txt``)::
 
     python -m export_repo_txt --root "/saida" \
         --out "/saida_decriptografada" --mode decrypt --passphrase "segredo"
+
+Para exportar apenas alguns diretórios específicos (relativos à raiz)::
+
+    python -m export_repo_txt --root "/caminho/projeto" \
+        --out "/saida" --include-dirs src app ui
 """
 
 from __future__ import annotations
@@ -266,6 +271,58 @@ def make_out_path(base: Path, rel_path: Path, mode: ExportMode) -> Path:
     return out_path.with_suffix(out_path.suffix + suffix)
 
 
+# ===== NOVO: seleção de diretórios incluídos =====
+
+def normalize_include_dirs(root: Path, includes: Iterable[str] | None, parser: argparse.ArgumentParser) -> tuple[Path, ...] | None:
+    """
+    Normaliza a lista de diretórios informados em --include-dirs para paths *relativos à raiz*.
+    Rejeita caminhos fora da raiz.
+    """
+    if not includes:
+        return None
+
+    normalized: list[Path] = []
+    for item in includes:
+        raw = Path(item)
+        # Interpretar caminhos relativos como relativos à raiz do projeto
+        abs_path = (root / raw).resolve() if not raw.is_absolute() else raw.resolve()
+        try:
+            rel = abs_path.relative_to(root)
+        except Exception:
+            parser.error(f"--include-dirs contém caminho fora da raiz: '{item}'")
+        # Normaliza '.' => incluir tudo (equivale a não passar --include-dirs)
+        if str(rel) in ("", "."):
+            # esse caso torna a lista irrelevante; retorne None para não filtrar
+            return None
+        # Evitar componentes ascendentes
+        if ".." in rel.parts:
+            parser.error(f"--include-dirs contém caminho inválido: '{item}'")
+        # Remover barras finais e normalizar
+        normalized.append(rel)
+
+    # Eliminar duplicatas e normalizar prefixos (se 'src' e 'src/app' foram dados, manter só 'src')
+    def is_prefix(a: Path, b: Path) -> bool:
+        a_parts, b_parts = a.parts, b.parts
+        return len(a_parts) <= len(b_parts) and b_parts[:len(a_parts)] == a_parts
+
+    pruned: list[Path] = []
+    for cand in sorted(set(normalized), key=lambda p: (len(p.parts), p.as_posix())):
+        if not any(is_prefix(prev, cand) for prev in pruned):
+            pruned.append(cand)
+
+    return tuple(pruned)
+
+
+def rel_is_under_any(rel: Path, bases: tuple[Path, ...]) -> bool:
+    """Retorna True se `rel` (diretório/arquivo relativo à raiz) está sob algum prefixo de `bases`."""
+    rparts = rel.parts
+    for b in bases:
+        bparts = b.parts
+        if rparts[:len(bparts)] == bparts:
+            return True
+    return False
+
+
 def run_plain_or_encrypted_export(
     root: Path,
     out_base: Path,
@@ -273,11 +330,23 @@ def run_plain_or_encrypted_export(
     manifest_lines: list[str],
     stats: ExportStats,
     passphrase: str | None = None,
+    include_dirs: tuple[Path, ...] | None = None,   # <== NOVO
 ) -> None:
     """Percorre o repositório exportando arquivos em modo simples ou criptografado."""
 
     for dirpath, dirnames, filenames in os.walk(root):
+        # Caminho relativo do diretório atual em relação à raiz
+        current_rel = Path(dirpath).resolve().relative_to(root)
+
+        # Filtra diretórios ignorados
         dirnames[:] = [d for d in dirnames if not should_skip_dir(d)]
+
+        # Se --include-dirs foi usado, podar a descida em diretórios que não estejam sob os permitidos
+        if include_dirs:
+            dirnames[:] = [
+                d for d in dirnames
+                if rel_is_under_any(current_rel / d, include_dirs)
+            ]
 
         for fname in filenames:
             if should_skip_file(fname):
@@ -288,6 +357,13 @@ def run_plain_or_encrypted_export(
 
             src_path = Path(dirpath, fname)
             rel_path = src_path.resolve().relative_to(root)
+
+            # Se --include-dirs foi usado, pule arquivos fora dos diretórios permitidos
+            if include_dirs and not rel_is_under_any(rel_path.parent, include_dirs):
+                stats.skipped += 1
+                size = src_path.stat().st_size if src_path.exists() else ""
+                manifest_lines.append(f"{rel_path},skipped,not-included,{size}\n")
+                continue
 
             content, err = read_text_with_fallback(src_path)
             if err is not None:
@@ -394,6 +470,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--passphrase",
         help="Frase-secreta utilizada para criptografar/descriptografar",
     )
+    # ===== NOVO: argumento para incluir somente alguns diretórios =====
+    parser.add_argument(
+        "--include-dirs",
+        nargs="+",
+        help="Lista de diretórios (relativos à raiz) a incluir na exportação. Ex.: --include-dirs src app ui",
+    )
     return parser
 
 
@@ -416,6 +498,9 @@ def main() -> None:
     if mode in {ExportMode.ENCRYPT, ExportMode.DECRYPT}:
         passphrase = ensure_passphrase(passphrase, parser)
 
+    # Normaliza include-dirs (pode virar None caso inclua '.')
+    include_dirs = normalize_include_dirs(root, args.include_dirs, parser)
+
     manifest_lines = ["relpath,status,reason,bytes\n"]
     stats = ExportStats()
 
@@ -423,7 +508,15 @@ def main() -> None:
         assert passphrase is not None
         run_decryption(root, out_base, manifest_lines, stats, passphrase)
     else:
-        run_plain_or_encrypted_export(root, out_base, mode, manifest_lines, stats, passphrase)
+        run_plain_or_encrypted_export(
+            root,
+            out_base,
+            mode,
+            manifest_lines,
+            stats,
+            passphrase,
+            include_dirs=include_dirs,  # <== NOVO
+        )
 
     manifest_path = write_manifest(out_base, manifest_lines)
 
