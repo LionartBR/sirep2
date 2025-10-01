@@ -1,10 +1,13 @@
 from pathlib import Path
+from typing import Any, MutableMapping
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
-from starlette.types import Scope
+
+# Local alias replicating ``starlette.types.Scope`` to avoid depending on optional typing helpers at runtime.
+Scope = MutableMapping[str, Any]
 
 
 class NoCacheStaticFiles(StaticFiles):
