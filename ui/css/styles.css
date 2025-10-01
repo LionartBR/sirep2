@@ -56,8 +56,9 @@ button {
 button:focus,
 [tabindex]:focus,
 input:focus {
-  outline: 3px solid rgba(16, 140, 188, 0.3);
-  outline-offset: 2px;
+  outline: none;
+  outline-offset: 0;
+  box-shadow: none;
 }
 
 .topbar {
@@ -380,6 +381,34 @@ input:focus {
 
 .login-form__submit {
   width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.login-form__submit-spinner {
+  display: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-top-color: #ffffff;
+  animation: login-form-spinner 0.75s linear infinite;
+}
+
+.login-form__submit.is-loading .login-form__submit-spinner {
+  display: inline-block;
+}
+
+.login-form__submit.is-loading .login-form__submit-text {
+  opacity: 0.85;
+}
+
+@keyframes login-form-spinner {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .login-footer {
@@ -785,6 +814,11 @@ input:focus {
   justify-content: space-between;
   padding: 16px 20px;
   flex-wrap: wrap;
+}
+
+.accordion--compact .accordion__header {
+  padding-top: 12px;
+  padding-bottom: 12px;
 }
 
 .accordion__toggle {

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import MagicMock
+from pathlib import Path
+import sys
+from unittest.mock import ANY, MagicMock, call
 
 import pytest
 
-from infra.audit import (
-    JobRunHandle,
-    job_step,
-    start_job_step,
-    finish_job_step,
-)
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from infra.audit import JobRunHandle, finish_job_step, job_step, start_job_step
 
 
 def _make_cursor() -> tuple[MagicMock, MagicMock]:
@@ -35,9 +36,11 @@ def _job_handle() -> JobRunHandle:
     )
 
 
-def test_start_job_step_inserts_record() -> None:
-    cursor_cm, cursor = _make_cursor()
-    conn = _make_connection(cursor_cm)
+def test_start_job_step_updates_job_run_payload() -> None:
+    select_cm, select_cursor = _make_cursor()
+    update_cm, update_cursor = _make_cursor()
+    select_cursor.fetchone.return_value = {"payload": {}}
+    conn = _make_connection(select_cm, update_cm)
     handle = _job_handle()
 
     step_handle = start_job_step(
@@ -48,14 +51,20 @@ def test_start_job_step_inserts_record() -> None:
         data={"total": 3},
     )
 
-    conn.cursor.assert_called_once()
-    cursor.execute.assert_called_once()
-    sql, params = cursor.execute.call_args[0]
-    assert "INSERT INTO audit.job_step" in sql
-    assert params[0] == handle.tenant_id
-    assert params[3] == "ETAPA_1"
-    assert params[5] == "Captura inicial"
-    assert params[6].obj == {"total": 3}
+    assert conn.cursor.call_args_list[0].kwargs == {"row_factory": ANY}
+    assert conn.cursor.call_args_list[1] == call()
+    update_sql, params = update_cursor.execute.call_args[0]
+    assert "UPDATE audit.job_run" in update_sql
+    payload = params[0].obj
+    assert payload["current_step"] == "ETAPA_1"
+    step_info = payload["steps"]["ETAPA_1"]
+    assert step_info["status"] == "RUNNING"
+    assert step_info["message"] == "Captura inicial"
+    assert step_info["data"] == {"total": 3}
+    assert "started_at" in step_info
+    assert params[1] == "RUNNING"
+    assert params[2] is None
+    assert params[-3:] == (handle.tenant_id, handle.started_at, handle.id)
 
     assert step_handle.step_code == "ETAPA_1"
     assert step_handle.message == "Captura inicial"
@@ -63,8 +72,16 @@ def test_start_job_step_inserts_record() -> None:
 
 
 def test_finish_job_step_updates_status_and_message() -> None:
-    cursor_cm, cursor = _make_cursor()
-    conn = _make_connection(cursor_cm)
+    select_cm, select_cursor = _make_cursor()
+    update_cm, update_cursor = _make_cursor()
+    select_cursor.fetchone.return_value = {
+        "payload": {
+            "steps": {
+                "ETAPA_2": {"status": "RUNNING", "started_at": "2024-01-01T12:00:00Z"}
+            }
+        }
+    }
+    conn = _make_connection(select_cm, update_cm)
     handle = _job_handle()
 
     finish_job_step(
@@ -76,27 +93,51 @@ def test_finish_job_step_updates_status_and_message() -> None:
         data=None,
     )
 
-    conn.cursor.assert_called_once()
-    sql, params = cursor.execute.call_args[0]
-    assert "UPDATE audit.job_step" in sql
-    assert params[0] == "SKIPPED"
-    assert params[1] == "Nada a fazer"
-    assert params[2] is None
+    assert conn.cursor.call_args_list[0].kwargs == {"row_factory": ANY}
+    assert conn.cursor.call_args_list[1] == call()
+    update_sql, params = update_cursor.execute.call_args[0]
+    assert "UPDATE audit.job_run" in update_sql
+    payload = params[0].obj
+    step_info = payload["steps"]["ETAPA_2"]
+    assert step_info["status"] == "SKIPPED"
+    assert step_info["message"] == "Nada a fazer"
+    assert "data" not in step_info
+    assert "finished_at" in step_info
+    assert params[1] is None
+    assert params[-3:] == (handle.tenant_id, handle.started_at, handle.id)
 
 
 def test_job_step_context_manager_marks_error() -> None:
-    start_cm, start_cursor = _make_cursor()
-    finish_cm, finish_cursor = _make_cursor()
-    conn = _make_connection(start_cm, finish_cm)
+    start_select_cm, start_select_cursor = _make_cursor()
+    start_update_cm, start_update_cursor = _make_cursor()
+    finish_select_cm, finish_select_cursor = _make_cursor()
+    finish_update_cm, finish_update_cursor = _make_cursor()
+
+    start_select_cursor.fetchone.return_value = {"payload": {}}
+    finish_select_cursor.fetchone.return_value = {
+        "payload": {
+            "steps": {"ETAPA_3": {"status": "RUNNING", "started_at": "2024-01-01T12:00:00Z"}}
+        }
+    }
+
+    conn = _make_connection(
+        start_select_cm,
+        start_update_cm,
+        finish_select_cm,
+        finish_update_cm,
+    )
     handle = _job_handle()
 
     with pytest.raises(RuntimeError):
         with job_step(conn, job=handle, step_code="ETAPA_3"):
             raise RuntimeError("falhou")
 
-    # Segunda chamada corresponde à atualização de erro
-    assert conn.cursor.call_count == 2
-    sql, params = finish_cursor.execute.call_args[0]
-    assert "UPDATE audit.job_step" in sql
-    assert params[0] == "ERROR"
+    assert conn.cursor.call_count == 4
+    update_sql, params = finish_update_cursor.execute.call_args[0]
+    assert "UPDATE audit.job_run" in update_sql
+    payload = params[0].obj
+    step_info = payload["steps"]["ETAPA_3"]
+    assert step_info["status"] == "ERROR"
+    assert step_info["error"] == "RuntimeError: falhou"
     assert params[1] == "RuntimeError: falhou"
+    assert params[-3:] == (handle.tenant_id, handle.started_at, handle.id)

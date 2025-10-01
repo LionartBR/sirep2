@@ -208,7 +208,7 @@ async def _fetch_plan_rows(
     normalized_search = (search or "").strip()
     digits = only_digits(normalized_search)
 
-    if digits and len(digits) in (11, 14):
+    if digits and len(digits) in (11, 12, 14):
         query = PLAN_SEARCH_BY_DOCUMENT_QUERY
         params = {"document": digits, "limit": limit, "offset": offset}
     elif normalized_search.isdigit() and normalized_search:
