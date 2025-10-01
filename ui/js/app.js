@@ -507,6 +507,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let scheduleOccurrencesCountUpdate = () => {};
 
+  const resolveTableSearchIntent = (term) => {
+    const normalized = (term || '').trim();
+    if (!normalized) {
+      return {
+        normalized,
+        digits: '',
+        intent: 'none',
+      };
+    }
+
+    const digits = stripDigits(normalized);
+    const isDigitsOnly = /^\d+$/.test(normalized);
+
+    if ([11, 12, 14].includes(digits.length)) {
+      return {
+        normalized,
+        digits,
+        intent: 'document',
+      };
+    }
+
+    if (isDigitsOnly) {
+      return {
+        normalized,
+        digits: normalized,
+        intent: 'plan-number',
+      };
+    }
+
+    return {
+      normalized,
+      digits,
+      intent: 'text',
+    };
+  };
+
   const applyOccurrencesFilter = (term) => {
     const occurrencesPanel = document.getElementById('occurrencesTablePanel');
     if (!occurrencesPanel) {
@@ -518,12 +554,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const normalized = (term || '').trim();
+    const { normalized, digits, intent } = resolveTableSearchIntent(term);
     const normalizedLower = normalized.toLowerCase();
-    const digitsTerm = stripDigits(normalized);
-    const isDocumentSearch = digitsTerm.length >= 11 && digitsTerm.length <= 14;
-    const isNumericSearch =
-      digitsTerm === normalized && digitsTerm.length > 0 && digitsTerm.length < 11;
 
     const rows = Array.from(tbody.rows ?? []);
     let visibleRows = 0;
@@ -543,11 +575,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       let matches = true;
       if (normalized) {
-        if (isDocumentSearch) {
-          matches = documentDigits === digitsTerm;
-        } else if (isNumericSearch) {
-          matches = planDigits.startsWith(digitsTerm);
-        } else {
+        if (intent === 'document') {
+          matches = documentDigits === digits;
+        } else if (intent === 'plan-number') {
+          matches = planDigits.startsWith(digits);
+        } else if (intent === 'text') {
           matches = nameText.includes(normalizedLower);
         }
       }
@@ -874,6 +906,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let pendingHandle = null;
     const supportsAnimationFrame = typeof window.requestAnimationFrame === 'function';
+
+    const runPendingUpdate = () => {
+      pendingHandle = null;
+      updateCount();
+    };
+
+    const cancelScheduledUpdate = () => {
+      if (pendingHandle === null) {
+        return;
+      }
+
 
     const runPendingUpdate = () => {
       pendingHandle = null;
