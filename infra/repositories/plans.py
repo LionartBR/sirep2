@@ -314,6 +314,7 @@ class PlansRepository:
         situacao_id: Optional[str],
         situacao_codigo: Optional[str],
         situacao_anterior: Optional[str],
+        dt_situacao_atual: Optional[date | datetime] = None,
         observacao: str = "Gestão da Base",
     ) -> None:
         if not situacao_id:
@@ -324,7 +325,17 @@ class PlansRepository:
         if atual and anterior and atual == anterior:
             return
 
-        mudou_em = datetime.now(timezone.utc)
+        if dt_situacao_atual is not None:
+            if isinstance(dt_situacao_atual, datetime):
+                if dt_situacao_atual.tzinfo is None:
+                    mudou_em = dt_situacao_atual.replace(tzinfo=timezone.utc)
+                else:
+                    mudou_em = dt_situacao_atual.astimezone(timezone.utc)
+                mudou_em = mudou_em.isoformat()
+            else:
+                mudou_em = dt_situacao_atual.isoformat()
+        else:
+            mudou_em = datetime.now(timezone.utc).isoformat()
 
         if not anterior:
             with self._conn.cursor(row_factory=dict_row) as cur:
