@@ -304,7 +304,87 @@
           aria-labelledby="tab-treatment"
           hidden
         >
-          <p class="card__placeholder">Selecione uma opção para visualizar.</p>
+          <div class="controls" role="group" aria-label="Controles de execução do Tratamento">
+            <div class="controls__group">
+              <div class="controls__start">
+                <div class="controls__start-row">
+                  <button class="btn btn--ghost" id="btnMigratePlans" type="button">Migrar planos</button>
+                  <button class="btn btn--primary" id="btnStartTreatment" type="button">Iniciar</button>
+                </div>
+                <p class="controls__info" id="treatmentInfo" aria-live="polite">Tratamento ocioso</p>
+              </div>
+              <button class="btn btn--ghost" id="btnPauseTreatment" type="button" disabled>Pausar</button>
+              <button class="btn btn--ghost" id="btnContinueTreatment" type="button" disabled>Continuar</button>
+            </div>
+            <div class="status" id="treatmentStatusText">Estado: Ocioso</div>
+          </div>
+
+          <div class="subcard" aria-labelledby="runningPlanTitle">
+            <h3 id="runningPlanTitle" class="subcard__title">Plano em processamento</h3>
+            <div class="running-plan">
+              <div class="running-plan__col" aria-label="Dados do plano atual">
+                <div class="kv">
+                  <span class="kv__label">PLANO</span>
+                  <span class="kv__value" id="currentPlanNumber">—</span>
+                </div>
+                <div class="kv">
+                  <span class="kv__label">CNPJ/CPF/CEI</span>
+                  <span class="kv__value" id="currentPlanDocument">—</span>
+                </div>
+                <div class="kv">
+                  <span class="kv__label">SITUAÇÃO</span>
+                  <span class="kv__value" id="currentPlanStatus">—</span>
+                </div>
+                <div class="kv">
+                  <span class="kv__label">ETAPA</span>
+                  <span class="kv__value" id="currentPlanStage">—</span>
+                </div>
+              </div>
+              <div class="running-plan__col" aria-label="Resumo da fila de execução">
+                <table class="data-table data-table--compact" aria-label="Resumo de processamento de planos">
+                  <tbody>
+                    <tr class="stat stat--queue">
+                      <th scope="row">NA FILA</th>
+                      <td><span id="queueCount">0</span> planos</td>
+                    </tr>
+                    <tr class="stat stat--success">
+                      <th scope="row">RESCINDIDOS</th>
+                      <td><span id="rescindedCount">0</span> planos</td>
+                    </tr>
+                    <tr class="stat stat--error">
+                      <th scope="row">FALHAS</th>
+                      <td><span id="failedCount">0</span> planos</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="subcard" aria-labelledby="treatmentTableTitle">
+            <div class="section-title">
+              <h3 id="treatmentTableTitle" class="subcard__title">TABELA DE PLANOS</h3>
+            </div>
+            <div class="table">
+              <table class="data-table" aria-label="Tabela de planos para tratamento">
+                <thead class="table__head">
+                  <tr>
+                    <th scope="col">PLANO</th>
+                    <th scope="col">CNPJ/CPF/CEI</th>
+                    <th scope="col">RAZÃO SOCIAL</th>
+                    <th scope="col">SALDO</th>
+                    <th scope="col">DT SITUAÇÃO</th>
+                    <th scope="col">AÇÕES</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="table__row table__row--empty">
+                    <td class="table__cell" colspan="6">nada a exibir por aqui.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </section>
     </main>
