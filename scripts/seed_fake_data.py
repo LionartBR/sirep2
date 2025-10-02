@@ -13,7 +13,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Sequence
+from typing import Iterator, Sequence, Tuple
 from uuid import UUID
 
 import psycopg
@@ -26,6 +26,8 @@ except Exception:  # pragma: no cover - optional dependency surface
 from psycopg.errors import UndefinedFunction
 from psycopg.rows import dict_row
 from urllib.parse import urlsplit, urlunsplit
+
+from shared.config import get_database_settings
 
 
 LOGGER = logging.getLogger("seed")
@@ -339,37 +341,63 @@ def _maybe_rewrite_localhost(dsn: str) -> str:
     return dsn
 
 
-def connect() -> Connection:
+def _iter_candidate_dsn() -> Iterator[Tuple[str, str]]:
+    seen: set[str] = set()
+
     dsn_raw = os.getenv("DATABASE_URL")
-    if not dsn_raw:
-        LOGGER.error("DATABASE_URL is not set; aborting.")
+    if dsn_raw:
+        dsn = dsn_raw.strip()
+        if (dsn.startswith("'") and dsn.endswith("'")) or (
+            dsn.startswith('"') and dsn.endswith('"')
+        ):
+            dsn = dsn[1:-1]
+        normalized = _maybe_rewrite_localhost(dsn)
+        for candidate in (normalized, dsn):
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            label = "DATABASE_URL (normalized)" if candidate != dsn else "DATABASE_URL"
+            yield candidate, label
+
+    settings = get_database_settings()
+    config_dsn = settings.dsn
+    if config_dsn and config_dsn not in seen:
+        seen.add(config_dsn)
+        yield config_dsn, "shared.config"
+
+
+def connect() -> Connection:
+    candidates = list(_iter_candidate_dsn())
+    if not candidates:
+        LOGGER.error(
+            "No database connection information found; set DATABASE_URL or configure shared.config.",
+        )
         sys.exit(1)
 
-    dsn = dsn_raw.strip()
-    if (dsn.startswith("'") and dsn.endswith("'")) or (
-        dsn.startswith('"') and dsn.endswith('"')
-    ):
-        dsn = dsn[1:-1]
+    last_exc: OperationalError | None = None
+    for idx, (dsn, source) in enumerate(candidates):
+        masked = mask_dsn_for_log(dsn)
+        if source.endswith("normalized"):
+            LOGGER.info("DATABASE_URL host normalized for Windows: %s", masked)
+        try:
+            conn = psycopg.connect(dsn)
+        except OperationalError as exc:
+            last_exc = exc
+            log_fn = LOGGER.error if idx == len(candidates) - 1 else LOGGER.warning
+            log_fn(
+                "Could not connect using %s=%s (sanitized); %s",
+                source,
+                masked,
+                exc,
+            )
+            continue
 
-    normalized_dsn = _maybe_rewrite_localhost(dsn)
-    if normalized_dsn != dsn:
-        LOGGER.info(
-            "DATABASE_URL host normalized for Windows: %s",
-            mask_dsn_for_log(normalized_dsn),
-        )
-        dsn = normalized_dsn
+        LOGGER.info("Database connection established using %s settings", source)
+        conn.row_factory = dict_row
+        return conn
 
-    try:
-        conn = psycopg.connect(dsn)
-    except OperationalError as exc:
-        LOGGER.error(
-            "Could not connect using DATABASE_URL=%s (sanitized); %s",
-            mask_dsn_for_log(dsn),
-            exc,
-        )
-        raise
-    conn.row_factory = dict_row
-    return conn
+    assert last_exc is not None  # mypy assurance
+    raise last_exc
 
 
 def ensure_tenant_and_user(conn: Connection, tenant_id: UUID) -> None:
