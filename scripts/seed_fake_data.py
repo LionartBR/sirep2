@@ -760,8 +760,8 @@ def choose_status_sequence(
 
 
 def pick_plan_situacao(
-    rng: random.Random, situacoes_plano: dict[str, int]
-) -> tuple[int, str]:
+    rng: random.Random, situacoes_plano: dict[str, Identifier]
+) -> tuple[Identifier, str]:
     if not situacoes_plano:
         raise RuntimeError("ref.situacao_plano is empty")
     codigo = rng.choice(list(situacoes_plano.keys()))
@@ -770,8 +770,8 @@ def pick_plan_situacao(
 
 def pick_parcela_status(
     rng: random.Random,
-    situacoes_parcela: dict[str, int],
-) -> tuple[int | None, str | None]:
+    situacoes_parcela: dict[str, Identifier],
+) -> tuple[Identifier | None, str | None]:
     if not situacoes_parcela:
         return None, None
     codigo = rng.choice(list(situacoes_parcela.keys()))
