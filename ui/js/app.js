@@ -50,7 +50,8 @@ document.addEventListener('DOMContentLoaded', () => {
     plansTableElement?.tHead?.rows?.[0]?.cells?.length ??
     plansTableElement?.rows?.[0]?.cells?.length ??
     8;
-  const planFiltersChipsContainer = document.getElementById('plansFiltersChips');
+  const plansFiltersChipsContainer = document.getElementById('plansFiltersChips');
+  const occFiltersChipsContainer = document.getElementById('occFiltersChips');
 
   // Occurrences table elements
   const occTablePanel = document.getElementById('occurrencesTablePanel');
@@ -78,13 +79,13 @@ document.addEventListener('DOMContentLoaded', () => {
     plans: '',
     occurrences: '',
   };
-  const planFiltersState = {
+  const filtersState = {
     situacao: [],
     diasMin: null,
     saldoMin: null,
     dtRange: null,
   };
-  const PLAN_FILTER_LABELS = {
+  const FILTER_LABELS = {
     situacao: {
       P_RESCISAO: 'P. Rescisão',
       SIT_ESPECIAL: 'Sit. Especial',
@@ -111,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
       THIS_MONTH: 'Mês atual',
     },
   };
-  let planFilterWrappers = [];
+  let filterWrappers = [];
   let currentPlansSearchTerm = '';
   let currentOccurrencesSearchTerm = '';
   let activeTableSearchTarget = 'plans';
@@ -626,8 +627,19 @@ document.addEventListener('DOMContentLoaded', () => {
     plansPager.totalPages = null;
   };
 
+  const resetOccurrencesPagination = () => {
+    occPager.page = 1;
+    occPager.nextCursor = null;
+    occPager.prevCursor = null;
+    occPager.hasMore = false;
+    occPager.showingFrom = 0;
+    occPager.showingTo = 0;
+    occPager.totalCount = null;
+    occPager.totalPages = null;
+  };
+
   const getFilterLabel = (filterKey, value) => {
-    const labels = PLAN_FILTER_LABELS[filterKey];
+    const labels = FILTER_LABELS[filterKey];
     if (!labels) {
       return String(value);
     }
@@ -635,51 +647,57 @@ document.addEventListener('DOMContentLoaded', () => {
     return labels[stringValue] ?? labels[value] ?? String(value);
   };
 
-  const renderPlanFilterChips = () => {
-    if (!planFiltersChipsContainer) {
+  const renderFilterChips = () => {
+    const containers = [plansFiltersChipsContainer, occFiltersChipsContainer].filter(Boolean);
+    if (!containers.length) {
       return;
     }
 
     const chips = [];
-    planFiltersState.situacao.forEach((value) => {
+    filtersState.situacao.forEach((value) => {
       chips.push({ type: 'situacao', value });
     });
-    if (planFiltersState.diasMin !== null) {
-      chips.push({ type: 'diasMin', value: String(planFiltersState.diasMin) });
+    if (filtersState.diasMin !== null) {
+      chips.push({ type: 'diasMin', value: String(filtersState.diasMin) });
     }
-    if (planFiltersState.saldoMin !== null) {
-      chips.push({ type: 'saldoMin', value: String(planFiltersState.saldoMin) });
+    if (filtersState.saldoMin !== null) {
+      chips.push({ type: 'saldoMin', value: String(filtersState.saldoMin) });
     }
-    if (planFiltersState.dtRange) {
-      chips.push({ type: 'dtRange', value: planFiltersState.dtRange });
-    }
-
-    if (!chips.length) {
-      planFiltersChipsContainer.innerHTML = '';
-      planFiltersChipsContainer.hidden = true;
-      return;
+    if (filtersState.dtRange) {
+      chips.push({ type: 'dtRange', value: filtersState.dtRange });
     }
 
-    planFiltersChipsContainer.hidden = false;
-    planFiltersChipsContainer.innerHTML = '';
+    containers.forEach((container) => {
+      if (!(container instanceof HTMLElement)) {
+        return;
+      }
+      if (!chips.length) {
+        container.innerHTML = '';
+        container.hidden = true;
+        return;
+      }
 
-    chips.forEach(({ type, value }) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'filter-chip';
-      button.dataset.filterType = type;
-      button.dataset.filterValue = value;
-      const label = getFilterLabel(type, value);
-      button.innerHTML = `
-        <span class="filter-chip__label">${label}</span>
-        <span class="filter-chip__remove" aria-hidden="true">x</span>
-        <span class="sr-only">Remover filtro</span>
-      `;
-      planFiltersChipsContainer.appendChild(button);
+      container.hidden = false;
+      container.innerHTML = '';
+
+      chips.forEach(({ type, value }) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'filter-chip';
+        button.dataset.filterType = type;
+        button.dataset.filterValue = value;
+        const label = getFilterLabel(type, value);
+        button.innerHTML = `
+          <span class="filter-chip__label">${label}</span>
+          <span class="filter-chip__remove" aria-hidden="true">x</span>
+          <span class="sr-only">Remover filtro</span>
+        `;
+        container.appendChild(button);
+      });
     });
   };
 
-  const syncPlanFilterInputs = () => {
+  const syncFilterInputs = () => {
     const inputs = document.querySelectorAll('[data-filter-input]');
     inputs.forEach((input) => {
       const filterType = input.dataset.filterInput;
@@ -689,18 +707,18 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       switch (filterType) {
         case 'situacao':
-          input.checked = planFiltersState.situacao.includes(value);
+          input.checked = filtersState.situacao.includes(value);
           break;
         case 'dias':
           input.checked =
-            planFiltersState.diasMin !== null && Number(value) === Number(planFiltersState.diasMin);
+            filtersState.diasMin !== null && Number(value) === Number(filtersState.diasMin);
           break;
         case 'saldo':
           input.checked =
-            planFiltersState.saldoMin !== null && Number(value) === Number(planFiltersState.saldoMin);
+            filtersState.saldoMin !== null && Number(value) === Number(filtersState.saldoMin);
           break;
         case 'dt':
-          input.checked = planFiltersState.dtRange === value;
+          input.checked = filtersState.dtRange === value;
           break;
         default:
           break;
@@ -708,8 +726,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
-  const closeAllPlanFilterDropdowns = () => {
-    planFilterWrappers.forEach((wrapper) => {
+  const closeAllFilterDropdowns = () => {
+    filterWrappers.forEach((wrapper) => {
       wrapper.classList.remove('table-filter--open');
       const trigger = wrapper.querySelector('.table-filter__trigger');
       if (trigger) {
@@ -718,42 +736,44 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
-  const clearPlanFilter = (filterType) => {
+  const clearFilter = (filterType) => {
     switch (filterType) {
       case 'situacao':
-        planFiltersState.situacao = [];
+        filtersState.situacao = [];
         break;
       case 'dias':
-        planFiltersState.diasMin = null;
+        filtersState.diasMin = null;
         break;
       case 'saldo':
-        planFiltersState.saldoMin = null;
+        filtersState.saldoMin = null;
         break;
       case 'dt':
-        planFiltersState.dtRange = null;
+        filtersState.dtRange = null;
         break;
       default:
         break;
     }
   };
 
-  const applyPlanFilters = ({ closeDropdown = false } = {}) => {
+  const applyFilters = ({ closeDropdown = false } = {}) => {
     resetPlansPagination();
-    syncPlanFilterInputs();
-    renderPlanFilterChips();
+    resetOccurrencesPagination();
+    syncFilterInputs();
+    renderFilterChips();
     void refreshPlans({ showLoading: true });
+    void refreshOccurrences({ showLoading: true });
     if (closeDropdown) {
-      closeAllPlanFilterDropdowns();
+      closeAllFilterDropdowns();
     }
   };
 
-  const setupPlanFilters = () => {
-    planFilterWrappers = Array.from(document.querySelectorAll('[data-filter-group]'));
-    if (!planFilterWrappers.length) {
+  const setupFilters = () => {
+    filterWrappers = Array.from(document.querySelectorAll('[data-filter-group]'));
+    if (!filterWrappers.length) {
       return;
     }
 
-    planFilterWrappers.forEach((wrapper) => {
+    filterWrappers.forEach((wrapper) => {
       const trigger = wrapper.querySelector('.table-filter__trigger');
       const dropdown = wrapper.querySelector('.table-filter__dropdown');
       if (!trigger || !dropdown) {
@@ -763,7 +783,7 @@ document.addEventListener('DOMContentLoaded', () => {
       trigger.addEventListener('click', (event) => {
         event.stopPropagation();
         const isOpen = wrapper.classList.toggle('table-filter--open');
-        planFilterWrappers.forEach((other) => {
+        filterWrappers.forEach((other) => {
           if (other !== wrapper) {
             other.classList.remove('table-filter--open');
             const otherTrigger = other.querySelector('.table-filter__trigger');
@@ -794,31 +814,31 @@ document.addEventListener('DOMContentLoaded', () => {
           if (filterType === 'situacao') {
             const value = target.value;
             if (target.checked) {
-              if (!planFiltersState.situacao.includes(value)) {
-                planFiltersState.situacao.push(value);
+              if (!filtersState.situacao.includes(value)) {
+                filtersState.situacao.push(value);
               }
             } else {
-              planFiltersState.situacao = planFiltersState.situacao.filter((item) => item !== value);
+              filtersState.situacao = filtersState.situacao.filter((item) => item !== value);
             }
-            applyPlanFilters();
+            applyFilters();
             return;
           }
 
           if (filterType === 'dias') {
-            planFiltersState.diasMin = Number(target.value);
-            applyPlanFilters({ closeDropdown: true });
+            filtersState.diasMin = Number(target.value);
+            applyFilters({ closeDropdown: true });
             return;
           }
 
           if (filterType === 'saldo') {
-            planFiltersState.saldoMin = Number(target.value);
-            applyPlanFilters({ closeDropdown: true });
+            filtersState.saldoMin = Number(target.value);
+            applyFilters({ closeDropdown: true });
             return;
           }
 
           if (filterType === 'dt') {
-            planFiltersState.dtRange = target.value;
-            applyPlanFilters({ closeDropdown: true });
+            filtersState.dtRange = target.value;
+            applyFilters({ closeDropdown: true });
           }
         });
       });
@@ -831,28 +851,31 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!filterType) {
             return;
           }
-          clearPlanFilter(filterType);
-          applyPlanFilters({ closeDropdown: true });
+          clearFilter(filterType);
+          applyFilters({ closeDropdown: true });
         });
       }
     });
 
     document.addEventListener('click', () => {
-      closeAllPlanFilterDropdowns();
+      closeAllFilterDropdowns();
     });
 
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
-        closeAllPlanFilterDropdowns();
+        closeAllFilterDropdowns();
       }
     });
 
-    syncPlanFilterInputs();
-    renderPlanFilterChips();
+    syncFilterInputs();
+    renderFilterChips();
   };
 
-  if (planFiltersChipsContainer) {
-    planFiltersChipsContainer.addEventListener('click', (event) => {
+  const attachFilterChipHandler = (container) => {
+    if (!container) {
+      return;
+    }
+    container.addEventListener('click', (event) => {
       const target = event.target instanceof Element ? event.target.closest('.filter-chip') : null;
       if (!target) {
         return;
@@ -867,25 +890,28 @@ document.addEventListener('DOMContentLoaded', () => {
       switch (filterType) {
         case 'situacao':
           if (filterValue) {
-            planFiltersState.situacao = planFiltersState.situacao.filter((item) => item !== filterValue);
+            filtersState.situacao = filtersState.situacao.filter((item) => item !== filterValue);
           }
           break;
         case 'diasMin':
-          planFiltersState.diasMin = null;
+          filtersState.diasMin = null;
           break;
         case 'saldoMin':
-          planFiltersState.saldoMin = null;
+          filtersState.saldoMin = null;
           break;
         case 'dtRange':
-          planFiltersState.dtRange = null;
+          filtersState.dtRange = null;
           break;
         default:
           break;
       }
 
-      applyPlanFilters();
+      applyFilters();
     });
-  }
+  };
+
+  attachFilterChipHandler(plansFiltersChipsContainer);
+  attachFilterChipHandler(occFiltersChipsContainer);
 
   // --- Keyset pagination state (client-side) ---
   const plansPager = {
@@ -1005,19 +1031,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (currentPlansSearchTerm) {
       url.searchParams.set('q', currentPlansSearchTerm);
     }
-    if (planFiltersState.situacao.length) {
-      planFiltersState.situacao.forEach((value) => {
+    if (filtersState.situacao.length) {
+      filtersState.situacao.forEach((value) => {
         url.searchParams.append('situacao', value);
       });
     }
-    if (planFiltersState.diasMin !== null) {
-      url.searchParams.set('dias_min', String(planFiltersState.diasMin));
+    if (filtersState.diasMin !== null) {
+      url.searchParams.set('dias_min', String(filtersState.diasMin));
     }
-    if (planFiltersState.saldoMin !== null) {
-      url.searchParams.set('saldo_min', String(planFiltersState.saldoMin));
+    if (filtersState.saldoMin !== null) {
+      url.searchParams.set('saldo_min', String(filtersState.saldoMin));
     }
-    if (planFiltersState.dtRange) {
-      url.searchParams.set('dt_sit_range', planFiltersState.dtRange);
+    if (filtersState.dtRange) {
+      url.searchParams.set('dt_sit_range', filtersState.dtRange);
     }
     return url.toString();
   };
@@ -1054,22 +1080,22 @@ document.addEventListener('DOMContentLoaded', () => {
       renderPlanRows(items);
       const filtersResponse = payload?.filters ?? null;
       if (filtersResponse) {
-        planFiltersState.situacao = Array.isArray(filtersResponse.situacao)
+        filtersState.situacao = Array.isArray(filtersResponse.situacao)
           ? [...filtersResponse.situacao]
           : [];
-        planFiltersState.diasMin =
+        filtersState.diasMin =
           typeof filtersResponse.dias_min === 'number' ? filtersResponse.dias_min : null;
-        planFiltersState.saldoMin =
+        filtersState.saldoMin =
           typeof filtersResponse.saldo_min === 'number' ? filtersResponse.saldo_min : null;
-        planFiltersState.dtRange = filtersResponse.dt_sit_range || null;
+        filtersState.dtRange = filtersResponse.dt_sit_range || null;
       } else {
-        planFiltersState.situacao = [];
-        planFiltersState.diasMin = null;
-        planFiltersState.saldoMin = null;
-        planFiltersState.dtRange = null;
+        filtersState.situacao = [];
+        filtersState.diasMin = null;
+        filtersState.saldoMin = null;
+        filtersState.dtRange = null;
       }
-      syncPlanFilterInputs();
-      renderPlanFilterChips();
+      syncFilterInputs();
+      renderFilterChips();
       // Occurrences are now fetched independently
       // Update pager state from response
       const paging = payload?.paging || {};
@@ -1552,6 +1578,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (currentOccurrencesSearchTerm) {
       url.searchParams.set('q', currentOccurrencesSearchTerm);
+    }
+    if (filtersState.situacao.length) {
+      filtersState.situacao.forEach((value) => {
+        url.searchParams.append('situacao', value);
+      });
+    }
+    if (filtersState.diasMin !== null) {
+      url.searchParams.set('dias_min', String(filtersState.diasMin));
+    }
+    if (filtersState.saldoMin !== null) {
+      url.searchParams.set('saldo_min', String(filtersState.saldoMin));
+    }
+    if (filtersState.dtRange) {
+      url.searchParams.set('dt_sit_range', filtersState.dtRange);
     }
     return url.toString();
   };
@@ -2098,7 +2138,7 @@ document.addEventListener('DOMContentLoaded', () => {
     activate(isBaseInitiallyActive ? 'base' : 'treatment');
   };
 
-  setupPlanFilters();
+  setupFilters();
   toggleButtons({ start: true, pause: false, cont: false });
   setStatus(defaultMessages.idle);
   void refreshPlans();
