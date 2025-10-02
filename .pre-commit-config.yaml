@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: pytest
+        name: Run pytest
+        entry: bash -c 'pytest'
+        language: system
+        pass_filenames: false
+        stages: [commit]
