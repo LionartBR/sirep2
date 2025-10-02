@@ -16,7 +16,7 @@ from typing import Iterable, Sequence
 from uuid import UUID
 
 import psycopg
-from psycopg import Connection
+from psycopg import Connection, OperationalError
 from psycopg.errors import UndefinedFunction
 from psycopg.rows import dict_row
 
@@ -239,12 +239,26 @@ def configure_logging() -> None:
 
 
 def connect() -> Connection:
-    dsn = os.getenv("DATABASE_URL")
-    if not dsn:
+    dsn_raw = os.getenv("DATABASE_URL")
+    if not dsn_raw:
         LOGGER.error("DATABASE_URL is not set; aborting.")
         sys.exit(1)
 
-    conn = psycopg.connect(dsn)
+    dsn = dsn_raw.strip()
+    if (dsn.startswith("'") and dsn.endswith("'")) or (
+        dsn.startswith('"') and dsn.endswith('"')
+    ):
+        dsn = dsn[1:-1]
+
+    try:
+        conn = psycopg.connect(dsn)
+    except OperationalError as exc:
+        LOGGER.error(
+            "Could not connect using DATABASE_URL=%s (sanitized); %s",
+            mask_dsn_for_log(dsn),
+            exc,
+        )
+        raise
     conn.row_factory = dict_row
     return conn
 
