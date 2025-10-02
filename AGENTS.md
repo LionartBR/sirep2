@@ -1,47 +1,39 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `domain/`: immutable business models and rules; framework‑free; prefer `@dataclass(frozen=True)`.
-- `services/`: orchestrate domain logic; depend on domain interfaces; no infra details.
-- `infra/`: adapters for DB/queues/external services; env‑driven config.
-- `api/`: FastAPI app factory, routers, and dependencies; delegate to services.
-- `ui/`: static web app; capture before/after screenshots when UI changes.
-- `tests/`: pytest suites mirroring source; shared fixtures in `conftest.py`.
-- `scripts/`: auxiliary CLIs; document in `docs/` when added.
+- `domain/` holds immutable business rules (use `@dataclass(frozen=True)`), no framework imports.
+- `services/` orchestrates domain flows and talks to adapters defined via domain interfaces.
+- `infra/` implements DB, queue, and external service adapters; configuration comes from env vars.
+- `api/` exposes FastAPI routers, including `/api/treatment/migrate` and `/api/treatment/plans`; defer logic to services.
+- `ui/` bundles the static frontend; capture before/after screenshots whenever UI behavior shifts.
+- `app/` and `shared/` provide cross-cutting helpers (auth, logging, utilities) reused across layers.
+- `tests/` mirrors the tree with pytest suites; shared fixtures live beside `conftest.py`.
+- `scripts/` hosts CLI utilities; document new scripts under `docs/`.
 
 ## Build, Test, and Development Commands
-- Install git hooks so tests run automatically before each commit: `pre-commit install`
-- Start API: `uvicorn api.app:create_app --reload`
-- Run tests: `pytest`
-- Lint: `ruff check .` | Format: `ruff format .`
-- Type check: `mypy .`
-Run all from repo root.
-
-Git hooks rely on `pre-commit` being available in your environment. Install development dependencies with `pip install -e .[dev]` or an equivalent command in your toolchain before enabling the hook.
+- `uvicorn api.app:create_app --reload` spins up the API for local iteration.
+- `pytest` runs unit and integration suites; reproduce filter scenarios against mocked views.
+- `ruff check .` and `ruff format .` enforce linting/formatting; run before committing.
+- `mypy .` validates typing across API, services, and infra modules.
+- Install dev deps (`pip install -e .[dev]`) and hooks (`pre-commit install`) to mirror CI.
 
 ## Coding Style & Naming Conventions
-- PEP 8, 4‑space indentation, descriptive English identifiers (UI strings may be Portuguese).
-- Full type hints for public APIs and module state.
-- Domain models: `@dataclass(frozen=True)` or tuples.
-- Imports grouped: stdlib, third‑party, project (blank lines between).
-- Docstring public modules/classes/functions with purpose and contracts.
+- Follow PEP 8 with 4-space indentation and expressive English identifiers; UI strings may stay in PT-BR.
+- Fully type public functions, service facades, and module constants.
+- Group imports by stdlib / third-party / project with blank lines; keep docstrings concise and task-focused.
 
 ## Testing Guidelines
-- Name by behavior, e.g., `test_service_returns_error_on_missing_case`.
-- Cover success and failure paths, including async branches.
-- Keep data deterministic; refresh snapshots/golden files deliberately.
+- Name tests by behavior (`test_service_returns_error_on_missing_case`).
+- Cover async success/failure paths, especially plan migration and filter combinations.
+- Keep fixtures deterministic; refresh snapshots intentionally.
 
 ## Commit & Pull Request Guidelines
-- Commits: imperative mood summarizing the primary change; avoid mixing refactors with new behavior unless justified.
-- Keep branches current with `main`; resolve conflicts locally.
-- Before pushing: `ruff check .`, `ruff format .`, `mypy .`, `pytest`; note status in PR description.
-- Use `make_pr` to generate titles/bodies; document contract changes, rollout steps, and required screenshots.
+- Use imperative commit titles, scoped to a single logical change.
+- Rebase onto `main`, resolve conflicts locally, and run `ruff`, `mypy`, and `pytest` before pushing.
+- PRs should capture rollout notes, contract changes, required screenshots, and the status of the Treatment KPIs.
 
-## Security & Configuration
-- Never commit secrets. Load credentials via environment variables in `infra/`.
-- Put defaults in `.env.example` or docs; do not hard‑code config.
-
-## Agent‑Specific Notes
-- Scope: this file applies repo‑wide; nested `AGENTS.md` takes precedence.
-- Keep changes minimal and focused; follow the structure above and update tests/docs with behavior changes.
-
+## Security & Feature Notes
+- Never hard-code secrets; load env-driven config in `infra/`.
+- Plan migration currently imports all `P_RESCISAO` entries via `app.vw_planos_busca`; ask product before altering scope.
+- Execute migrations synchronously, avoid duplicate inserts silently, refresh the Treatment table and KPIs (Status, Last updated, Duration) after success, and render `"Pág. 1 de 1"` when pagination metadata is missing.
+- Implement filters server-side with parameterized SQL using `app.vw_planos_busca` (situations, delay buckets, saldo ranges, date windows) before applying keyset pagination, and surface active selections as UI chips.
