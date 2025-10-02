@@ -45,10 +45,29 @@ from pathlib import Path
 from typing import Iterable
 
 # Pastas a ignorar, em qualquer nível
-IGNORE_DIRS = {".venv", "__pycache__", "txt_export", "tools", "logs", ".git", "gestao_base", "scripts", ".pytest_cache"}
+IGNORE_DIRS = {
+    ".venv",
+    "__pycache__",
+    "txt_export",
+    "tools",
+    "logs",
+    ".git",
+    "gestao_base",
+    "scripts",
+    ".pytest_cache",
+}
 
 # Arquivos específicos a ignorar (por nome exato)
-IGNORE_FILES = {".env", ".env.example", "pyproject.toml", "sirep.db", ".gitignore", "AGENTS.md", "pw3270.py", ".pre-commit-config.yaml"}
+IGNORE_FILES = {
+    ".env",
+    ".env.example",
+    "pyproject.toml",
+    "sirep.db",
+    ".gitignore",
+    "AGENTS.md",
+    "pw3270.py",
+    ".pre-commit-config.yaml",
+}
 
 # Extensões que normalmente são binárias e devem ser puladas
 LIKELY_BINARY_EXTS = {
@@ -175,11 +194,11 @@ def parse_header(header_line: str) -> Path | None:
 def split_header_and_body(text: str) -> tuple[str, str]:
     """Separa o cabeçalho da carga útil."""
 
-    first_newline = text.find('\n')
+    first_newline = text.find("\n")
     if first_newline == -1:
         return text, ""
-    header = text[:first_newline + 1]
-    body = text[first_newline + 1:]
+    header = text[: first_newline + 1]
+    body = text[first_newline + 1 :]
     return header, body
 
 
@@ -230,9 +249,12 @@ def encrypt_payload(content: str, passphrase: str) -> str:
     plain_bytes = content.encode("utf-8")
     stream = keystream_bytes(key, nonce, len(plain_bytes))
     cipher = xor_bytes(plain_bytes, stream)
-    return ":".join(
-        [ENC_PREFIX, encode_chunk(salt), encode_chunk(nonce), encode_chunk(cipher)]
-    ) + "\n"
+    return (
+        ":".join(
+            [ENC_PREFIX, encode_chunk(salt), encode_chunk(nonce), encode_chunk(cipher)]
+        )
+        + "\n"
+    )
 
 
 def decrypt_payload(payload: str, passphrase: str) -> str:
@@ -273,7 +295,10 @@ def make_out_path(base: Path, rel_path: Path, mode: ExportMode) -> Path:
 
 # ===== NOVO: seleção de diretórios incluídos =====
 
-def normalize_include_dirs(root: Path, includes: Iterable[str] | None, parser: argparse.ArgumentParser) -> tuple[Path, ...] | None:
+
+def normalize_include_dirs(
+    root: Path, includes: Iterable[str] | None, parser: argparse.ArgumentParser
+) -> tuple[Path, ...] | None:
     """
     Normaliza a lista de diretórios informados em --include-dirs para paths *relativos à raiz*.
     Rejeita caminhos fora da raiz.
@@ -303,7 +328,7 @@ def normalize_include_dirs(root: Path, includes: Iterable[str] | None, parser: a
     # Eliminar duplicatas e normalizar prefixos (se 'src' e 'src/app' foram dados, manter só 'src')
     def is_prefix(a: Path, b: Path) -> bool:
         a_parts, b_parts = a.parts, b.parts
-        return len(a_parts) <= len(b_parts) and b_parts[:len(a_parts)] == a_parts
+        return len(a_parts) <= len(b_parts) and b_parts[: len(a_parts)] == a_parts
 
     pruned: list[Path] = []
     for cand in sorted(set(normalized), key=lambda p: (len(p.parts), p.as_posix())):
@@ -318,7 +343,7 @@ def rel_is_under_any(rel: Path, bases: tuple[Path, ...]) -> bool:
     rparts = rel.parts
     for b in bases:
         bparts = b.parts
-        if rparts[:len(bparts)] == bparts:
+        if rparts[: len(bparts)] == bparts:
             return True
     return False
 
@@ -330,7 +355,7 @@ def run_plain_or_encrypted_export(
     manifest_lines: list[str],
     stats: ExportStats,
     passphrase: str | None = None,
-    include_dirs: tuple[Path, ...] | None = None,   # <== NOVO
+    include_dirs: tuple[Path, ...] | None = None,  # <== NOVO
 ) -> None:
     """Percorre o repositório exportando arquivos em modo simples ou criptografado."""
 
@@ -344,8 +369,7 @@ def run_plain_or_encrypted_export(
         # Se --include-dirs foi usado, podar a descida em diretórios que não estejam sob os permitidos
         if include_dirs:
             dirnames[:] = [
-                d for d in dirnames
-                if rel_is_under_any(current_rel / d, include_dirs)
+                d for d in dirnames if rel_is_under_any(current_rel / d, include_dirs)
             ]
 
         for fname in filenames:
@@ -384,7 +408,7 @@ def run_plain_or_encrypted_export(
                     body = encrypt_payload(content, passphrase)
                     body = header + body
                     reason = "encrypted"
-                
+
                 out_path.write_text(body, encoding="utf-8")
                 stats.exported += 1
                 manifest_lines.append(
@@ -520,7 +544,9 @@ def main() -> None:
 
     manifest_path = write_manifest(out_base, manifest_lines)
 
-    print(f"[OK] Exportados: {stats.exported} | Ignorados: {stats.skipped} | Erros: {stats.errors}")
+    print(
+        f"[OK] Exportados: {stats.exported} | Ignorados: {stats.skipped} | Erros: {stats.errors}"
+    )
     print(f"Manifesto: {manifest_path}")
 
 

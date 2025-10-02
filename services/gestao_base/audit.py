@@ -186,4 +186,3 @@ class _GestaoBaseStageHooks(PipelineAuditHooks):
 
 
 __all__ = ["GestaoBaseAuditManager"]
-

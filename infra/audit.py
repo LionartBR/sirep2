@@ -422,7 +422,13 @@ def job_run(
                    AND started_at = %s
                    AND id = %s
                 """,
-                (final_status, mensagem, handle.tenant_id, handle.started_at, handle.id),
+                (
+                    final_status,
+                    mensagem,
+                    handle.tenant_id,
+                    handle.started_at,
+                    handle.id,
+                ),
             )
     except Exception as exc:  # pragma: no cover - fluxo de erro exercitado em testes
         err = "".join(traceback.format_exception_only(type(exc), exc)).strip()
@@ -466,7 +472,9 @@ def log_event(
         )
 
 
-async def bind_session_by_matricula_async(aconn: AsyncConnection, matricula: str) -> None:
+async def bind_session_by_matricula_async(
+    aconn: AsyncConnection, matricula: str
+) -> None:
     """Versão assíncrona de :func:`bind_session_by_matricula`."""
 
     matricula = (matricula or "").strip()
@@ -484,7 +492,12 @@ async def bind_session_by_matricula_async(aconn: AsyncConnection, matricula: str
 class JobRunAsync:
     """Context manager assíncrono para controle de ``audit.job_run``."""
 
-    def __init__(self, aconn: AsyncConnection, job_name: str, payload: Optional[dict[str, Any]] = None) -> None:
+    def __init__(
+        self,
+        aconn: AsyncConnection,
+        job_name: str,
+        payload: Optional[dict[str, Any]] = None,
+    ) -> None:
         self.conn = aconn
         self.job_name = job_name
         self.payload = payload or {}

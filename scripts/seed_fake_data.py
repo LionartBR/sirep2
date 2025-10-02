@@ -7,16 +7,22 @@ import json
 import logging
 import os
 import random
+import re
 import sys
 from collections import deque
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Iterable, Sequence
+from typing import Sequence
 from uuid import UUID
 
 import psycopg
 from psycopg import Connection, OperationalError
+
+try:
+    from psycopg import conninfo as psycopg_conninfo
+except Exception:  # pragma: no cover - optional dependency surface
+    psycopg_conninfo = None
 from psycopg.errors import UndefinedFunction
 from psycopg.rows import dict_row
 from urllib.parse import urlsplit, urlunsplit
@@ -137,15 +143,27 @@ RETURNING tenant_id, started_at, id
 """
 
 SQL_TRUNCATE_ORDER = (
-    ("audit.evento", "DELETE FROM audit.evento WHERE tenant_id = app.current_tenant_id()"),
-    ("audit.job_run", "DELETE FROM audit.job_run WHERE tenant_id = app.current_tenant_id()"),
-    ("app.parcela", "DELETE FROM app.parcela WHERE tenant_id = app.current_tenant_id()"),
+    (
+        "audit.evento",
+        "DELETE FROM audit.evento WHERE tenant_id = app.current_tenant_id()",
+    ),
+    (
+        "audit.job_run",
+        "DELETE FROM audit.job_run WHERE tenant_id = app.current_tenant_id()",
+    ),
+    (
+        "app.parcela",
+        "DELETE FROM app.parcela WHERE tenant_id = app.current_tenant_id()",
+    ),
     (
         "app.plano_situacao_hist",
         "DELETE FROM app.plano_situacao_hist WHERE tenant_id = app.current_tenant_id()",
     ),
     ("app.plano", "DELETE FROM app.plano WHERE tenant_id = app.current_tenant_id()"),
-    ("app.empregador", "DELETE FROM app.empregador WHERE tenant_id = app.current_tenant_id()"),
+    (
+        "app.empregador",
+        "DELETE FROM app.empregador WHERE tenant_id = app.current_tenant_id()",
+    ),
 )
 
 PLAN_TYPES = [
@@ -203,7 +221,9 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         description="Seed realistic tenant data for local integration testing.",
     )
     parser.add_argument("--tenant-id", required=True, help="Tenant UUID to target")
-    parser.add_argument("--employers", type=int, default=5, help="Number of employers to generate")
+    parser.add_argument(
+        "--employers", type=int, default=5, help="Number of employers to generate"
+    )
     parser.add_argument(
         "--plans-per-employer",
         type=int,
@@ -220,15 +240,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=int,
         help="If provided, fixed number of installments per plan",
     )
-    parser.add_argument("--job-runs", type=int, default=10, help="Number of job runs to generate")
+    parser.add_argument(
+        "--job-runs", type=int, default=10, help="Number of job runs to generate"
+    )
     parser.add_argument(
         "--events-per-run",
         type=int,
         help="If provided, fixed number of events per job run",
     )
-    parser.add_argument("--truncate", action="store_true", help="Clear tenant data before seeding")
+    parser.add_argument(
+        "--truncate", action="store_true", help="Clear tenant data before seeding"
+    )
     parser.add_argument("--seed", type=int, help="Random seed for reproducibility")
-    parser.add_argument("--dry-run", action="store_true", help="Build data but rollback before commit")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Build data but rollback before commit"
+    )
     return parser.parse_args(argv)
 
 
@@ -255,6 +281,64 @@ def mask_dsn_for_log(dsn: str) -> str:
     return masked or "***"
 
 
+def _maybe_rewrite_localhost(dsn: str) -> str:
+    if os.name != "nt":
+        return dsn
+    if "localhost" not in dsn.lower():
+        return dsn
+
+    keyval_pattern = re.compile(
+        r"(?i)(host\s*=\s*)(\"localhost\"|'localhost'|localhost)"
+    )
+
+    if psycopg_conninfo is not None:
+        try:
+            params = psycopg_conninfo.conninfo_to_dict(dsn)
+        except Exception:  # pragma: no cover - fallback for unparsable DSNs
+            pass
+        else:
+            host = params.get("host")
+            if host and host.lower() == "localhost":
+                params["host"] = "127.0.0.1"
+                return psycopg_conninfo.make_conninfo(**params)
+
+    parts = urlsplit(dsn)
+    if parts.scheme:
+        hostname = parts.hostname
+        if hostname and hostname.lower() == "localhost":
+            username = parts.username
+            password = parts.password
+            auth = ""
+            if username is not None:
+                auth = username
+                if password is not None:
+                    auth = f"{auth}:{password}"
+            elif password is not None:
+                auth = f":{password}"
+
+            netloc = "127.0.0.1"
+            if auth:
+                netloc = f"{auth}@{netloc}"
+            if parts.port:
+                netloc = f"{netloc}:{parts.port}"
+            return urlunsplit(
+                (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
+            )
+
+    def replace_keyval(match: re.Match[str]) -> str:
+        prefix, value = match.groups()
+        if value.startswith(('"', "'")):
+            quote = value[0]
+            return f"{prefix}{quote}127.0.0.1{quote}"
+        return f"{prefix}127.0.0.1"
+
+    rewritten_dsn, count = keyval_pattern.subn(replace_keyval, dsn, count=1)
+    if count:
+        return rewritten_dsn
+
+    return dsn
+
+
 def connect() -> Connection:
     dsn_raw = os.getenv("DATABASE_URL")
     if not dsn_raw:
@@ -266,6 +350,14 @@ def connect() -> Connection:
         dsn.startswith('"') and dsn.endswith('"')
     ):
         dsn = dsn[1:-1]
+
+    normalized_dsn = _maybe_rewrite_localhost(dsn)
+    if normalized_dsn != dsn:
+        LOGGER.info(
+            "DATABASE_URL host normalized for Windows: %s",
+            mask_dsn_for_log(normalized_dsn),
+        )
+        dsn = normalized_dsn
 
     try:
         conn = psycopg.connect(dsn)
@@ -288,7 +380,9 @@ def ensure_tenant_and_user(conn: Connection, tenant_id: UUID) -> None:
             LOGGER.debug("app.set_tenant applied successfully")
         except UndefinedFunction:
             LOGGER.debug("app.set_tenant not available; falling back to GUCs")
-            cur.execute("SELECT set_config('app.tenant_id', %s, true)", (str(tenant_id),))
+            cur.execute(
+                "SELECT set_config('app.tenant_id', %s, true)", (str(tenant_id),)
+            )
             cur.execute("SELECT set_config('app.user_id', 'seed-bot', true)")
         else:
             cur.execute("SELECT set_config('app.user_id', 'seed-bot', true)")
@@ -394,7 +488,9 @@ def insert_plano_hist(
     observacao: str,
 ) -> None:
     with conn.cursor() as cur:
-        cur.execute(SQL_INSERT_PLANO_HIST, (plano_id, situacao_id, mudou_em, observacao))
+        cur.execute(
+            SQL_INSERT_PLANO_HIST, (plano_id, situacao_id, mudou_em, observacao)
+        )
 
 
 def upsert_parcela(
@@ -431,7 +527,9 @@ def upsert_parcela(
         cur.fetchall()
 
 
-def open_job_run(conn: Connection, job_name: str, payload: dict[str, object]) -> tuple[int, datetime]:
+def open_job_run(
+    conn: Connection, job_name: str, payload: dict[str, object]
+) -> tuple[int, datetime]:
     with conn.cursor() as cur:
         cur.execute(SQL_INSERT_JOB_RUN, (job_name, json.dumps(payload)))
         row = cur.fetchone()
@@ -461,7 +559,9 @@ def log_event(
         )
 
 
-def adjust_recent_event_times(conn: Connection, desired_times: Sequence[datetime]) -> None:
+def adjust_recent_event_times(
+    conn: Connection, desired_times: Sequence[datetime]
+) -> None:
     if not desired_times:
         return
     with conn.cursor() as cur:
@@ -480,17 +580,24 @@ def adjust_recent_event_times(conn: Connection, desired_times: Sequence[datetime
     ids.reverse()
     with conn.cursor() as cur:
         for event_id, event_time in zip(ids, desired_times, strict=False):
-            cur.execute("UPDATE audit.evento SET event_time = %s WHERE id = %s", (event_time, event_id))
+            cur.execute(
+                "UPDATE audit.evento SET event_time = %s WHERE id = %s",
+                (event_time, event_id),
+            )
 
 
-def close_job_run(conn: Connection, run_id: int, status: str) -> tuple[datetime | None, datetime | None]:
+def close_job_run(
+    conn: Connection, run_id: int, status: str
+) -> tuple[datetime | None, datetime | None]:
     with conn.cursor() as cur:
         cur.execute(
             "SELECT column_name FROM information_schema.columns WHERE table_schema = 'audit' AND table_name = 'job_run'"
         )
         cols = {row["column_name"] for row in cur.fetchall()}
     if "status" not in cols:
-        LOGGER.info("audit.job_run.status column absent; skipping close for run %s", run_id)
+        LOGGER.info(
+            "audit.job_run.status column absent; skipping close for run %s", run_id
+        )
         return None, None
 
     if "finished_at" in cols:
@@ -504,7 +611,9 @@ def close_job_run(conn: Connection, run_id: int, status: str) -> tuple[datetime 
     return row["started_at"], row["finished_at"]
 
 
-def adjust_job_run_times(conn: Connection, run_id: int, started_at: datetime, finished_at: datetime) -> None:
+def adjust_job_run_times(
+    conn: Connection, run_id: int, started_at: datetime, finished_at: datetime
+) -> None:
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE audit.job_run SET started_at = %s, finished_at = %s WHERE id = %s",
@@ -543,7 +652,9 @@ def generate_email(nome: str) -> str:
 
 
 def generate_phone(rng: random.Random) -> str:
-    return f"({rng.randint(11, 99)}) {rng.randint(3000, 9999)}-{rng.randint(1000, 9999)}"
+    return (
+        f"({rng.randint(11, 99)}) {rng.randint(3000, 9999)}-{rng.randint(1000, 9999)}"
+    )
 
 
 def generate_numero_inscricao(rng: random.Random) -> str:
@@ -597,7 +708,9 @@ def choose_status_sequence(
     return list(history)
 
 
-def pick_plan_situacao(rng: random.Random, situacoes_plano: dict[str, int]) -> tuple[int, str]:
+def pick_plan_situacao(
+    rng: random.Random, situacoes_plano: dict[str, int]
+) -> tuple[int, str]:
     if not situacoes_plano:
         raise RuntimeError("ref.situacao_plano is empty")
     codigo = rng.choice(list(situacoes_plano.keys()))
@@ -626,7 +739,9 @@ def load_tipo_inscricao_id(conn: Connection) -> int:
 def load_situacao_parcela(conn: Connection) -> dict[str, int]:
     mapping = fetch_reference_map(conn, "ref", "situacao_parcela")
     if not mapping:
-        LOGGER.warning("ref.situacao_parcela is empty; installments will be created without status")
+        LOGGER.warning(
+            "ref.situacao_parcela is empty; installments will be created without status"
+        )
     return mapping
 
 
@@ -638,7 +753,7 @@ def load_situacao_plano(conn: Connection) -> dict[str, int]:
 
 
 def quantize_value(number: float) -> Decimal:
-    return (Decimal(number).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    return Decimal(number).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def seed_employers(
@@ -696,7 +811,9 @@ def seed_plans_and_related(
 
         for _ in range(plans_per_employer):
             numero_plano = generate_numero_plano(rng, existing_plan_numbers)
-            situacao_plano_id, situacao_codigo = pick_plan_situacao(rng, situacoes_plano)
+            situacao_plano_id, situacao_codigo = pick_plan_situacao(
+                rng, situacoes_plano
+            )
 
             proposta_offset = rng.randint(20, 240)
             dt_proposta = (today - timedelta(days=proposta_offset)).date()
@@ -717,7 +834,9 @@ def seed_plans_and_related(
                 atraso_desde,
             )
             stats.planos += 1
-            seeded_plans.append(PlanRecord(plano_id, numero_plano, situacao_plano_id, situacao_codigo))
+            seeded_plans.append(
+                PlanRecord(plano_id, numero_plano, situacao_plano_id, situacao_codigo)
+            )
 
             hist_sequence = choose_status_sequence(
                 rng,
@@ -725,7 +844,9 @@ def seed_plans_and_related(
                 status_changes_per_plan,
                 situacao_codigo,
             )
-            change_start = datetime.combine(dt_proposta, datetime.min.time(), tzinfo=timezone.utc)
+            change_start = datetime.combine(
+                dt_proposta, datetime.min.time(), tzinfo=timezone.utc
+            )
             for offset, (status_id, status_code) in enumerate(hist_sequence):
                 change_delay = rng.randint(1, 10)
                 mudou_em = change_start + timedelta(days=offset * change_delay)
@@ -733,11 +854,17 @@ def seed_plans_and_related(
                 insert_plano_hist(conn, plano_id, status_id, mudou_em, observacao)
                 stats.historicos += 1
 
-            parcelas_total = parcelas_per_plano if parcelas_per_plano is not None else rng.randint(0, 12)
+            parcelas_total = (
+                parcelas_per_plano
+                if parcelas_per_plano is not None
+                else rng.randint(0, 12)
+            )
             for nr in range(1, parcelas_total + 1):
-                vencimento = (dt_proposta + timedelta(days=30 * nr))
+                vencimento = dt_proposta + timedelta(days=30 * nr)
                 valor = quantize_value(rng.uniform(500, 25_000))
-                situacao_parcela_id, situacao_parcela_codigo = pick_parcela_status(rng, situacoes_parcela)
+                situacao_parcela_id, situacao_parcela_codigo = pick_parcela_status(
+                    rng, situacoes_parcela
+                )
                 pago_em = None
                 valor_pago: Decimal | None = None
                 if situacao_parcela_codigo == "PAGA":
@@ -791,8 +918,12 @@ def seed_job_runs_and_events(
 
         run_id, started_at_actual = open_job_run(conn, job_name, payload)
         job_duration_minutes = rng.randint(2, 90)
-        job_start = datetime.now(timezone.utc) - timedelta(days=rng.randint(0, 30), minutes=job_duration_minutes)
-        job_finish = job_start + timedelta(minutes=job_duration_minutes, seconds=rng.randint(10, 350))
+        job_start = datetime.now(timezone.utc) - timedelta(
+            days=rng.randint(0, 30), minutes=job_duration_minutes
+        )
+        job_finish = job_start + timedelta(
+            minutes=job_duration_minutes, seconds=rng.randint(10, 350)
+        )
 
         adjust_job_run_times(conn, run_id, job_start, job_start)
 

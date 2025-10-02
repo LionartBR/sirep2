@@ -31,7 +31,9 @@ def test_normalize_parcelas_handles_dict_variations():
         {"codigo": "004", "valor_nominal": "15,00", "data": "07/05/2024"},
     ]
 
-    normalizados, dias_total = normalize_parcelas_atraso(parcelas, referencia=referencia)
+    normalizados, dias_total = normalize_parcelas_atraso(
+        parcelas, referencia=referencia
+    )
 
     assert [p["parcela"] for p in normalizados] == ["001", "002", "003"]
     assert normalizados[0]["vencimento"] == "2024-05-01"
@@ -51,7 +53,9 @@ def test_normalize_parcelas_accepts_iterables_and_strings():
         ("003", " ", None),
     ]
 
-    normalizados, dias_total = normalize_parcelas_atraso(parcelas, referencia=referencia)
+    normalizados, dias_total = normalize_parcelas_atraso(
+        parcelas, referencia=referencia
+    )
 
     assert [p["parcela"] for p in normalizados] == ["001", "002", "003"]
     assert "valor" not in normalizados[2]
@@ -59,7 +63,9 @@ def test_normalize_parcelas_accepts_iterables_and_strings():
 
 
 def test_normalize_parcelas_returns_empty_when_no_data():
-    normalizados, dias_total = normalize_parcelas_atraso([], referencia=date(2024, 1, 1))
+    normalizados, dias_total = normalize_parcelas_atraso(
+        [], referencia=date(2024, 1, 1)
+    )
     assert normalizados == []
     assert dias_total is None
 
@@ -75,8 +81,9 @@ def test_normalize_parcelas_ignores_none_vencimento():
         }
     ]
 
-    normalizados, dias_total = normalize_parcelas_atraso(parcelas, referencia=referencia)
+    normalizados, dias_total = normalize_parcelas_atraso(
+        parcelas, referencia=referencia
+    )
 
     assert normalizados[0]["vencimento"] == "2024-05-03"
     assert dias_total == 7
-

@@ -35,7 +35,9 @@ class _FakeConnection:
         self.rollbacks: int = 0
         self.closed: bool = False
 
-    def cursor(self, *args, **kwargs) -> _FakeCursor:  # pragma: no cover - simples encaminhamento
+    def cursor(
+        self, *args, **kwargs
+    ) -> _FakeCursor:  # pragma: no cover - simples encaminhamento
         cursor = _FakeCursor()
         self.cursors.append(cursor)
         return cursor
@@ -102,7 +104,9 @@ def _run_step_env(monkeypatch):
 
     events = {"start": [], "finish": [], "error": []}
 
-    def fake_start_job_step(conn, job, step_code, etapa_id=None, message=None, data=None):
+    def fake_start_job_step(
+        conn, job, step_code, etapa_id=None, message=None, data=None
+    ):
         events["start"].append(
             {
                 "step_code": step_code,
@@ -132,7 +136,9 @@ def _run_step_env(monkeypatch):
 
     monkeypatch.setattr(base_module, "start_job_step", fake_start_job_step)
     monkeypatch.setattr(base_module, "finish_job_step", fake_finish_job_step)
-    monkeypatch.setattr(base_module, "finish_job_step_error", fake_finish_job_step_error)
+    monkeypatch.setattr(
+        base_module, "finish_job_step_error", fake_finish_job_step_error
+    )
 
     return SimpleNamespace(connection=connection, events=events, handle_ref=handle_ref)
 

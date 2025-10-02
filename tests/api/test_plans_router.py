@@ -46,7 +46,9 @@ def _ensure_psycopg_stub() -> None:
 
             ...
 
-        errors_module.InvalidAuthorizationSpecification = InvalidAuthorizationSpecification
+        errors_module.InvalidAuthorizationSpecification = (
+            InvalidAuthorizationSpecification
+        )
         errors_module.UniqueViolation = UniqueViolation
         return errors_module
 
@@ -197,7 +199,9 @@ def _ensure_fastapi_stub() -> None:
             self.directory = directory
             self.html = html
 
-        async def get_response(self, path: str, scope: Any) -> Response:  # pragma: no cover - unused in tests
+        async def get_response(
+            self, path: str, scope: Any
+        ) -> Response:  # pragma: no cover - unused in tests
             return Response()
 
     class HTTPException(Exception):
@@ -251,7 +255,9 @@ def _ensure_fastapi_stub() -> None:
             base = prefix.rstrip("/")
             router_prefix = router.prefix.rstrip("/")
             for path, handler in router.routes:
-                segments = [segment for segment in (base, router_prefix, path) if segment]
+                segments = [
+                    segment for segment in (base, router_prefix, path) if segment
+                ]
                 full_path = "/" + "/".join(segment.strip("/") for segment in segments)
                 self._routes.append((full_path or "/", handler))
 
@@ -298,7 +304,9 @@ def _ensure_pydantic_stub() -> None:
     pydantic_module = ModuleType("pydantic")
 
     class BaseModel:
-        def __init_subclass__(cls, **kwargs: Any) -> None:  # pragma: no cover - configuration hook
+        def __init_subclass__(
+            cls, **kwargs: Any
+        ) -> None:  # pragma: no cover - configuration hook
             super().__init_subclass__(**kwargs)
             annotations = getattr(cls, "__annotations__", {})
             for name, value in annotations.items():
@@ -323,19 +331,26 @@ def _ensure_pydantic_stub() -> None:
                 return obj
             if isinstance(obj, dict):
                 return cls(**obj)
-            data = {field: getattr(obj, field, None) for field in getattr(cls, "__annotations__", {})}
+            data = {
+                field: getattr(obj, field, None)
+                for field in getattr(cls, "__annotations__", {})
+            }
             return cls(**data)
 
         def model_dump(self) -> dict[str, Any]:
-            return {field: getattr(self, field, None) for field in getattr(self, "__annotations__", {})}
+            return {
+                field: getattr(self, field, None)
+                for field in getattr(self, "__annotations__", {})
+            }
 
         def dict(self) -> dict[str, Any]:  # pragma: no cover - compatibility alias
             return self.model_dump()
 
-    class ValidationError(Exception):
-        ...
+    class ValidationError(Exception): ...
 
-    def Field(default: Any = None, **_: Any) -> Any:  # pragma: no cover - unused in tests
+    def Field(
+        default: Any = None, **_: Any
+    ) -> Any:  # pragma: no cover - unused in tests
         return default
 
     ConfigDict = dict
@@ -550,7 +565,9 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     _run(_exercise())
 
 
-def test_list_plans_search_by_number_builds_like(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_list_plans_search_by_number_builds_like(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     rows: list[dict[str, Any]] = []
 
     manager = _DummyManager(rows)
@@ -593,7 +610,9 @@ def test_list_plans_search_by_number_builds_like(monkeypatch: pytest.MonkeyPatch
     _run(_exercise())
 
 
-def test_list_plans_search_by_name_builds_wildcard(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_list_plans_search_by_name_builds_wildcard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     rows: list[dict[str, Any]] = []
 
     manager = _DummyManager(rows)
@@ -818,12 +837,16 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_list_plans_requires_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     def _unexpected_manager() -> _DummyManager:
-        raise AssertionError("Connection should not be requested when credentials are missing")
+        raise AssertionError(
+            "Connection should not be requested when credentials are missing"
+        )
 
     monkeypatch.setattr(plans, "get_connection_manager", _unexpected_manager)
 
     async def _unexpected_bind(*_: Any) -> None:
-        raise AssertionError("bind_session should not be called when credentials are missing")
+        raise AssertionError(
+            "bind_session should not be called when credentials are missing"
+        )
 
     monkeypatch.setattr(plans, "bind_session", _unexpected_bind)
     monkeypatch.setattr(

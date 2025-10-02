@@ -53,8 +53,7 @@ class LookupCache:
 
             cur.execute("SELECT codigo, id FROM ref.base_fgts")
             bases_fgts = {
-                str(codigo).strip(): str(ident)
-                for codigo, ident in cur.fetchall()
+                str(codigo).strip(): str(ident) for codigo, ident in cur.fetchall()
             }
 
         return cls(

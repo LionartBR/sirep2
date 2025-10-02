@@ -54,7 +54,9 @@ def get_orchestrator(request: Request) -> PipelineOrchestrator:
     return orchestrator
 
 
-@router.post("/start", response_model=PipelineStateResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/start", response_model=PipelineStateResponse, status_code=status.HTTP_202_ACCEPTED
+)
 async def start_pipeline(
     payload: PipelineStartPayload | None = None,
     orchestrator: PipelineOrchestrator = Depends(get_orchestrator),
@@ -63,9 +65,13 @@ async def start_pipeline(
 
     payload = payload or PipelineStartPayload()
     try:
-        state = await orchestrator.start(matricula=payload.matricula, senha=payload.senha)
+        state = await orchestrator.start(
+            matricula=payload.matricula, senha=payload.senha
+        )
     except PipelineAlreadyRunningError as exc:  # pragma: no cover - defensive
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
     return PipelineStateResponse.from_state(state)
 
 

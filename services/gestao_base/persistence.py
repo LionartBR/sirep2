@@ -59,11 +59,7 @@ def _normalize_situacao_tokens(situacao: str | None) -> list[str]:
 
     decomposed = unicodedata.normalize("NFKD", texto)
     ascii_only = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
-    tokens = [
-        token
-        for token in re.split(r"[^A-Z0-9]+", ascii_only.upper())
-        if token
-    ]
+    tokens = [token for token in re.split(r"[^A-Z0-9]+", ascii_only.upper()) if token]
     return tokens
 
 
@@ -209,7 +205,9 @@ def persist_rows(
         elif existente is None:
             campos["status"] = PlanStatus.PASSIVEL_RESC
 
-        plan = context.plans.upsert(numero_plano=row.numero, existing=existente, **campos)
+        plan = context.plans.upsert(
+            numero_plano=row.numero, existing=existente, **campos
+        )
 
         if occurrence_repo and _should_register_occurrence(situacao):
             numero_plano = row.numero.strip()

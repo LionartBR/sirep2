@@ -27,6 +27,7 @@ class LoginResponse(BaseModel):
 
     matricula: str
 
+
 @router.post("/login", response_model=LoginResponse)
 async def login(payload: LoginPayload) -> LoginResponse:
     """Autentica o usuário verificando a matrícula no banco de dados."""

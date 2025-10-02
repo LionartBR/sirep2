@@ -14,11 +14,14 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.params import Param
 from psycopg import AsyncConnection
 from psycopg.errors import InvalidAuthorizationSpecification
+
 try:  # pragma: no cover - allow running under test stubs
     from psycopg.errors import QueryCanceled  # type: ignore[attr-defined]
 except Exception:  # pragma: no cover - fallback for tests without full psycopg
-    class QueryCanceled(Exception):
-        ...
+
+    class QueryCanceled(Exception): ...
+
+
 from psycopg.rows import dict_row
 
 from api.models import PlanSummaryResponse, PlansFilters, PlansPaging, PlansResponse
@@ -274,18 +277,14 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
 
     number = str(row.get("numero_plano") or "").strip()
     document = _normalize_document(
-        row.get("numero_inscricao")
-        or row.get("documento")
-        or row.get("document")
+        row.get("numero_inscricao") or row.get("documento") or row.get("document")
     )
     company_name_raw = row.get("razao_social") or row.get("razao")
     company_name = str(company_name_raw).strip() or None if company_name_raw else None
     status_raw = row.get("situacao") or row.get("status")
     status = _format_status(status_raw)
     days_overdue = _normalize_days(
-        row.get("dias_em_atraso")
-        or row.get("dias_atraso")
-        or row.get("dias_atrasados")
+        row.get("dias_em_atraso") or row.get("dias_atraso") or row.get("dias_atrasados")
     )
     balance_raw = row.get("saldo")
     if balance_raw is None:
@@ -383,7 +382,9 @@ def _build_filters(
     elif normalized_search.isdigit() and normalized_search:
         params["number"] = normalized_search
         params["number_prefix"] = f"{normalized_search}%"
-        clauses.append("(numero_plano = %(number)s OR numero_plano LIKE %(number_prefix)s)")
+        clauses.append(
+            "(numero_plano = %(number)s OR numero_plano LIKE %(number_prefix)s)"
+        )
     elif normalized_search:
         params["name_pattern"] = f"%{normalized_search}%"
         clauses.append("razao_social ILIKE %(name_pattern)s")
@@ -394,7 +395,9 @@ def _build_filters(
 
     if dias_min is not None:
         params["dias_min"] = dias_min
-        clauses.append("atraso_desde <= CURRENT_DATE - make_interval(days => %(dias_min)s)")
+        clauses.append(
+            "atraso_desde <= CURRENT_DATE - make_interval(days => %(dias_min)s)"
+        )
 
     if saldo_min is not None:
         params["saldo_min"] = saldo_min
@@ -520,7 +523,9 @@ async def _fetch_keyset_page(
     where_clause = where_sql  # includes leading " WHERE " or empty
     if seek_condition:
         where_clause = (
-            f"{where_clause} AND {seek_condition}" if where_clause else f" WHERE {seek_condition}"
+            f"{where_clause} AND {seek_condition}"
+            if where_clause
+            else f" WHERE {seek_condition}"
         )
 
     sql = (
@@ -538,11 +543,11 @@ async def _fetch_keyset_page(
     if is_prev:
         # Results are in inverse order; trim then restore display order
         # Trim based on sentinel
-        trimmed = fetched[: page_size]
+        trimmed = fetched[:page_size]
         trimmed.reverse()
         rows = trimmed
     else:
-        rows = fetched[: page_size]
+        rows = fetched[:page_size]
 
     return rows, has_more
 
@@ -624,13 +629,31 @@ async def list_plans(
         le=KEYSET_MAX_PAGE_SIZE,
         description="Itens por página (keyset)",
     ),
-    cursor: str | None = Query(None, description="Cursor de paginação (base64 url-safe)"),
-    direction: str | None = Query(None, pattern="^(next|prev)$", description="Direção da navegação"),
-    tipo_doc: str | None = Query(None, pattern="^(CNPJ|CPF|CEI)$", description="Tipo do documento quando 'q' for numérico"),
-    occurrences_only: bool = Query(False, description="Quando verdadeiro, retorna apenas planos com ocorrências (exclui P. RESCISAO)"),
-    situacao: list[str] | None = Query(None, description="Filtro por situação (códigos normalizados)"),
-    dias_min: int | None = Query(None, description="Mínimo de dias em atraso (90, 100, 120)"),
-    saldo_min: int | None = Query(None, description="Saldo mínimo em reais (10000, 50000, 150000, 500000, 1000000)"),
+    cursor: str | None = Query(
+        None, description="Cursor de paginação (base64 url-safe)"
+    ),
+    direction: str | None = Query(
+        None, pattern="^(next|prev)$", description="Direção da navegação"
+    ),
+    tipo_doc: str | None = Query(
+        None,
+        pattern="^(CNPJ|CPF|CEI)$",
+        description="Tipo do documento quando 'q' for numérico",
+    ),
+    occurrences_only: bool = Query(
+        False,
+        description="Quando verdadeiro, retorna apenas planos com ocorrências (exclui P. RESCISAO)",
+    ),
+    situacao: list[str] | None = Query(
+        None, description="Filtro por situação (códigos normalizados)"
+    ),
+    dias_min: int | None = Query(
+        None, description="Mínimo de dias em atraso (90, 100, 120)"
+    ),
+    saldo_min: int | None = Query(
+        None,
+        description="Saldo mínimo em reais (10000, 50000, 150000, 500000, 1000000)",
+    ),
     dt_sit_range: str | None = Query(
         None,
         description="Intervalo relativo para dt_situacao (LAST_3_MONTHS, LAST_2_MONTHS, LAST_MONTH, THIS_MONTH)",
@@ -739,7 +762,10 @@ async def list_plans(
                     f"|dias={dias_threshold or ''}|saldo={saldo_threshold or ''}|dt={dt_range_value or ''}"
                 )
                 total_count = await _fast_total_count(
-                    connection, where_sql=where_sql, params=count_params, cache_key=cache_key
+                    connection,
+                    where_sql=where_sql,
+                    params=count_params,
+                    cache_key=cache_key,
                 )
             else:
                 rows = await _fetch_plan_rows(
@@ -778,14 +804,18 @@ async def list_plans(
             last_s = last.get("saldo")
             first_s = Decimal(str(first_s)) if first_s is not None else Decimal(0)
             last_s = Decimal(str(last_s)) if last_s is not None else Decimal(0)
-            prev_cursor_val = _b64url_encode_json({
-                "s": str(first_s),
-                "n": str(first.get("numero_plano") or ""),
-            })
-            next_cursor_val = _b64url_encode_json({
-                "s": str(last_s),
-                "n": str(last.get("numero_plano") or ""),
-            })
+            prev_cursor_val = _b64url_encode_json(
+                {
+                    "s": str(first_s),
+                    "n": str(first.get("numero_plano") or ""),
+                }
+            )
+            next_cursor_val = _b64url_encode_json(
+                {
+                    "s": str(last_s),
+                    "n": str(last.get("numero_plano") or ""),
+                }
+            )
 
         total_known = total_count is not None
         total_pages = math.ceil((total_count or 0) / page_size) if total_known else None
@@ -803,7 +833,9 @@ async def list_plans(
 
         # Keep 'total' for backward compatibility: when known use total_count else len(items)
         total_compat = (total_count or 0) if total_known else len(items)
-        return PlansResponse(items=items, total=total_compat, paging=paging, filters=filters_model)
+        return PlansResponse(
+            items=items, total=total_compat, paging=paging, filters=filters_model
+        )
 
     # Legacy offset-based path preserved for compatibility
     if rows:

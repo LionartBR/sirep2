@@ -84,7 +84,9 @@ async def test_orchestrator_reports_failure_status(monkeypatch):
 
 @pytest.mark.anyio
 async def test_orchestrator_uses_summary_on_success(monkeypatch):
-    service = _ConfiguredService(status="SKIPPED", info_update={"summary": "Sem novidades"})
+    service = _ConfiguredService(
+        status="SKIPPED", info_update={"summary": "Sem novidades"}
+    )
     orchestrator = PipelineOrchestrator(service=service)
 
     async def immediate_to_thread(func, *args, **kwargs):

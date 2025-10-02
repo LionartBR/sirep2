@@ -14,8 +14,7 @@ from .models import PlanRow
 logger = logging.getLogger(__name__)
 
 
-def portal_po_provider() -> List[dict]:  # pragma: no cover - integração real    
-    import certifi_win32 # type: ignore
+def portal_po_provider() -> List[dict]:  # pragma: no cover - integração real
     import requests
     from requests_negotiate_sspi import HttpNegotiateAuth
 

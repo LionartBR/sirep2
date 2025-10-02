@@ -53,7 +53,9 @@ async def test_login_success(monkeypatch):
 
 @pytest.mark.anyio
 async def test_login_unauthorized_from_permission_error(monkeypatch):
-    _, bind_mock = _setup_auth(monkeypatch, side_effect=PermissionError("Usuário não autorizado."))
+    _, bind_mock = _setup_auth(
+        monkeypatch, side_effect=PermissionError("Usuário não autorizado.")
+    )
 
     payload = auth_router.LoginPayload(matricula="C000000", senha="1234")
 
@@ -67,7 +69,9 @@ async def test_login_unauthorized_from_permission_error(monkeypatch):
 
 @pytest.mark.anyio
 async def test_login_unauthorized_from_database_error(monkeypatch):
-    _, bind_mock = _setup_auth(monkeypatch, side_effect=InvalidAuthorizationSpecification("invalid"))
+    _, bind_mock = _setup_auth(
+        monkeypatch, side_effect=InvalidAuthorizationSpecification("invalid")
+    )
 
     payload = auth_router.LoginPayload(matricula="C999999", senha="1234")
 

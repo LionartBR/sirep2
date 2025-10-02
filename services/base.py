@@ -115,6 +115,8 @@ def _configure_transaction(
     bind_session_by_matricula(connection, principal.matricula)
     with connection.cursor() as cur:
         cur.execute("SET LOCAL statement_timeout = '30s'")
+
+
 def _retry_backoff(attempt: int) -> None:
     """Aguarda um pequeno intervalo exponencial antes de nova tentativa."""
 

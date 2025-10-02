@@ -32,9 +32,7 @@ def test_parse_portal_po_handles_missing_fields_and_html_entities():
 
     resultado = parse_portal_po(json.dumps(payload))
 
-    assert resultado == [
-        {"Plano": "1234567", "CNPJ": "", "Tipo": "Especial & Unit"}
-    ]
+    assert resultado == [{"Plano": "1234567", "CNPJ": "", "Tipo": "Especial & Unit"}]
 
 
 def test_parse_portal_po_empty_response():

@@ -181,9 +181,7 @@ class PlansRepository:
             return campos.get("empregador_id")
 
         codigo_tipo = self._inferir_tipo_inscricao(numero_normalizado)
-        tipo_inscricao_id = self._lookup_tipo_inscricao_id(
-            codigo_tipo, lookup=lookup
-        )
+        tipo_inscricao_id = self._lookup_tipo_inscricao_id(codigo_tipo, lookup=lookup)
         razao_social = campos.get("razao_social") or None
         email = (campos.get("email") or "").strip() or None
         telefone = (campos.get("telefone") or "").strip() or None
@@ -508,9 +506,7 @@ class PlansRepository:
     def _to_decimal(valor: Any) -> Optional[Decimal]:
         return to_decimal(valor)
 
-    def _preparar_parcelas(
-        self, parcelas: Iterable[Any]
-    ) -> list[dict[str, Any]]:
+    def _preparar_parcelas(self, parcelas: Iterable[Any]) -> list[dict[str, Any]]:
         registros: list[dict[str, Any]] = []
         for bruto in parcelas:
             if not isinstance(bruto, dict):

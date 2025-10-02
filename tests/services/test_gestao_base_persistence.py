@@ -54,7 +54,9 @@ class _DummyPlansRepository:
     def upsert(self, numero_plano: str, existing=None, **kwargs):
         if existing is None:
             self._counter += 1
-            plan = SimpleNamespace(id=str(self._counter), numero_plano=numero_plano, **kwargs)
+            plan = SimpleNamespace(
+                id=str(self._counter), numero_plano=numero_plano, **kwargs
+            )
             self._store[numero_plano] = plan
             return plan
 
@@ -81,7 +83,9 @@ def test_persist_rows_registers_occurrences_for_non_passivel(monkeypatch):
         def add(self, **payload):
             captured.append(payload)
 
-    monkeypatch.setattr(persistence, "OccurrenceRepository", _RecorderOccurrenceRepository)
+    monkeypatch.setattr(
+        persistence, "OccurrenceRepository", _RecorderOccurrenceRepository
+    )
     monkeypatch.setattr(persistence.settings, "DRY_RUN", False)
 
     context = SimpleNamespace(

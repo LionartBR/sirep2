@@ -44,8 +44,7 @@ class GestaoBaseCollector(Protocol):
         self,
         progress: Optional[ProgressCallback] = None,
         audit_hooks: Optional["PipelineAuditHooks"] = None,
-    ) -> GestaoBaseData:
-        ...
+    ) -> GestaoBaseData: ...
 
 
 class PipelineAuditHooks(Protocol):
@@ -54,16 +53,14 @@ class PipelineAuditHooks(Protocol):
         step_code: str,
         message: Optional[str] = None,
         data: Optional[dict[str, Any]] = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def stage_finished(
         self,
         step_code: str,
         message: Optional[str] = None,
         data: Optional[dict[str, Any]] = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def stage_failed(
         self,
@@ -72,5 +69,4 @@ class PipelineAuditHooks(Protocol):
         *,
         data: Optional[dict[str, Any]] = None,
         message: Optional[str] = None,
-    ) -> None:
-        ...
+    ) -> None: ...

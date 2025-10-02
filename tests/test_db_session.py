@@ -31,7 +31,7 @@ async def test_bind_session_executes_login_and_timezone():
     connection.cursor.assert_called_once()
     assert cursor.execute.await_args_list == [
         call("SELECT app.login_matricula(%s::citext)", ("abc123",)),
-        call("SET TIME ZONE 'America/Sao_Paulo'")
+        call("SET TIME ZONE 'America/Sao_Paulo'"),
     ]
     cursor.fetchone.assert_awaited_once()
 

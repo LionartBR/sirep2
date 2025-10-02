@@ -76,7 +76,9 @@ class PipelineOrchestrator:
 
         summary: Optional[str] = None
         if outcome.info_update:
-            summary = outcome.info_update.get("summary") or outcome.info_update.get("mensagem")
+            summary = outcome.info_update.get("summary") or outcome.info_update.get(
+                "mensagem"
+            )
 
         if status is PipelineStatus.FAILED:
             fallback_message = "Pipeline finalizada com erro."

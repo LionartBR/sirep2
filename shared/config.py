@@ -28,10 +28,7 @@ class DatabaseSettings:
         user = quote_plus(self.user)
         password = quote_plus(self.password)
         application_name = quote_plus(self.application_name)
-        base = (
-            f"postgresql://{user}:{password}@{self.host}:{self.port}/"
-            f"{self.database}"
-        )
+        base = f"postgresql://{user}:{password}@{self.host}:{self.port}/{self.database}"
         params = [f"application_name={application_name}"]
         if self.ssl_mode:
             params.insert(0, f"sslmode={quote_plus(self.ssl_mode)}")

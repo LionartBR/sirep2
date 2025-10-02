@@ -60,7 +60,11 @@ def normalizar_situacao(texto: str) -> str:
         return "SIT_ESPECIAL"
     if "LIQ" in normalizado:
         return "LIQUIDADO"
-    if normalizado.startswith("P.") or normalizado.startswith("P ") or normalizado.startswith("PRESC"):
+    if (
+        normalizado.startswith("P.")
+        or normalizado.startswith("P ")
+        or normalizado.startswith("PRESC")
+    ):
         return "P_RESCISAO"
     if "P_RESCISAO" in normalizado or normalizado.startswith("P_RESC"):
         return "P_RESCISAO"
@@ -69,6 +73,8 @@ def normalizar_situacao(texto: str) -> str:
     if normalizado.startswith("RESC") or "RESCINDIDO" in normalizado:
         return "RESCINDIDO"
     return "EM_DIA"
+
+
 def safe_int(valor: Any) -> Optional[int]:
     """Converte valores textuais em inteiros de forma segura."""
 

@@ -116,7 +116,9 @@ def test_job_step_context_manager_marks_error() -> None:
     start_select_cursor.fetchone.return_value = {"payload": {}}
     finish_select_cursor.fetchone.return_value = {
         "payload": {
-            "steps": {"ETAPA_3": {"status": "RUNNING", "started_at": "2024-01-01T12:00:00Z"}}
+            "steps": {
+                "ETAPA_3": {"status": "RUNNING", "started_at": "2024-01-01T12:00:00Z"}
+            }
         }
     }
 

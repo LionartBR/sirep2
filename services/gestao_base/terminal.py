@@ -147,7 +147,9 @@ def read_footer_message(pw: PW3270) -> str:  # pragma: no cover
 
 def iterate_e555_pages(
     pw: PW3270,
-) -> Iterator[Tuple[List[str], Tuple[int, int, int], Optional[str]]]:  # pragma: no cover
+) -> Iterator[
+    Tuple[List[str], Tuple[int, int, int], Optional[str]]
+]:  # pragma: no cover
     seen_hashes = set()
     attempts = 0
 

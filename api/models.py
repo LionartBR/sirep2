@@ -28,9 +28,9 @@ class PipelineStateResponse(BaseModel):
     if _HAS_MODEL_VALIDATE:
         model_config = ConfigDict(from_attributes=True)
     else:  # pragma: no cover - exercised when running with Pydantic v1
+
         class Config:  # type: ignore[no-redef]
             orm_mode = True
-
 
     @classmethod
     def from_state(cls, state: PipelineState) -> "PipelineStateResponse":

@@ -45,7 +45,9 @@ def _sample_data() -> GestaoBaseData:
     portal_po = [
         {"Plano": "2345678901", "CNPJ": "98.765.432/0001-10", "Tipo": "ESPECIAL"},
     ]
-    return GestaoBaseData(rows=exemplos, raw_lines=[], portal_po=portal_po, descartados_974=0)
+    return GestaoBaseData(
+        rows=exemplos, raw_lines=[], portal_po=portal_po, descartados_974=0
+    )
 
 
 class DryRunCollector(GestaoBaseCollector):
@@ -93,9 +95,7 @@ class DryRunCollector(GestaoBaseCollector):
                 },
             )
 
-            audit_hooks.stage_started(
-                "GUIA_GRDE", "Verificação GRDE simulada", data={}
-            )
+            audit_hooks.stage_started("GUIA_GRDE", "Verificação GRDE simulada", data={})
             grde_emitida = sum(1 for row in data.rows if row.situac == "GRDE Emitida")
             audit_hooks.stage_finished(
                 "GUIA_GRDE",

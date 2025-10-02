@@ -12,13 +12,16 @@ Scope = MutableMapping[str, Any]
 class NoCacheStaticFiles(StaticFiles):
     """Serve arquivos estáticos sempre ignorando cache do navegador."""
 
-    def is_not_modified(self, *args, **kwargs) -> bool:  # pragma: no cover - comportamento fixo
+    def is_not_modified(
+        self, *args, **kwargs
+    ) -> bool:  # pragma: no cover - comportamento fixo
         return False
 
     async def get_response(self, path: str, scope: Scope) -> Response:  # type: ignore[override]
         response = await super().get_response(path, scope)
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response
+
 
 from infra.config import settings
 from services.orchestrator import PipelineOrchestrator

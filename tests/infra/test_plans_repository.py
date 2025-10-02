@@ -264,7 +264,9 @@ def test_upsert_utiliza_cache_para_resolver_catalogos():
     repo._to_decimal = MagicMock(return_value=None)
     repo._registrar_historico_situacao = MagicMock()
     repo.get_by_numero = MagicMock(
-        return_value=PlanDTO(id="uuid-1", numero_plano="123", situacao_atual="RESCINDIDO")
+        return_value=PlanDTO(
+            id="uuid-1", numero_plano="123", situacao_atual="RESCINDIDO"
+        )
     )
 
     resultado = repo.upsert(
@@ -288,6 +290,7 @@ def test_upsert_utiliza_cache_para_resolver_catalogos():
     executed_sql = insert_cursor.execute.call_args_list[0][0][0]
     assert "INSERT INTO app.plano" in executed_sql
     assert "ref.tipo_plano" not in executed_sql
+
 
 def test_resolver_tipo_plano_utiliza_cache_sem_ir_ao_banco():
     connection = MagicMock()
