@@ -210,6 +210,56 @@ document.addEventListener('DOMContentLoaded', () => {
     return text;
   };
 
+  const formatDurationLabel = (value) => {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const text = String(value).trim();
+    if (!text) {
+      return null;
+    }
+    const parts = text.split(':');
+    if (parts.length !== 3) {
+      return text;
+    }
+    const [hoursPart, minutesPart, secondsPart] = parts;
+    const normalizeHoursMinutes = (segment) => {
+      const trimmed = segment.trim();
+      if (!trimmed) {
+        return '00';
+      }
+      const numeric = Number.parseInt(trimmed, 10);
+      if (Number.isNaN(numeric)) {
+        return trimmed.padStart(2, '0');
+      }
+      const normalized = String(Math.max(0, numeric));
+      return normalized.length < 2 ? normalized.padStart(2, '0') : normalized;
+    };
+    const normalizeSeconds = (segment) => {
+      const trimmed = segment.trim();
+      if (!trimmed) {
+        return '00';
+      }
+      const digits = trimmed.replace(/\D/g, '');
+      if (digits.length >= 2) {
+        return digits.slice(0, 2);
+      }
+      if (digits.length === 1) {
+        return digits.padStart(2, '0');
+      }
+      const numeric = Number.parseInt(trimmed, 10);
+      if (Number.isNaN(numeric)) {
+        return trimmed.padStart(2, '0');
+      }
+      const normalized = String(Math.max(0, numeric));
+      return normalized.length < 2 ? normalized.padStart(2, '0') : normalized;
+    };
+    const hours = normalizeHoursMinutes(hoursPart);
+    const minutes = normalizeHoursMinutes(minutesPart);
+    const seconds = normalizeSeconds(secondsPart);
+    return `${hours}:${minutes}:${seconds}`;
+  };
+
   const formatDateTimeLabel = (value) => {
     if (!value) {
       return '—';
@@ -378,8 +428,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const payload = await response.json();
       const lastUpdateAt = payload?.last_update_at ?? null;
       const durationText = payload?.duration_text ?? null;
+      const formattedDuration = formatDurationLabel(durationText);
       setText(lblLastUpdate, '', formatDateTime(lastUpdateAt));
-      setText(lblLastDuration, '', durationText);
+      setText(lblLastDuration, '', formattedDuration);
       return payload;
     } catch (error) {
       console.error('Falha ao carregar metadados da pipeline.', error);
