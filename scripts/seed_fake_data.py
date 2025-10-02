@@ -722,10 +722,10 @@ def generate_numero_plano(rng: random.Random, existing: set[str]) -> str:
 
 def choose_status_sequence(
     rng: random.Random,
-    situacoes_plano: dict[str, int],
+    situacoes_plano: dict[str, Identifier],
     forced_length: int | None,
     final_codigo: str,
-) -> list[tuple[int, str]]:
+) -> list[tuple[Identifier, str]]:
     codes = list(situacoes_plano.keys())
     if not codes:
         raise RuntimeError("No situacao_plano entries available")
@@ -778,7 +778,7 @@ def pick_parcela_status(
     return situacoes_parcela[codigo], codigo
 
 
-def load_tipo_inscricao_id(conn: Connection) -> int:
+def load_tipo_inscricao_id(conn: Connection) -> Identifier:
     mapping = fetch_reference_map(conn, "ref", "tipo_inscricao")
     if "CNPJ" in mapping:
         return mapping["CNPJ"]
@@ -787,7 +787,7 @@ def load_tipo_inscricao_id(conn: Connection) -> int:
     raise RuntimeError("ref.tipo_inscricao is empty; cannot seed empregadores")
 
 
-def load_situacao_parcela(conn: Connection) -> dict[str, int]:
+def load_situacao_parcela(conn: Connection) -> dict[str, Identifier]:
     mapping = fetch_reference_map(conn, "ref", "situacao_parcela")
     if not mapping:
         LOGGER.warning(
@@ -796,7 +796,7 @@ def load_situacao_parcela(conn: Connection) -> dict[str, int]:
     return mapping
 
 
-def load_situacao_plano(conn: Connection) -> dict[str, int]:
+def load_situacao_plano(conn: Connection) -> dict[str, Identifier]:
     mapping = fetch_reference_map(conn, "ref", "situacao_plano")
     if not mapping:
         raise RuntimeError("ref.situacao_plano is empty; cannot seed plans")
@@ -810,7 +810,7 @@ def quantize_value(number: float) -> Decimal:
 def seed_employers(
     conn: Connection,
     rng: random.Random,
-    tipo_inscricao_id: int,
+    tipo_inscricao_id: Identifier,
     total: int,
     stats: SeedStats,
 ) -> list[Employer]:
@@ -839,8 +839,8 @@ def seed_plans_and_related(
     conn: Connection,
     rng: random.Random,
     employers: Sequence[Employer],
-    situacoes_plano: dict[str, int],
-    situacoes_parcela: dict[str, int],
+    situacoes_plano: dict[str, Identifier],
+    situacoes_parcela: dict[str, Identifier],
     plans_per_employer: int,
     status_changes_per_plan: int | None,
     parcelas_per_plano: int | None,
