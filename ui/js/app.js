@@ -106,7 +106,11 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastSuccessfulFinishedAt = null;
 
   const setStatus = (text) => {
-    statusText.textContent = `Estado: ${text}`;
+    if (!statusText) {
+      return;
+    }
+    const value = text && String(text).trim() ? String(text).trim() : '—';
+    statusText.textContent = value;
   };
 
   const formatStatusLabel = (value) => {
@@ -300,7 +304,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const setText = (el, prefix, value) => {
     if (!el) return;
     const text = value ? value : '—';
-    el.textContent = `${prefix} ${text}`;
+    if (prefix && String(prefix).trim()) {
+      el.textContent = `${prefix} ${text}`;
+    } else {
+      el.textContent = text;
+    }
   };
  
   const refreshPipelineMeta = async () => {
@@ -334,13 +342,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const payload = await response.json();
       const lastUpdateAt = payload?.last_update_at ?? null;
       const durationText = payload?.duration_text ?? null;
-      setText(lblLastUpdate, 'Última atualização em:', formatDateTime(lastUpdateAt));
-      setText(lblLastDuration, 'Duração da última atualização:', durationText);
+      setText(lblLastUpdate, '', formatDateTime(lastUpdateAt));
+      setText(lblLastDuration, '', durationText);
       return payload;
     } catch (error) {
       console.error('Falha ao carregar metadados da pipeline.', error);
-      setText(lblLastUpdate, 'Última atualização em:', null);
-      setText(lblLastDuration, 'Duração da última atualização:', null);
+      setText(lblLastUpdate, '', null);
+      setText(lblLastDuration, '', null);
       return null;
     } finally {
       pipelineMetaController = null;
@@ -615,9 +623,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const updatePlansPagerUI = () => {
     if (plansPagerLabel) {
-      const totalPages = plansPager.totalPages ?? null;
-      const totalPagesLabel = totalPages && Number.isFinite(totalPages) ? String(totalPages) : '?';
-      plansPagerLabel.textContent = `pág. ${plansPager.page} de ${totalPagesLabel}`;
+      const totalPagesRaw = plansPager.totalPages ?? null;
+      const totalPagesNumber =
+        totalPagesRaw && Number.isFinite(totalPagesRaw) && totalPagesRaw > 0
+          ? Number(totalPagesRaw)
+          : 1;
+      const currentPage = Math.max(1, plansPager.page || 1);
+      plansPagerLabel.textContent = `pág. ${currentPage} de ${totalPagesNumber}`;
     }
     if (plansPagerRange) {
       const totalKnown = plansPager.totalCount !== null && plansPager.totalCount !== undefined;
@@ -640,9 +652,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const updateOccPagerUI = () => {
     if (occPagerLabel) {
-      const totalPages = occPager.totalPages ?? null;
-      const totalPagesLabel = totalPages && Number.isFinite(totalPages) ? String(totalPages) : '?';
-      occPagerLabel.textContent = `pág. ${occPager.page} de ${totalPagesLabel}`;
+      const totalPagesRaw = occPager.totalPages ?? null;
+      const totalPagesNumber =
+        totalPagesRaw && Number.isFinite(totalPagesRaw) && totalPagesRaw > 0
+          ? Number(totalPagesRaw)
+          : 1;
+      const currentPage = Math.max(1, occPager.page || 1);
+      occPagerLabel.textContent = `pág. ${currentPage} de ${totalPagesNumber}`;
     }
     if (occPagerRange) {
       const totalKnown = occPager.totalCount !== null && occPager.totalCount !== undefined;

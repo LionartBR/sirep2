@@ -191,8 +191,9 @@ input:focus {
 .controls {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .controls__group {
@@ -200,6 +201,7 @@ input:focus {
   gap: 12px;
   align-items: flex-start;
   flex-wrap: wrap;
+  flex: 1 1 auto;
 }
 
 .controls__start {
@@ -221,16 +223,17 @@ input:focus {
   color: var(--muted);
 }
 
-.pipeline-meta {
+.controls__metrics {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  gap: 12px;
+  align-items: stretch;
+  flex: 0 1 280px;
+  min-width: 200px;
 }
 
-.pipeline-meta span {
-  color: var(--muted);
-  font-size: 12px;
+.controls__metrics .kpi-card {
+  width: 100%;
 }
 
 .btn {
@@ -832,6 +835,24 @@ input:focus {
   align-items: center;
   justify-content: space-between;
 }
+
+/* Left stack (icon + label) */
+.kpi-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Icon sizing and subtle color accents (icons only) */
+.kpi-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.2; /* slightly bolder for readability */
+  flex: 0 0 auto;
+}
+.kpi-icon--status { color: #27AE60; }   /* success green */
+.kpi-icon--time { color: #2D9CDB; }       /* info blue */
+.kpi-icon--duration { color: #9B51E0; }   /* purple */
 
 .kpi-label {
   text-transform: uppercase;

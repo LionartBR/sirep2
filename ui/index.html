@@ -56,14 +56,38 @@
                   <button class="btn btn--ghost" id="btnPause" type="button" disabled>Pausar</button>
                   <button class="btn btn--ghost" id="btnContinue" type="button" disabled>Continuar</button>
                 </div>
-                <div id="pipeline-meta" class="pipeline-meta">
-                  <span id="lbl-last-update">Última atualização em: —</span>
-                  <span id="lbl-last-duration">Duração da última atualização: —</span>
-                </div>
                 <p class="controls__info" id="lastUpdateInfo" aria-live="polite"></p>
               </div>
             </div>
-            <div class="status" id="statusText">Estado: Ocioso</div>
+            <div class="controls__metrics" role="group" aria-label="Indicadores da captura">
+              <div class="kpi-card">
+                <div class="kpi-row">
+                  <div class="kpi-left">
+                    <i data-feather="sliders" class="kpi-icon kpi-icon--status" aria-hidden="true"></i>
+                    <span class="kpi-label">Status</span>
+                  </div>
+                  <span class="kpi-value" id="statusText">—</span>
+                </div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-row">
+                  <div class="kpi-left">
+                    <i data-feather="clock" class="kpi-icon kpi-icon--time" aria-hidden="true"></i>
+                    <span class="kpi-label">Última atualização</span>
+                  </div>
+                  <span class="kpi-value" id="lbl-last-update">—</span>
+                </div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-row">
+                  <div class="kpi-left">
+                    <i data-feather="activity" class="kpi-icon kpi-icon--duration" aria-hidden="true"></i>
+                    <span class="kpi-label">Duração da última atualização</span>
+                  </div>
+                  <span class="kpi-value" id="lbl-last-duration">—</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="progress progress--hidden" aria-hidden="true">
