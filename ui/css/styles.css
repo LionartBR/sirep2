@@ -176,7 +176,7 @@ input:focus {
 .card__panel {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
 }
 
 .card__panel--hidden {
@@ -962,7 +962,7 @@ input:focus {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 0;
 }
 
 .kpi-card {
