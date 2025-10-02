@@ -1,3 +1,4 @@
+# python -m scripts.seed_fake_data --tenant-id 8f6c2279-7fe5-41bb-8a78-be564e9f45e4 --truncate
 #!/usr/bin/env python3
 from __future__ import annotations
 
