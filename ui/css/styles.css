@@ -120,7 +120,7 @@ input:focus {
   flex: 1;
   display: flex;
   justify-content: center;
-  padding: 40px 24px 64px;
+  padding: 40px 24px 48px;
 }
 
 .card {
@@ -1185,7 +1185,7 @@ input:focus {
 
 .footer {
   text-align: center;
-  padding: 32px 16px 48px;
+  padding: 24px 16px 40px;
   font-size: 13px;
   color: var(--muted);
   line-height: 1.6;
