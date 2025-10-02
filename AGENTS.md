@@ -10,11 +10,14 @@
 - `scripts/`: auxiliary CLIs; document in `docs/` when added.
 
 ## Build, Test, and Development Commands
+- Install git hooks so tests run automatically before each commit: `pre-commit install`
 - Start API: `uvicorn api.app:create_app --reload`
 - Run tests: `pytest`
 - Lint: `ruff check .` | Format: `ruff format .`
 - Type check: `mypy .`
 Run all from repo root.
+
+Git hooks rely on `pre-commit` being available in your environment. Install development dependencies with `pip install -e .[dev]` or an equivalent command in your toolchain before enabling the hook.
 
 ## Coding Style & Naming Conventions
 - PEP 8, 4‑space indentation, descriptive English identifiers (UI strings may be Portuguese).
