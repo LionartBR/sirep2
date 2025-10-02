@@ -4,7 +4,6 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from psycopg import AsyncConnection
 from psycopg.rows import dict_row
 
 from api.models import PlanSummaryResponse, PlansResponse
@@ -68,23 +67,6 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
     )
 
 
-_MIGRATION_SQL = """
-    INSERT INTO app.tratamento_plano (tenant_id, numero_plano)
-    SELECT app.current_tenant_id(), v.numero_plano
-      FROM app.vw_planos_busca AS v
-     WHERE v.situacao_codigo = 'P_RESCISAO'
-    ON CONFLICT (tenant_id, numero_plano) DO NOTHING
-"""
-
-
-async def _migrate_treatment_plans(connection: AsyncConnection) -> None:
-    """Insert P_RESCISAO plans into the treatment queue, avoiding duplicates."""
-
-    async with connection.cursor() as cur:
-        await cur.execute(_MIGRATION_SQL)
-    await connection.commit()
-
-
 @router.get("/plans", response_model=PlansResponse)
 async def list_treatment_plans(
     request: Request,
@@ -106,11 +88,8 @@ async def list_treatment_plans(
         "SELECT v.numero_plano, v.documento, v.razao_social, v.situacao,"
         "       v.dias_em_atraso, v.saldo, v.dt_situacao,"
         "       COUNT(*) OVER () AS total_count"
-        "  FROM app.tratamento_plano AS tp"
-        "  JOIN app.vw_planos_busca AS v"
-        "    ON v.numero_plano = tp.numero_plano"
-        " WHERE tp.tenant_id = app.current_tenant_id()"
-        "   AND v.situacao_codigo = 'P_RESCISAO'"
+        "  FROM app.vw_planos_busca AS v"
+        " WHERE v.situacao_codigo = 'P_RESCISAO'"
         " ORDER BY v.saldo DESC NULLS LAST, v.dt_situacao DESC NULLS LAST, v.numero_plano"
         " LIMIT %(limit)s OFFSET %(offset)s"
     )
@@ -136,11 +115,7 @@ async def list_treatment_plans(
 
 @router.post("/migrate", status_code=status.HTTP_204_NO_CONTENT)
 async def migrate_plans(request: Request) -> None:
-    """Synchronously copy all P_RESCISAO plans into the treatment queue.
-
-    Reads the current tenant plans from ``app.vw_planos_busca`` and inserts the
-    plan numbers into ``app.tratamento_plano``, leaving existing entries untouched.
-    """
+    """Trigger a refresh of treatment data without persisting duplicates."""
 
     matricula = _resolve_request_matricula(request)
     if not matricula:
@@ -152,7 +127,12 @@ async def migrate_plans(request: Request) -> None:
     try:
         async with connection_manager as connection:
             await bind_session(connection, matricula)
-            await _migrate_treatment_plans(connection)
+            async with connection.cursor() as cur:
+                await cur.execute(
+                    "SELECT COUNT(*) FROM app.vw_planos_busca"
+                    " WHERE situacao_codigo = 'P_RESCISAO'"
+                )
+                await cur.fetchone()
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Erro ao migrar planos para tratamento")
         raise HTTPException(
