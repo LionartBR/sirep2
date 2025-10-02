@@ -223,19 +223,6 @@ input:focus {
   color: var(--muted);
 }
 
-.controls__metrics {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: stretch;
-  flex: 0 1 280px;
-  min-width: 200px;
-}
-
-.controls__metrics .kpi-card {
-  width: 100%;
-}
-
 .btn {
   min-width: 110px;
   height: 40px;
@@ -971,14 +958,22 @@ input:focus {
 .stat--error { background: #fef2f2; }
 
 /* KPI Card */
+.kpi-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
 .kpi-card {
   background: #f3f4f6; /* light gray */
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: 10px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px; /* vertical spacing between rows */
+  gap: 8px; /* vertical spacing between rows */
   font-family: Inter, Roboto, "Segoe UI", Arial, sans-serif;
+  flex: 1 1 220px;
 }
 
 .kpi-row {
@@ -991,29 +986,19 @@ input:focus {
 .kpi-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
-
-/* Icon sizing and subtle color accents (icons only) */
-.kpi-icon {
-  width: 16px;
-  height: 16px;
-  stroke-width: 2.2; /* slightly bolder for readability */
-  flex: 0 0 auto;
-}
-.kpi-icon--status { color: #27AE60; }   /* success green */
-.kpi-icon--time { color: #2D9CDB; }       /* info blue */
-.kpi-icon--duration { color: #9B51E0; }   /* purple */
 
 .kpi-label {
   text-transform: uppercase;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
+  color: #4b5563;
 }
 
 .kpi-value {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   text-align: right;
 }
