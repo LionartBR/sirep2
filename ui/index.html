@@ -48,48 +48,54 @@
         </div>
 
         <div id="panel-base" class="card__panel" role="tabpanel" aria-labelledby="tab-base">
-          <div class="controls" role="group" aria-label="Controles de execução">
-            <div class="controls__group">
-              <div class="controls__start">
-                <div class="controls__buttons">
-                  <button class="btn btn--primary" id="btnStart" type="button">Iniciar</button>
-                  <button class="btn btn--ghost" id="btnPause" type="button" disabled>Pausar</button>
-                  <button class="btn btn--ghost" id="btnContinue" type="button" disabled>Continuar</button>
+          <div class="panel-base__header">
+            <div class="panel-base__controls">
+              <div class="controls" role="group" aria-label="Controles de execução">
+                <div class="controls__group">
+                  <div class="controls__start">
+                    <div class="controls__buttons">
+                      <button class="btn btn--primary" id="btnStart" type="button">Iniciar</button>
+                      <button class="btn btn--ghost" id="btnPause" type="button" disabled>Pausar</button>
+                      <button class="btn btn--ghost" id="btnContinue" type="button" disabled>Continuar</button>
+                    </div>
+                    <p class="controls__info" id="lastUpdateInfo" aria-live="polite"></p>
+                  </div>
                 </div>
-                <p class="controls__info" id="lastUpdateInfo" aria-live="polite"></p>
+              </div>
+            </div>
+
+            <div class="panel-base__metrics" role="group" aria-label="Indicadores da captura">
+              <div class="kpi-grid">
+                <div class="kpi-card">
+                  <div class="kpi-row">
+                    <div class="kpi-left">
+                      <span class="kpi-label">ESTADO</span>
+                    </div>
+                    <span class="kpi-value" id="statusText">—</span>
+                  </div>
+                </div>
+                <div class="kpi-card">
+                  <div class="kpi-row">
+                    <div class="kpi-left">
+                      <span class="kpi-label">Última atualização</span>
+                    </div>
+                    <span class="kpi-value" id="lbl-last-update">—</span>
+                  </div>
+                </div>
+                <div class="kpi-card">
+                  <div class="kpi-row">
+                    <div class="kpi-left">
+                      <span class="kpi-label">Duração da última atualização</span>
+                    </div>
+                    <span class="kpi-value" id="lbl-last-duration">—</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
           <div class="progress progress--hidden" aria-hidden="true">
             <div class="progress__bar"></div>
-          </div>
-
-          <div class="kpi-grid" role="group" aria-label="Indicadores da captura">
-            <div class="kpi-card">
-              <div class="kpi-row">
-                <div class="kpi-left">
-                  <span class="kpi-label">ESTADO</span>
-                </div>
-                <span class="kpi-value" id="statusText">—</span>
-              </div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-row">
-                <div class="kpi-left">
-                  <span class="kpi-label">Última atualização</span>
-                </div>
-                <span class="kpi-value" id="lbl-last-update">—</span>
-              </div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-row">
-                <div class="kpi-left">
-                  <span class="kpi-label">Duração da última atualização</span>
-                </div>
-                <span class="kpi-value" id="lbl-last-duration">—</span>
-              </div>
-            </div>
           </div>
 
           <div class="table-section">
