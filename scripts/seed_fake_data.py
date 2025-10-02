@@ -1,0 +1,924 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import random
+import sys
+from collections import deque
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Iterable, Sequence
+from uuid import UUID
+
+import psycopg
+from psycopg import Connection
+from psycopg.errors import UndefinedFunction
+from psycopg.rows import dict_row
+
+
+LOGGER = logging.getLogger("seed")
+
+
+SQL_INSERT_TIPO_PLANO = """INSERT INTO ref.tipo_plano (codigo, descricao, ativo)
+VALUES (%s, %s, TRUE)
+RETURNING id
+"""
+
+SQL_INSERT_RESOLUCAO = """INSERT INTO ref.resolucao (codigo, descricao, ativo)
+VALUES (%s, %s, TRUE)
+RETURNING id
+"""
+
+SQL_INSERT_EMPREGADOR = """INSERT INTO app.empregador (
+    tenant_id, tipo_inscricao_id, numero_inscricao, razao_social,
+    email, telefone
+)
+VALUES (
+    app.current_tenant_id(), %s, %s, %s,
+    %s, %s
+)
+ON CONFLICT (tenant_id, tipo_inscricao_id, numero_inscricao)
+DO UPDATE SET
+    razao_social = COALESCE(EXCLUDED.razao_social, app.empregador.razao_social),
+    email = COALESCE(EXCLUDED.email, app.empregador.email),
+    telefone = COALESCE(EXCLUDED.telefone, app.empregador.telefone)
+RETURNING id
+"""
+
+SQL_INSERT_PLANO = """INSERT INTO app.plano (
+    tenant_id, numero_plano, empregador_id,
+    tipo_plano_id, resolucao_id, situacao_plano_id,
+    dt_proposta, saldo_total, atraso_desde
+)
+VALUES (
+    app.current_tenant_id(), %s, %s,
+    %s, %s, %s,
+    %s, %s, %s
+)
+ON CONFLICT (numero_plano)
+DO UPDATE SET
+    empregador_id     = EXCLUDED.empregador_id,
+    tipo_plano_id     = EXCLUDED.tipo_plano_id,
+    resolucao_id      = EXCLUDED.resolucao_id,
+    situacao_plano_id = EXCLUDED.situacao_plano_id,
+    dt_proposta       = EXCLUDED.dt_proposta,
+    saldo_total       = EXCLUDED.saldo_total,
+    atraso_desde      = COALESCE(EXCLUDED.atraso_desde, app.plano.atraso_desde)
+RETURNING id
+"""
+
+SQL_INSERT_PLANO_HIST = """INSERT INTO app.plano_situacao_hist (
+    tenant_id, plano_id, situacao_plano_id, mudou_em, mudou_por, observacao
+)
+VALUES (
+    app.current_tenant_id(),
+    %s,
+    %s,
+    %s::timestamptz,
+    app.current_user_id(),
+    %s
+)
+"""
+
+SQL_MERGE_PARCELA = """WITH sel AS (
+    SELECT id
+      FROM app.parcela
+     WHERE tenant_id = app.current_tenant_id()
+       AND plano_id = %s
+       AND nr_parcela = %s
+       AND vencimento = %s
+     LIMIT 1
+),
+ins AS (
+    INSERT INTO app.parcela (
+        tenant_id, plano_id, nr_parcela, vencimento, valor,
+        situacao_parcela_id, pago_em, valor_pago, qtd_parcelas_total
+    )
+    SELECT
+        app.current_tenant_id(), %s, %s, %s, %s,
+        %s, %s, %s, %s
+    WHERE NOT EXISTS (SELECT 1 FROM sel)
+    RETURNING id, 'insert'::text AS acao
+),
+upd AS (
+    UPDATE app.parcela p
+       SET valor = %s,
+           situacao_parcela_id = COALESCE(%s, p.situicao_parcela_id),
+           pago_em = %s,
+           valor_pago = %s,
+           qtd_parcelas_total = COALESCE(%s, p.qtd_parcelas_total),
+           updated_at = now(),
+           updated_by = app.current_user_id()
+     WHERE p.id = (SELECT id FROM sel)
+    RETURNING p.id, 'update'::text AS acao
+)
+SELECT * FROM ins
+UNION ALL
+SELECT * FROM upd
+UNION ALL
+SELECT id, 'noop'::text AS acao FROM sel
+"""
+
+SQL_INSERT_EVENTO = """INSERT INTO audit.evento
+  (tenant_id, event_time, entity, entity_id, event_type, severity, message, data, user_id)
+VALUES
+  (app.current_tenant_id(), now(), %s, %s, %s, %s, %s, %s, app.current_user_id())
+"""
+
+SQL_INSERT_JOB_RUN = """INSERT INTO audit.job_run (tenant_id, job_name, status, payload, user_id)
+VALUES (app.current_tenant_id(), %s, 'RUNNING', %s, app.current_user_id())
+RETURNING tenant_id, started_at, id
+"""
+
+SQL_TRUNCATE_ORDER = (
+    ("audit.evento", "DELETE FROM audit.evento WHERE tenant_id = app.current_tenant_id()"),
+    ("audit.job_run", "DELETE FROM audit.job_run WHERE tenant_id = app.current_tenant_id()"),
+    ("app.parcela", "DELETE FROM app.parcela WHERE tenant_id = app.current_tenant_id()"),
+    (
+        "app.plano_situacao_hist",
+        "DELETE FROM app.plano_situacao_hist WHERE tenant_id = app.current_tenant_id()",
+    ),
+    ("app.plano", "DELETE FROM app.plano WHERE tenant_id = app.current_tenant_id()"),
+    ("app.empregador", "DELETE FROM app.empregador WHERE tenant_id = app.current_tenant_id()"),
+)
+
+PLAN_TYPES = [
+    ("ADM", "Plano Administrativo"),
+    ("JUD", "Plano Judicial"),
+    ("INS", "Plano Inscrito"),
+    ("AJ", "Plano Acordo Judicial"),
+    ("AI", "Plano Administrativo Interno"),
+    ("AJI", "Plano Acordo Judicial Interno"),
+]
+
+RESOLUCOES = [
+    ("974/20", "Resolução 974/20"),
+    ("430/98", "Resolução 430/98"),
+    ("321/10", "Resolução 321/10"),
+    ("112/18", "Resolução 112/18"),
+]
+
+JOB_NAMES = ["pipeline:sync", "pipeline:recompute", "import:plans", "metrics:refresh"]
+
+EVENT_TYPES = ["STATE_CHANGE", "RESOURCE_SYNC", "VALIDATION", "ERROR"]
+
+EVENT_SEVERITIES = ["INFO", "NOTICE", "WARNING", "ERROR"]
+
+EVENT_ENTITIES = ["app.plano", "app.empregador", "app.pipeline", "app.job"]
+
+
+@dataclass(slots=True)
+class Employer:
+    id: int
+    numero_inscricao: str
+    razao_social: str
+
+
+@dataclass(slots=True)
+class PlanRecord:
+    id: int
+    numero_plano: str
+    situacao_plano_id: int
+    situacao_codigo: str
+
+
+@dataclass(slots=True)
+class SeedStats:
+    empregadores: int = 0
+    planos: int = 0
+    historicos: int = 0
+    parcelas: int = 0
+    job_runs: int = 0
+    eventos: int = 0
+
+
+def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Seed realistic tenant data for local integration testing.",
+    )
+    parser.add_argument("--tenant-id", required=True, help="Tenant UUID to target")
+    parser.add_argument("--employers", type=int, default=5, help="Number of employers to generate")
+    parser.add_argument(
+        "--plans-per-employer",
+        type=int,
+        default=20,
+        help="Number of plans to create per employer",
+    )
+    parser.add_argument(
+        "--status-changes-per-plan",
+        type=int,
+        help="If provided, fixed number of status entries per plan",
+    )
+    parser.add_argument(
+        "--parcelas-per-plano",
+        type=int,
+        help="If provided, fixed number of installments per plan",
+    )
+    parser.add_argument("--job-runs", type=int, default=10, help="Number of job runs to generate")
+    parser.add_argument(
+        "--events-per-run",
+        type=int,
+        help="If provided, fixed number of events per job run",
+    )
+    parser.add_argument("--truncate", action="store_true", help="Clear tenant data before seeding")
+    parser.add_argument("--seed", type=int, help="Random seed for reproducibility")
+    parser.add_argument("--dry-run", action="store_true", help="Build data but rollback before commit")
+    return parser.parse_args(argv)
+
+
+def configure_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
+
+
+def connect() -> Connection:
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        LOGGER.error("DATABASE_URL is not set; aborting.")
+        sys.exit(1)
+
+    conn = psycopg.connect(dsn)
+    conn.row_factory = dict_row
+    return conn
+
+
+def ensure_tenant_and_user(conn: Connection, tenant_id: UUID) -> None:
+    LOGGER.info("Stage 1: configuring tenant context")
+    with conn.cursor() as cur:
+        try:
+            cur.execute("SELECT app.set_tenant(%s)", (str(tenant_id),))
+            LOGGER.debug("app.set_tenant applied successfully")
+        except UndefinedFunction:
+            LOGGER.debug("app.set_tenant not available; falling back to GUCs")
+            cur.execute("SELECT set_config('app.tenant_id', %s, true)", (str(tenant_id),))
+            cur.execute("SELECT set_config('app.user_id', 'seed-bot', true)")
+        else:
+            cur.execute("SELECT set_config('app.user_id', 'seed-bot', true)")
+
+
+def truncate_tenant_data(conn: Connection) -> None:
+    LOGGER.info("Stage 2: truncating tenant data")
+    with conn.cursor() as cur:
+        for label, sql in SQL_TRUNCATE_ORDER:
+            cur.execute(sql)
+            LOGGER.info("%s: removed %s rows", label, cur.rowcount)
+
+
+def fetch_reference_map(conn: Connection, schema: str, table: str) -> dict[str, int]:
+    query = f"SELECT codigo, id FROM {schema}.{table}"
+    with conn.cursor() as cur:
+        cur.execute(query)
+        rows = cur.fetchall()
+    mapping: dict[str, int] = {}
+    for row in rows:
+        codigo = str(row["codigo"]).strip().upper()
+        mapping[codigo] = int(row["id"])
+    return mapping
+
+
+def get_or_create_tipo_plano(conn: Connection, codigo: str, descricao: str) -> int:
+    normalized = codigo.strip().upper()
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM ref.tipo_plano WHERE codigo = %s", (normalized,))
+        row = cur.fetchone()
+        if row:
+            return int(row["id"])
+        cur.execute(SQL_INSERT_TIPO_PLANO, (normalized, descricao))
+        created = cur.fetchone()
+    LOGGER.debug("Created ref.tipo_plano %s -> %s", normalized, created["id"])
+    return int(created["id"])
+
+
+def get_or_create_resolucao(conn: Connection, codigo: str, descricao: str) -> int:
+    normalized = codigo.strip()
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM ref.resolucao WHERE codigo = %s", (normalized,))
+        row = cur.fetchone()
+        if row:
+            return int(row["id"])
+        cur.execute(SQL_INSERT_RESOLUCAO, (normalized, descricao))
+        created = cur.fetchone()
+    LOGGER.debug("Created ref.resolucao %s -> %s", normalized, created["id"])
+    return int(created["id"])
+
+
+def insert_empregador(
+    conn: Connection,
+    tipo_inscricao_id: int,
+    numero_inscricao: str,
+    razao_social: str,
+    email: str,
+    telefone: str,
+) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            SQL_INSERT_EMPREGADOR,
+            (tipo_inscricao_id, numero_inscricao, razao_social, email, telefone),
+        )
+        row = cur.fetchone()
+    return int(row["id"])
+
+
+def insert_plano(
+    conn: Connection,
+    numero_plano: str,
+    empregador_id: int,
+    tipo_plano_id: int,
+    resolucao_id: int,
+    situacao_plano_id: int,
+    dt_proposta: date,
+    saldo_total: Decimal,
+    atraso_desde: date | None,
+) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            SQL_INSERT_PLANO,
+            (
+                numero_plano,
+                empregador_id,
+                tipo_plano_id,
+                resolucao_id,
+                situacao_plano_id,
+                dt_proposta,
+                saldo_total,
+                atraso_desde,
+            ),
+        )
+        row = cur.fetchone()
+    return int(row["id"])
+
+
+def insert_plano_hist(
+    conn: Connection,
+    plano_id: int,
+    situacao_id: int,
+    mudou_em: datetime,
+    observacao: str,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(SQL_INSERT_PLANO_HIST, (plano_id, situacao_id, mudou_em, observacao))
+
+
+def upsert_parcela(
+    conn: Connection,
+    plano_id: int,
+    nr_parcela: int,
+    vencimento: date,
+    valor: Decimal,
+    situacao_parcela_id: int | None,
+    pago_em: date | None,
+    valor_pago: Decimal | None,
+    qtd_total: int | None,
+) -> None:
+    params = (
+        plano_id,
+        nr_parcela,
+        vencimento,
+        plano_id,
+        nr_parcela,
+        vencimento,
+        valor,
+        situacao_parcela_id,
+        pago_em,
+        valor_pago,
+        qtd_total,
+        valor,
+        situacao_parcela_id,
+        pago_em,
+        valor_pago,
+        qtd_total,
+    )
+    with conn.cursor() as cur:
+        cur.execute(SQL_MERGE_PARCELA, params)
+        cur.fetchall()
+
+
+def open_job_run(conn: Connection, job_name: str, payload: dict[str, object]) -> tuple[int, datetime]:
+    with conn.cursor() as cur:
+        cur.execute(SQL_INSERT_JOB_RUN, (job_name, json.dumps(payload)))
+        row = cur.fetchone()
+    return int(row["id"]), row["started_at"]
+
+
+def log_event(
+    conn: Connection,
+    entity: str,
+    entity_id: str,
+    event_type: str,
+    severity: str,
+    message: str,
+    data: dict[str, object],
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            SQL_INSERT_EVENTO,
+            (
+                entity,
+                entity_id,
+                event_type,
+                severity,
+                message,
+                json.dumps(data, default=str),
+            ),
+        )
+
+
+def adjust_recent_event_times(conn: Connection, desired_times: Sequence[datetime]) -> None:
+    if not desired_times:
+        return
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM audit.evento WHERE tenant_id = app.current_tenant_id() ORDER BY id DESC LIMIT %s",
+            (len(desired_times),),
+        )
+        rows = cur.fetchall()
+        if len(rows) < len(desired_times):
+            LOGGER.warning(
+                "Could not collect %s freshly inserted events; timeline adjustments skipped",
+                len(desired_times),
+            )
+            return
+        ids = [int(row["id"]) for row in rows]
+    ids.reverse()
+    with conn.cursor() as cur:
+        for event_id, event_time in zip(ids, desired_times, strict=False):
+            cur.execute("UPDATE audit.evento SET event_time = %s WHERE id = %s", (event_time, event_id))
+
+
+def close_job_run(conn: Connection, run_id: int, status: str) -> tuple[datetime | None, datetime | None]:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = 'audit' AND table_name = 'job_run'"
+        )
+        cols = {row["column_name"] for row in cur.fetchall()}
+    if "status" not in cols:
+        LOGGER.info("audit.job_run.status column absent; skipping close for run %s", run_id)
+        return None, None
+
+    if "finished_at" in cols:
+        update_sql = "UPDATE audit.job_run SET status=%s, finished_at=now() WHERE id=%s RETURNING started_at, finished_at"
+    else:
+        update_sql = "UPDATE audit.job_run SET status=%s WHERE id=%s RETURNING started_at, NULL::timestamptz"
+
+    with conn.cursor() as cur:
+        cur.execute(update_sql, (status, run_id))
+        row = cur.fetchone()
+    return row["started_at"], row["finished_at"]
+
+
+def adjust_job_run_times(conn: Connection, run_id: int, started_at: datetime, finished_at: datetime) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE audit.job_run SET started_at = %s, finished_at = %s WHERE id = %s",
+            (started_at, finished_at, run_id),
+        )
+
+
+def humanize_duration(started_at: datetime, finished_at: datetime) -> str:
+    delta = finished_at - started_at
+    total_seconds = int(delta.total_seconds())
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours}h {minutes:02d}m {seconds:02d}s"
+
+
+def normalize_seed(seed_value: int | None, rng: random.Random) -> None:
+    if seed_value is not None:
+        rng.seed(seed_value)
+    else:
+        random_seed = random.SystemRandom().randint(0, 2_147_483_647)
+        rng.seed(random_seed)
+        LOGGER.info("Random seed auto-selected: %s", random_seed)
+
+
+def generate_razao_social(rng: random.Random, index: int) -> str:
+    prefixes = ["Cooperativa", "Empresa", "Companhia", "Grupo", "Serviços"]
+    suffixes = ["Ltda", "SA", "ME", "EPP", "Holdings"]
+    prefix = rng.choice(prefixes)
+    suffix = rng.choice(suffixes)
+    return f"{prefix} Integrada {index:03d} {suffix}"
+
+
+def generate_email(nome: str) -> str:
+    sanitized = nome.lower().replace(" ", ".")
+    return f"contato@{sanitized.replace(',', '').replace('-', '')}.com"
+
+
+def generate_phone(rng: random.Random) -> str:
+    return f"({rng.randint(11, 99)}) {rng.randint(3000, 9999)}-{rng.randint(1000, 9999)}"
+
+
+def generate_numero_inscricao(rng: random.Random) -> str:
+    return "".join(str(rng.randint(0, 9)) for _ in range(14))
+
+
+def generate_numero_plano(rng: random.Random, existing: set[str]) -> str:
+    while True:
+        numero = "".join(str(rng.randint(0, 9)) for _ in range(12))
+        if numero not in existing:
+            existing.add(numero)
+            return numero
+
+
+def choose_status_sequence(
+    rng: random.Random,
+    situacoes_plano: dict[str, int],
+    forced_length: int | None,
+    final_codigo: str,
+) -> list[tuple[int, str]]:
+    codes = list(situacoes_plano.keys())
+    if not codes:
+        raise RuntimeError("No situacao_plano entries available")
+    desired_len = forced_length or rng.randint(3, 8)
+    desired_len = max(2, desired_len)
+
+    final_entry = (situacoes_plano[final_codigo], final_codigo)
+
+    history: deque[tuple[int, str]] = deque()
+    available_codes = [code for code in codes if code != final_codigo]
+
+    if available_codes:
+        attempts = 0
+        max_attempts = max(10, desired_len * 4)
+        chosen_codes = set()
+        while len(history) < desired_len - 1 and attempts < max_attempts:
+            code = rng.choice(available_codes)
+            attempts += 1
+            if len(chosen_codes) == len(available_codes):
+                history.append((situacoes_plano[code], code))
+                continue
+            if code in chosen_codes:
+                continue
+            history.append((situacoes_plano[code], code))
+            chosen_codes.add(code)
+
+    while len(history) < desired_len - 1:
+        history.append(final_entry)
+
+    history.append(final_entry)
+    return list(history)
+
+
+def pick_plan_situacao(rng: random.Random, situacoes_plano: dict[str, int]) -> tuple[int, str]:
+    if not situacoes_plano:
+        raise RuntimeError("ref.situacao_plano is empty")
+    codigo = rng.choice(list(situacoes_plano.keys()))
+    return situacoes_plano[codigo], codigo
+
+
+def pick_parcela_status(
+    rng: random.Random,
+    situacoes_parcela: dict[str, int],
+) -> tuple[int | None, str | None]:
+    if not situacoes_parcela:
+        return None, None
+    codigo = rng.choice(list(situacoes_parcela.keys()))
+    return situacoes_parcela[codigo], codigo
+
+
+def load_tipo_inscricao_id(conn: Connection) -> int:
+    mapping = fetch_reference_map(conn, "ref", "tipo_inscricao")
+    if "CNPJ" in mapping:
+        return mapping["CNPJ"]
+    if mapping:
+        return next(iter(mapping.values()))
+    raise RuntimeError("ref.tipo_inscricao is empty; cannot seed empregadores")
+
+
+def load_situacao_parcela(conn: Connection) -> dict[str, int]:
+    mapping = fetch_reference_map(conn, "ref", "situacao_parcela")
+    if not mapping:
+        LOGGER.warning("ref.situacao_parcela is empty; installments will be created without status")
+    return mapping
+
+
+def load_situacao_plano(conn: Connection) -> dict[str, int]:
+    mapping = fetch_reference_map(conn, "ref", "situacao_plano")
+    if not mapping:
+        raise RuntimeError("ref.situacao_plano is empty; cannot seed plans")
+    return mapping
+
+
+def quantize_value(number: float) -> Decimal:
+    return (Decimal(number).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def seed_employers(
+    conn: Connection,
+    rng: random.Random,
+    tipo_inscricao_id: int,
+    total: int,
+    stats: SeedStats,
+) -> list[Employer]:
+    LOGGER.info("Stage 3: inserting empregadores (%s requested)", total)
+    employers: list[Employer] = []
+    for idx in range(1, total + 1):
+        razao_social = generate_razao_social(rng, idx)
+        numero_inscricao = generate_numero_inscricao(rng)
+        email = generate_email(razao_social)
+        telefone = generate_phone(rng)
+        employer_id = insert_empregador(
+            conn,
+            tipo_inscricao_id,
+            numero_inscricao,
+            razao_social,
+            email,
+            telefone,
+        )
+        employers.append(Employer(employer_id, numero_inscricao, razao_social))
+    stats.empregadores += len(employers)
+    LOGGER.info("Inserted/updated %s empregadores", len(employers))
+    return employers
+
+
+def seed_plans_and_related(
+    conn: Connection,
+    rng: random.Random,
+    employers: Sequence[Employer],
+    situacoes_plano: dict[str, int],
+    situacoes_parcela: dict[str, int],
+    plans_per_employer: int,
+    status_changes_per_plan: int | None,
+    parcelas_per_plano: int | None,
+    stats: SeedStats,
+) -> list[PlanRecord]:
+    LOGGER.info(
+        "Stage 4: inserting planos, historicos e parcelas (%s por empregador)",
+        plans_per_employer,
+    )
+    existing_plan_numbers: set[str] = set()
+    seeded_plans: list[PlanRecord] = []
+    today = datetime.now(timezone.utc)
+
+    for employer in employers:
+        tipo_codigo, tipo_desc = rng.choice(PLAN_TYPES)
+        tipo_plano_id = get_or_create_tipo_plano(conn, tipo_codigo, tipo_desc)
+        resolucao_codigo, resolucao_desc = rng.choice(RESOLUCOES)
+        resolucao_id = get_or_create_resolucao(conn, resolucao_codigo, resolucao_desc)
+
+        for _ in range(plans_per_employer):
+            numero_plano = generate_numero_plano(rng, existing_plan_numbers)
+            situacao_plano_id, situacao_codigo = pick_plan_situacao(rng, situacoes_plano)
+
+            proposta_offset = rng.randint(20, 240)
+            dt_proposta = (today - timedelta(days=proposta_offset)).date()
+            saldo_total = quantize_value(rng.uniform(5_000, 250_000))
+            atraso_desde = None
+            if situacao_codigo in {"P_RESCISAO", "RESCINDIDO", "EM_ATRASO"}:
+                atraso_desde = (today - timedelta(days=rng.randint(10, 180))).date()
+
+            plano_id = insert_plano(
+                conn,
+                numero_plano,
+                employer.id,
+                tipo_plano_id,
+                resolucao_id,
+                situacao_plano_id,
+                dt_proposta,
+                saldo_total,
+                atraso_desde,
+            )
+            stats.planos += 1
+            seeded_plans.append(PlanRecord(plano_id, numero_plano, situacao_plano_id, situacao_codigo))
+
+            hist_sequence = choose_status_sequence(
+                rng,
+                situacoes_plano,
+                status_changes_per_plan,
+                situacao_codigo,
+            )
+            change_start = datetime.combine(dt_proposta, datetime.min.time(), tzinfo=timezone.utc)
+            for offset, (status_id, status_code) in enumerate(hist_sequence):
+                change_delay = rng.randint(1, 10)
+                mudou_em = change_start + timedelta(days=offset * change_delay)
+                observacao = f"Mudança automática: {status_code}"
+                insert_plano_hist(conn, plano_id, status_id, mudou_em, observacao)
+                stats.historicos += 1
+
+            parcelas_total = parcelas_per_plano if parcelas_per_plano is not None else rng.randint(0, 12)
+            for nr in range(1, parcelas_total + 1):
+                vencimento = (dt_proposta + timedelta(days=30 * nr))
+                valor = quantize_value(rng.uniform(500, 25_000))
+                situacao_parcela_id, situacao_parcela_codigo = pick_parcela_status(rng, situacoes_parcela)
+                pago_em = None
+                valor_pago: Decimal | None = None
+                if situacao_parcela_codigo == "PAGA":
+                    pago_em = vencimento + timedelta(days=rng.randint(-5, 5))
+                    valor_pago = valor
+                elif situacao_parcela_codigo == "EM_ATRASO":
+                    pago_em = None
+                    valor_pago = None
+                upsert_parcela(
+                    conn,
+                    plano_id,
+                    nr,
+                    vencimento,
+                    valor,
+                    situacao_parcela_id,
+                    pago_em,
+                    valor_pago,
+                    parcelas_total,
+                )
+                stats.parcelas += 1
+
+    LOGGER.info(
+        "Seeded %s planos, %s históricos de situação e %s parcelas",
+        stats.planos,
+        stats.historicos,
+        stats.parcelas,
+    )
+    return seeded_plans
+
+
+def seed_job_runs_and_events(
+    conn: Connection,
+    rng: random.Random,
+    plans: Sequence[PlanRecord],
+    total_runs: int,
+    events_per_run: int | None,
+    stats: SeedStats,
+) -> None:
+    LOGGER.info("Stage 5: inserting job runs e eventos (%s runs)", total_runs)
+    if not plans:
+        LOGGER.warning("No planos seeded; audit logs will reference generic entities")
+
+    for run_index in range(total_runs):
+        job_name = rng.choice(JOB_NAMES)
+        status = "SUCCESS" if run_index % 3 != 0 else rng.choice(["FAILURE", "SUCCESS"])
+        payload = {
+            "requested_by": "seed-bot",
+            "retries": rng.randint(0, 2),
+            "correlation_id": f"run-{run_index:04d}",
+        }
+
+        run_id, started_at_actual = open_job_run(conn, job_name, payload)
+        job_duration_minutes = rng.randint(2, 90)
+        job_start = datetime.now(timezone.utc) - timedelta(days=rng.randint(0, 30), minutes=job_duration_minutes)
+        job_finish = job_start + timedelta(minutes=job_duration_minutes, seconds=rng.randint(10, 350))
+
+        adjust_job_run_times(conn, run_id, job_start, job_start)
+
+        run_events = events_per_run if events_per_run is not None else rng.randint(3, 6)
+        event_times: list[datetime] = []
+        for event_offset in range(run_events):
+            plano = rng.choice(plans) if plans else None
+            entity = rng.choice(EVENT_ENTITIES)
+            entity_id = str(plano.id if plano else rng.randint(1, 9999))
+            event_type = rng.choice(EVENT_TYPES)
+            severity = rng.choice(EVENT_SEVERITIES)
+            message = f"{job_name} event {event_offset + 1}"
+            data = {"info": f"detail-{rng.randint(1000, 9999)}"}
+            log_event(conn, entity, entity_id, event_type, severity, message, data)
+            event_time = job_start + timedelta(minutes=event_offset)
+            event_times.append(event_time)
+        adjust_recent_event_times(conn, event_times)
+
+        started_at, finished_at = close_job_run(conn, run_id, status)
+        if started_at is None:
+            continue
+        adjust_job_run_times(conn, run_id, job_start, job_finish)
+        stats.job_runs += 1
+        stats.eventos += run_events
+
+        try:
+            duration_text = humanize_duration(job_start, job_finish)
+        except Exception as exc:  # pragma: no cover
+            LOGGER.debug("Failed to compute duration: %s", exc)
+            duration_text = "".join([])
+        LOGGER.info(
+            "Job run %s closed with status %s (duration %s)",
+            run_id,
+            status,
+            duration_text,
+        )
+
+
+def print_counts(conn: Connection) -> None:
+    LOGGER.info("Stage 6: resumo dos totais")
+    tables = [
+        "app.empregador",
+        "app.plano",
+        "app.plano_situacao_hist",
+        "app.parcela",
+        "audit.job_run",
+        "audit.evento",
+    ]
+    with conn.cursor() as cur:
+        for table in tables:
+            cur.execute(
+                f"SELECT COUNT(*) AS total FROM {table} WHERE tenant_id = app.current_tenant_id()"
+            )
+            row = cur.fetchone()
+            LOGGER.info("%s: %s registros", table, row["total"])
+
+    LOGGER.info("Top 5 pipeline status entries:")
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT job_name, status, last_update_at, duration_text "
+            "FROM app.vw_pipeline_status ORDER BY last_update_at DESC LIMIT 5"
+        )
+        for row in cur.fetchall():
+            LOGGER.info(
+                " - %s (%s) última atualização %s duração %s",
+                row["job_name"],
+                row["status"],
+                row["last_update_at"],
+                row["duration_text"],
+            )
+
+    samples = {
+        "app.plano": "SELECT id, numero_plano, saldo_total, situacao_plano_id FROM app.plano WHERE tenant_id = app.current_tenant_id() ORDER BY id DESC LIMIT 3",
+        "app.plano_situacao_hist": "SELECT plano_id, situacao_plano_id, mudou_em, observacao FROM app.plano_situacao_hist WHERE tenant_id = app.current_tenant_id() ORDER BY mudou_em DESC LIMIT 3",
+        "audit.evento": "SELECT event_time, entity, event_type, severity, message FROM audit.evento WHERE tenant_id = app.current_tenant_id() ORDER BY event_time DESC LIMIT 3",
+    }
+    with conn.cursor() as cur:
+        for table, sql in samples.items():
+            LOGGER.info("Samples from %s:", table)
+            cur.execute(sql)
+            for row in cur.fetchall():
+                LOGGER.info(" %s", row)
+
+
+def main(argv: Sequence[str]) -> int:
+    args = parse_args(argv)
+    configure_logging()
+    rng = random.Random()
+    normalize_seed(args.seed, rng)
+
+    try:
+        tenant_uuid = UUID(args.tenant_id)
+    except ValueError as exc:
+        LOGGER.error("Invalid tenant UUID: %s", exc)
+        return 1
+
+    conn = connect()
+    try:
+        ensure_tenant_and_user(conn, tenant_uuid)
+
+        if args.truncate:
+            truncate_tenant_data(conn)
+
+        tipo_inscricao_id = load_tipo_inscricao_id(conn)
+        situacoes_plano = load_situacao_plano(conn)
+        situacoes_parcela = load_situacao_parcela(conn)
+
+        stats = SeedStats()
+
+        employers = seed_employers(conn, rng, tipo_inscricao_id, args.employers, stats)
+        plans = seed_plans_and_related(
+            conn,
+            rng,
+            employers,
+            situacoes_plano,
+            situacoes_parcela,
+            args.plans_per_employer,
+            args.status_changes_per_plan,
+            args.parcelas_per_plano,
+            stats,
+        )
+        seed_job_runs_and_events(
+            conn,
+            rng,
+            plans,
+            args.job_runs,
+            args.events_per_run,
+            stats,
+        )
+
+        LOGGER.info(
+            "Planned inserts: empregadores=%s planos=%s historicos=%s parcelas=%s job_runs=%s eventos=%s",
+            stats.empregadores,
+            stats.planos,
+            stats.historicos,
+            stats.parcelas,
+            stats.job_runs,
+            stats.eventos,
+        )
+
+        if args.dry_run:
+            conn.rollback()
+            LOGGER.info("Dry-run activated; all changes rolled back")
+        else:
+            conn.commit()
+            LOGGER.info("Seeding committed successfully")
+            print_counts(conn)
+    except Exception:
+        conn.rollback()
+        LOGGER.exception("Error while seeding; transaction rolled back")
+        return 1
+    finally:
+        conn.close()
+
+    if args.dry_run:
+        LOGGER.info("Dry-run completed; final counts skipped")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
