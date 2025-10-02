@@ -1008,23 +1008,26 @@ input:focus {
 .kpi-row--danger { color: #EB5757; }
 
 .running-plan__col .kpi-card {
-  flex: 0 1 200px;
-  padding: 10px 12px;
-  gap: 6px;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  width: min(220px, 100%);
+  padding: 12px 16px;
+  gap: 10px;
 }
 
 .running-plan__col .kpi-row {
   align-items: baseline;
-  gap: 12px;
+  gap: 16px;
 }
 
 .running-plan__col .kpi-label {
-  font-size: 10px;
-  letter-spacing: 0.4px;
+  font-size: 12px;
+  letter-spacing: 0.6px;
 }
 
 .running-plan__col .kpi-value {
-  font-size: 16px;
+  font-size: 22px;
+  line-height: 1.2;
 }
 
 .filters {
