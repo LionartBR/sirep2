@@ -1,3 +1,4 @@
+# python -m scripts.seed_fake_data --tenant-id 8f6c2279-7fe5-41bb-8a78-be564e9f45e4 --truncate
 #!/usr/bin/env python3
 from __future__ import annotations
 
@@ -13,12 +14,12 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Iterable, Sequence
 from uuid import UUID
-from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
 from psycopg import Connection, OperationalError
 from psycopg.errors import UndefinedFunction
 from psycopg.rows import dict_row
+from urllib.parse import urlsplit, urlunsplit
 
 
 LOGGER = logging.getLogger("seed")
