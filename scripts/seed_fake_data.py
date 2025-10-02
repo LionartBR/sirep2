@@ -13,7 +13,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Iterator, Sequence, Tuple
+from typing import Any, Iterator, Sequence, Tuple
 from uuid import UUID
 
 import psycopg
@@ -31,6 +31,9 @@ from shared.config import get_database_settings
 
 
 LOGGER = logging.getLogger("seed")
+
+
+Identifier = int | str
 
 
 SQL_INSERT_TIPO_PLANO = """INSERT INTO ref.tipo_plano (codigo, descricao, ativo)
@@ -204,7 +207,7 @@ class Employer:
 class PlanRecord:
     id: int
     numero_plano: str
-    situacao_plano_id: int
+    situacao_plano_id: Identifier
     situacao_codigo: str
 
 
@@ -281,6 +284,22 @@ def mask_dsn_for_log(dsn: str) -> str:
 
     masked = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
     return masked or "***"
+
+
+def normalize_identifier(value: Any) -> Identifier:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return text
+        try:
+            return int(text)
+        except ValueError:
+            return text
+    return str(value)
 
 
 def _maybe_rewrite_localhost(dsn: str) -> str:
@@ -424,47 +443,51 @@ def truncate_tenant_data(conn: Connection) -> None:
             LOGGER.info("%s: removed %s rows", label, cur.rowcount)
 
 
-def fetch_reference_map(conn: Connection, schema: str, table: str) -> dict[str, int]:
+def fetch_reference_map(conn: Connection, schema: str, table: str) -> dict[str, Identifier]:
     query = f"SELECT codigo, id FROM {schema}.{table}"
     with conn.cursor() as cur:
         cur.execute(query)
         rows = cur.fetchall()
-    mapping: dict[str, int] = {}
+    mapping: dict[str, Identifier] = {}
     for row in rows:
         codigo = str(row["codigo"]).strip().upper()
-        mapping[codigo] = int(row["id"])
+        identifier_raw = row["id"]
+        if identifier_raw is None:
+            LOGGER.warning("%s.%s has entry %s with null id; skipping", schema, table, codigo)
+            continue
+        mapping[codigo] = normalize_identifier(identifier_raw)
     return mapping
 
 
-def get_or_create_tipo_plano(conn: Connection, codigo: str, descricao: str) -> int:
+def get_or_create_tipo_plano(conn: Connection, codigo: str, descricao: str) -> Identifier:
     normalized = codigo.strip().upper()
     with conn.cursor() as cur:
         cur.execute("SELECT id FROM ref.tipo_plano WHERE codigo = %s", (normalized,))
         row = cur.fetchone()
         if row:
-            return int(row["id"])
+            return normalize_identifier(row["id"])
         cur.execute(SQL_INSERT_TIPO_PLANO, (normalized, descricao))
         created = cur.fetchone()
     LOGGER.debug("Created ref.tipo_plano %s -> %s", normalized, created["id"])
-    return int(created["id"])
+    return normalize_identifier(created["id"])
 
 
-def get_or_create_resolucao(conn: Connection, codigo: str, descricao: str) -> int:
+def get_or_create_resolucao(conn: Connection, codigo: str, descricao: str) -> Identifier:
     normalized = codigo.strip()
     with conn.cursor() as cur:
         cur.execute("SELECT id FROM ref.resolucao WHERE codigo = %s", (normalized,))
         row = cur.fetchone()
         if row:
-            return int(row["id"])
+            return normalize_identifier(row["id"])
         cur.execute(SQL_INSERT_RESOLUCAO, (normalized, descricao))
         created = cur.fetchone()
     LOGGER.debug("Created ref.resolucao %s -> %s", normalized, created["id"])
-    return int(created["id"])
+    return normalize_identifier(created["id"])
 
 
 def insert_empregador(
     conn: Connection,
-    tipo_inscricao_id: int,
+    tipo_inscricao_id: Identifier,
     numero_inscricao: str,
     razao_social: str,
     email: str,
