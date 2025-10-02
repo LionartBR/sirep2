@@ -619,6 +619,12 @@ input:focus {
   font-weight: 600;
 }
 
+.table-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .table {
   border: 1px solid var(--border);
   border-radius: 10px;
