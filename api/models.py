@@ -71,12 +71,22 @@ class PlansPaging(BaseModel):
     total_pages: int | None = None
 
 
+class PlansFilters(BaseModel):
+    """Echoes the filters applied to the plans listing."""
+
+    situacao: list[str] | None = None
+    dias_min: int | None = None
+    saldo_min: int | None = None
+    dt_sit_range: str | None = None
+
+
 class PlansResponse(BaseModel):
     """Container returned by the plans listing endpoint."""
 
     items: list[PlanSummaryResponse]
     total: int
     paging: PlansPaging | None = None
+    filters: PlansFilters | None = None
 
 
 class PipelineStatusViewResponse(BaseModel):

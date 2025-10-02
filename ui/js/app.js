@@ -49,7 +49,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const plansColumnCount =
     plansTableElement?.tHead?.rows?.[0]?.cells?.length ??
     plansTableElement?.rows?.[0]?.cells?.length ??
-    8;  
+    8;
+  const planFiltersChipsContainer = document.getElementById('plansFiltersChips');
 
   // Occurrences table elements
   const occTablePanel = document.getElementById('occurrencesTablePanel');
@@ -77,6 +78,40 @@ document.addEventListener('DOMContentLoaded', () => {
     plans: '',
     occurrences: '',
   };
+  const planFiltersState = {
+    situacao: [],
+    diasMin: null,
+    saldoMin: null,
+    dtRange: null,
+  };
+  const PLAN_FILTER_LABELS = {
+    situacao: {
+      P_RESCISAO: 'P. Rescisão',
+      SIT_ESPECIAL: 'Sit. Especial',
+      RESCINDIDO: 'Rescindido',
+      LIQUIDADO: 'Liquidado',
+      GRDE_EMITIDA: 'GRDE Emitida',
+    },
+    diasMin: {
+      90: '90+ dias',
+      100: '100+ dias',
+      120: '120+ dias',
+    },
+    saldoMin: {
+      10000: 'R$ 10 mil+',
+      50000: 'R$ 50 mil+',
+      150000: 'R$ 150 mil+',
+      500000: 'R$ 500 mil+',
+      1000000: 'R$ 1 mi+',
+    },
+    dtRange: {
+      LAST_3_MONTHS: 'Até 3 meses',
+      LAST_2_MONTHS: 'Até 2 meses',
+      LAST_MONTH: 'Até 1 mês',
+      THIS_MONTH: 'Mês atual',
+    },
+  };
+  let planFilterWrappers = [];
   let currentPlansSearchTerm = '';
   let currentOccurrencesSearchTerm = '';
   let activeTableSearchTarget = 'plans';
@@ -580,6 +615,278 @@ document.addEventListener('DOMContentLoaded', () => {
     occTableBody.appendChild(row);
   };
 
+  const resetPlansPagination = () => {
+    plansPager.page = 1;
+    plansPager.nextCursor = null;
+    plansPager.prevCursor = null;
+    plansPager.hasMore = false;
+    plansPager.showingFrom = 0;
+    plansPager.showingTo = 0;
+    plansPager.totalCount = null;
+    plansPager.totalPages = null;
+  };
+
+  const getFilterLabel = (filterKey, value) => {
+    const labels = PLAN_FILTER_LABELS[filterKey];
+    if (!labels) {
+      return String(value);
+    }
+    const stringValue = String(value);
+    return labels[stringValue] ?? labels[value] ?? String(value);
+  };
+
+  const renderPlanFilterChips = () => {
+    if (!planFiltersChipsContainer) {
+      return;
+    }
+
+    const chips = [];
+    planFiltersState.situacao.forEach((value) => {
+      chips.push({ type: 'situacao', value });
+    });
+    if (planFiltersState.diasMin !== null) {
+      chips.push({ type: 'diasMin', value: String(planFiltersState.diasMin) });
+    }
+    if (planFiltersState.saldoMin !== null) {
+      chips.push({ type: 'saldoMin', value: String(planFiltersState.saldoMin) });
+    }
+    if (planFiltersState.dtRange) {
+      chips.push({ type: 'dtRange', value: planFiltersState.dtRange });
+    }
+
+    if (!chips.length) {
+      planFiltersChipsContainer.innerHTML = '';
+      planFiltersChipsContainer.hidden = true;
+      return;
+    }
+
+    planFiltersChipsContainer.hidden = false;
+    planFiltersChipsContainer.innerHTML = '';
+
+    chips.forEach(({ type, value }) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'filter-chip';
+      button.dataset.filterType = type;
+      button.dataset.filterValue = value;
+      const label = getFilterLabel(type, value);
+      button.innerHTML = `
+        <span class="filter-chip__label">${label}</span>
+        <span class="filter-chip__remove" aria-hidden="true">x</span>
+        <span class="sr-only">Remover filtro</span>
+      `;
+      planFiltersChipsContainer.appendChild(button);
+    });
+  };
+
+  const syncPlanFilterInputs = () => {
+    const inputs = document.querySelectorAll('[data-filter-input]');
+    inputs.forEach((input) => {
+      const filterType = input.dataset.filterInput;
+      const value = input.value;
+      if (!filterType) {
+        return;
+      }
+      switch (filterType) {
+        case 'situacao':
+          input.checked = planFiltersState.situacao.includes(value);
+          break;
+        case 'dias':
+          input.checked =
+            planFiltersState.diasMin !== null && Number(value) === Number(planFiltersState.diasMin);
+          break;
+        case 'saldo':
+          input.checked =
+            planFiltersState.saldoMin !== null && Number(value) === Number(planFiltersState.saldoMin);
+          break;
+        case 'dt':
+          input.checked = planFiltersState.dtRange === value;
+          break;
+        default:
+          break;
+      }
+    });
+  };
+
+  const closeAllPlanFilterDropdowns = () => {
+    planFilterWrappers.forEach((wrapper) => {
+      wrapper.classList.remove('table-filter--open');
+      const trigger = wrapper.querySelector('.table-filter__trigger');
+      if (trigger) {
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+    });
+  };
+
+  const clearPlanFilter = (filterType) => {
+    switch (filterType) {
+      case 'situacao':
+        planFiltersState.situacao = [];
+        break;
+      case 'dias':
+        planFiltersState.diasMin = null;
+        break;
+      case 'saldo':
+        planFiltersState.saldoMin = null;
+        break;
+      case 'dt':
+        planFiltersState.dtRange = null;
+        break;
+      default:
+        break;
+    }
+  };
+
+  const applyPlanFilters = ({ closeDropdown = false } = {}) => {
+    resetPlansPagination();
+    syncPlanFilterInputs();
+    renderPlanFilterChips();
+    void refreshPlans({ showLoading: true });
+    if (closeDropdown) {
+      closeAllPlanFilterDropdowns();
+    }
+  };
+
+  const setupPlanFilters = () => {
+    planFilterWrappers = Array.from(document.querySelectorAll('[data-filter-group]'));
+    if (!planFilterWrappers.length) {
+      return;
+    }
+
+    planFilterWrappers.forEach((wrapper) => {
+      const trigger = wrapper.querySelector('.table-filter__trigger');
+      const dropdown = wrapper.querySelector('.table-filter__dropdown');
+      if (!trigger || !dropdown) {
+        return;
+      }
+
+      trigger.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const isOpen = wrapper.classList.toggle('table-filter--open');
+        planFilterWrappers.forEach((other) => {
+          if (other !== wrapper) {
+            other.classList.remove('table-filter--open');
+            const otherTrigger = other.querySelector('.table-filter__trigger');
+            if (otherTrigger) {
+              otherTrigger.setAttribute('aria-expanded', 'false');
+            }
+          }
+        });
+        trigger.setAttribute('aria-expanded', String(isOpen));
+      });
+
+      dropdown.addEventListener('click', (event) => {
+        event.stopPropagation();
+      });
+
+      const inputs = dropdown.querySelectorAll('[data-filter-input]');
+      inputs.forEach((input) => {
+        input.addEventListener('change', (event) => {
+          const target = event.currentTarget;
+          if (!(target instanceof HTMLInputElement)) {
+            return;
+          }
+          const filterType = target.dataset.filterInput;
+          if (!filterType) {
+            return;
+          }
+
+          if (filterType === 'situacao') {
+            const value = target.value;
+            if (target.checked) {
+              if (!planFiltersState.situacao.includes(value)) {
+                planFiltersState.situacao.push(value);
+              }
+            } else {
+              planFiltersState.situacao = planFiltersState.situacao.filter((item) => item !== value);
+            }
+            applyPlanFilters();
+            return;
+          }
+
+          if (filterType === 'dias') {
+            planFiltersState.diasMin = Number(target.value);
+            applyPlanFilters({ closeDropdown: true });
+            return;
+          }
+
+          if (filterType === 'saldo') {
+            planFiltersState.saldoMin = Number(target.value);
+            applyPlanFilters({ closeDropdown: true });
+            return;
+          }
+
+          if (filterType === 'dt') {
+            planFiltersState.dtRange = target.value;
+            applyPlanFilters({ closeDropdown: true });
+          }
+        });
+      });
+
+      const clearButton = dropdown.querySelector('[data-filter-clear]');
+      if (clearButton) {
+        clearButton.addEventListener('click', (event) => {
+          event.preventDefault();
+          const filterType = clearButton.getAttribute('data-filter-clear');
+          if (!filterType) {
+            return;
+          }
+          clearPlanFilter(filterType);
+          applyPlanFilters({ closeDropdown: true });
+        });
+      }
+    });
+
+    document.addEventListener('click', () => {
+      closeAllPlanFilterDropdowns();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeAllPlanFilterDropdowns();
+      }
+    });
+
+    syncPlanFilterInputs();
+    renderPlanFilterChips();
+  };
+
+  if (planFiltersChipsContainer) {
+    planFiltersChipsContainer.addEventListener('click', (event) => {
+      const target = event.target instanceof Element ? event.target.closest('.filter-chip') : null;
+      if (!target) {
+        return;
+      }
+      event.preventDefault();
+      const filterType = target.getAttribute('data-filter-type');
+      const filterValue = target.getAttribute('data-filter-value');
+      if (!filterType) {
+        return;
+      }
+
+      switch (filterType) {
+        case 'situacao':
+          if (filterValue) {
+            planFiltersState.situacao = planFiltersState.situacao.filter((item) => item !== filterValue);
+          }
+          break;
+        case 'diasMin':
+          planFiltersState.diasMin = null;
+          break;
+        case 'saldoMin':
+          planFiltersState.saldoMin = null;
+          break;
+        case 'dtRange':
+          planFiltersState.dtRange = null;
+          break;
+        default:
+          break;
+      }
+
+      applyPlanFilters();
+    });
+  }
+
   // --- Keyset pagination state (client-side) ---
   const plansPager = {
     page: 1,
@@ -698,6 +1005,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (currentPlansSearchTerm) {
       url.searchParams.set('q', currentPlansSearchTerm);
     }
+    if (planFiltersState.situacao.length) {
+      planFiltersState.situacao.forEach((value) => {
+        url.searchParams.append('situacao', value);
+      });
+    }
+    if (planFiltersState.diasMin !== null) {
+      url.searchParams.set('dias_min', String(planFiltersState.diasMin));
+    }
+    if (planFiltersState.saldoMin !== null) {
+      url.searchParams.set('saldo_min', String(planFiltersState.saldoMin));
+    }
+    if (planFiltersState.dtRange) {
+      url.searchParams.set('dt_sit_range', planFiltersState.dtRange);
+    }
     return url.toString();
   };
 
@@ -731,6 +1052,24 @@ document.addEventListener('DOMContentLoaded', () => {
       const payload = await response.json();
       const items = Array.isArray(payload?.items) ? payload.items : [];
       renderPlanRows(items);
+      const filtersResponse = payload?.filters ?? null;
+      if (filtersResponse) {
+        planFiltersState.situacao = Array.isArray(filtersResponse.situacao)
+          ? [...filtersResponse.situacao]
+          : [];
+        planFiltersState.diasMin =
+          typeof filtersResponse.dias_min === 'number' ? filtersResponse.dias_min : null;
+        planFiltersState.saldoMin =
+          typeof filtersResponse.saldo_min === 'number' ? filtersResponse.saldo_min : null;
+        planFiltersState.dtRange = filtersResponse.dt_sit_range || null;
+      } else {
+        planFiltersState.situacao = [];
+        planFiltersState.diasMin = null;
+        planFiltersState.saldoMin = null;
+        planFiltersState.dtRange = null;
+      }
+      syncPlanFilterInputs();
+      renderPlanFilterChips();
       // Occurrences are now fetched independently
       // Update pager state from response
       const paging = payload?.paging || {};
@@ -1759,6 +2098,7 @@ document.addEventListener('DOMContentLoaded', () => {
     activate(isBaseInitiallyActive ? 'base' : 'treatment');
   };
 
+  setupPlanFilters();
   toggleButtons({ start: true, pause: false, cont: false });
   setStatus(defaultMessages.idle);
   void refreshPlans();

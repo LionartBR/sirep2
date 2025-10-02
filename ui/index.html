@@ -157,6 +157,7 @@
             aria-labelledby="plansTableTab"
             data-table-panel="plans"
           >
+            <div class="table-active-filters" id="plansFiltersChips" hidden></div>
             <div class="table">
               <table class="data-table" aria-label="Tabela de planos">
                 <thead class="table__head">
@@ -164,10 +165,162 @@
                     <th scope="col">PLANO</th>
                     <th scope="col">CNPJ/CPF/CEI</th>
                     <th scope="col">RAZÃO SOCIAL</th>
-                    <th scope="col">SITUAÇÃO</th>
-                    <th scope="col">DIAS EM ATRASO</th>
-                    <th scope="col">SALDO</th>
-                    <th scope="col">DT SITUAÇÃO</th>
+                    <th scope="col" class="table__col--filterable">
+                      <div class="table-filter" data-filter-group="situacao">
+                        <button class="table-filter__trigger" type="button" aria-expanded="false">
+                          <span>SITUAÇÃO</span>
+                          <i data-feather="chevron-down" class="table-filter__icon" aria-hidden="true"></i>
+                        </button>
+                        <div class="table-filter__dropdown" role="menu">
+                          <p class="table-filter__title">Selecione as situações</p>
+                          <div class="table-filter__options" role="group" aria-label="Situação">
+                            <label class="table-filter__option">
+                              <input type="checkbox" value="P_RESCISAO" data-filter-input="situacao" />
+                              <span>P. Rescisão</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="checkbox" value="SIT_ESPECIAL" data-filter-input="situacao" />
+                              <span>Sit. Especial</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="checkbox" value="RESCINDIDO" data-filter-input="situacao" />
+                              <span>Rescindido</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="checkbox" value="LIQUIDADO" data-filter-input="situacao" />
+                              <span>Liquidado</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="checkbox" value="GRDE_EMITIDA" data-filter-input="situacao" />
+                              <span>GRDE Emitida</span>
+                            </label>
+                          </div>
+                          <div class="table-filter__actions">
+                            <button
+                              type="button"
+                              class="table-filter__clear"
+                              data-filter-clear="situacao"
+                            >
+                              Limpar filtro
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </th>
+                    <th scope="col" class="table__col--filterable">
+                      <div class="table-filter" data-filter-group="dias">
+                        <button class="table-filter__trigger" type="button" aria-expanded="false">
+                          <span>DIAS EM ATRASO</span>
+                          <i data-feather="chevron-down" class="table-filter__icon" aria-hidden="true"></i>
+                        </button>
+                        <div class="table-filter__dropdown" role="menu">
+                          <p class="table-filter__title">Selecione o mínimo</p>
+                          <div class="table-filter__options" role="group" aria-label="Dias em atraso">
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-days" value="90" data-filter-input="dias" />
+                              <span>&ge; 90 dias</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-days" value="100" data-filter-input="dias" />
+                              <span>&ge; 100 dias</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-days" value="120" data-filter-input="dias" />
+                              <span>&ge; 120 dias</span>
+                            </label>
+                          </div>
+                          <div class="table-filter__actions">
+                            <button
+                              type="button"
+                              class="table-filter__clear"
+                              data-filter-clear="dias"
+                            >
+                              Limpar filtro
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </th>
+                    <th scope="col" class="table__col--filterable">
+                      <div class="table-filter" data-filter-group="saldo">
+                        <button class="table-filter__trigger" type="button" aria-expanded="false">
+                          <span>SALDO</span>
+                          <i data-feather="chevron-down" class="table-filter__icon" aria-hidden="true"></i>
+                        </button>
+                        <div class="table-filter__dropdown" role="menu">
+                          <p class="table-filter__title">Saldo mínimo</p>
+                          <div class="table-filter__options" role="group" aria-label="Saldo mínimo">
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-saldo" value="10000" data-filter-input="saldo" />
+                              <span>R$ 10 mil+</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-saldo" value="50000" data-filter-input="saldo" />
+                              <span>R$ 50 mil+</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-saldo" value="150000" data-filter-input="saldo" />
+                              <span>R$ 150 mil+</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-saldo" value="500000" data-filter-input="saldo" />
+                              <span>R$ 500 mil+</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-saldo" value="1000000" data-filter-input="saldo" />
+                              <span>R$ 1 mi+</span>
+                            </label>
+                          </div>
+                          <div class="table-filter__actions">
+                            <button
+                              type="button"
+                              class="table-filter__clear"
+                              data-filter-clear="saldo"
+                            >
+                              Limpar filtro
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </th>
+                    <th scope="col" class="table__col--filterable">
+                      <div class="table-filter" data-filter-group="dt">
+                        <button class="table-filter__trigger" type="button" aria-expanded="false">
+                          <span>DT SITUAÇÃO</span>
+                          <i data-feather="chevron-down" class="table-filter__icon" aria-hidden="true"></i>
+                        </button>
+                        <div class="table-filter__dropdown" role="menu">
+                          <p class="table-filter__title">Intervalo de data</p>
+                          <div class="table-filter__options" role="group" aria-label="Data da situação">
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-date" value="LAST_3_MONTHS" data-filter-input="dt" />
+                              <span>&lt; 3 meses</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-date" value="LAST_2_MONTHS" data-filter-input="dt" />
+                              <span>&lt; 2 meses</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-date" value="LAST_MONTH" data-filter-input="dt" />
+                              <span>&lt; 1 mês</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-date" value="THIS_MONTH" data-filter-input="dt" />
+                              <span>Mês atual</span>
+                            </label>
+                          </div>
+                          <div class="table-filter__actions">
+                            <button
+                              type="button"
+                              class="table-filter__clear"
+                              data-filter-clear="dt"
+                            >
+                              Limpar filtro
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </th>
                     <th scope="col">AÇÕES</th>
                   </tr>
                 </thead>

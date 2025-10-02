@@ -7,6 +7,7 @@ import json
 import math
 import time
 from decimal import Decimal
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
@@ -19,7 +20,7 @@ except Exception:  # pragma: no cover - fallback for tests without full psycopg
         ...
 from psycopg.rows import dict_row
 
-from api.models import PlanSummaryResponse, PlansPaging, PlansResponse
+from api.models import PlanSummaryResponse, PlansFilters, PlansPaging, PlansResponse
 from api.dependencies import get_connection_manager
 from infra.db import bind_session
 from infra.repositories._helpers import (
@@ -43,6 +44,78 @@ _STATUS_LABELS = {
     "LIQUIDADO": "LIQUIDADO",
     "RESCINDIDO": "RESCINDIDO",
 }
+
+_FILTER_SITUATION_CODES: tuple[str, ...] = (
+    "P_RESCISAO",
+    "SIT_ESPECIAL",
+    "RESCINDIDO",
+    "LIQUIDADO",
+    "GRDE_EMITIDA",
+)
+_FILTER_SITUATION_SET = set(_FILTER_SITUATION_CODES)
+
+_ALLOWED_OVERDUE_THRESHOLDS: set[int] = {90, 100, 120}
+
+_ALLOWED_SALDO_THRESHOLDS: tuple[int, ...] = (10000, 50000, 150000, 500000, 1_000_000)
+_ALLOWED_SALDO_SET = set(_ALLOWED_SALDO_THRESHOLDS)
+
+_DT_SITUATION_RANGE_CLAUSES: dict[str, tuple[str | None, str | None]] = {
+    "LAST_3_MONTHS": (
+        "dt_situacao >= date_trunc('month', CURRENT_DATE) - INTERVAL '2 months'",
+        None,
+    ),
+    "LAST_2_MONTHS": (
+        "dt_situacao >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'",
+        None,
+    ),
+    "LAST_MONTH": (
+        "dt_situacao >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'",
+        "dt_situacao < date_trunc('month', CURRENT_DATE)",
+    ),
+    "THIS_MONTH": (
+        "dt_situacao >= date_trunc('month', CURRENT_DATE)",
+        None,
+    ),
+}
+
+
+def _normalize_situacao_filter(values: Sequence[str] | None) -> list[str]:
+    if not values:
+        return []
+
+    normalized: list[str] = []
+    for value in values:
+        candidate = str(value or "").strip().upper()
+        if candidate in _FILTER_SITUATION_SET and candidate not in normalized:
+            normalized.append(candidate)
+    return normalized
+
+
+def _normalize_dias_min(value: int | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        candidate = int(value)
+    except (TypeError, ValueError):
+        return None
+    return candidate if candidate in _ALLOWED_OVERDUE_THRESHOLDS else None
+
+
+def _normalize_saldo_min(value: int | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        candidate = int(value)
+    except (TypeError, ValueError):
+        return None
+    return candidate if candidate in _ALLOWED_SALDO_SET else None
+
+
+def _normalize_dt_range(value: str | None) -> str | None:
+    if not value:
+        return None
+    candidate = str(value).strip().upper()
+    return candidate if candidate in _DT_SITUATION_RANGE_CLAUSES else None
 
 
 PLAN_DEFAULT_QUERY = """
@@ -236,8 +309,19 @@ def _should_use_keyset(request: Request | None) -> bool:
     """Decide whether to use keyset pagination based on request query params."""
 
     params = _get_query_params(request)
-    # Opt-in to keyset when any of the new params are provided.
-    return any(k in params for k in {"cursor", "direction", "page", "page_size", "tipo_doc"})
+    # Opt-in to keyset when any of the advanced pagination or filter params are provided.
+    keyset_triggers = {
+        "cursor",
+        "direction",
+        "page",
+        "page_size",
+        "tipo_doc",
+        "situacao",
+        "dias_min",
+        "saldo_min",
+        "dt_sit_range",
+    }
+    return any(k in params for k in keyset_triggers)
 
 
 def _b64url_encode_json(obj: dict[str, Any]) -> str:
@@ -262,53 +346,58 @@ def _build_filters(
     *,
     tipo_doc: str | None,
     occurrences_only: bool = False,
+    situacoes: Sequence[str] | None = None,
+    dias_min: int | None = None,
+    saldo_min: int | None = None,
+    dt_sit_range: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    """Return SQL WHERE clause and params according to filtering semantics.
-
-    - document number: digits only (length 11, 12 or 14) -> compare to documento
-      with optional tipo_doc in {'CNPJ','CPF','CEI'} when provided.
-    - numero_plano: exact or prefix (LIKE)
-    - razao_social: ILIKE contains
-    """
+    """Return SQL WHERE clause and params according to filtering semantics."""
 
     normalized_search = (search or "").strip()
     digits = only_digits(normalized_search)
     params: dict[str, Any] = {}
+    clauses: list[str] = []
 
     if digits and len(digits) in (11, 12, 14):
-        where = ["documento = %(document)s"]
+        clauses.append("documento = %(document)s")
         params["document"] = digits
         if tipo_doc and tipo_doc in {"CNPJ", "CPF", "CEI"}:
-            where.append("tipo_doc = %(tipo_doc)s")
+            clauses.append("tipo_doc = %(tipo_doc)s")
             params["tipo_doc"] = tipo_doc
         else:
-            # keep legacy behavior when not specified
-            where.append("tipo_doc IN ('CNPJ','CPF','CEI')")
-        if occurrences_only:
-            where.append("situacao_codigo <> 'P_RESCISAO'")
-        return " WHERE " + " AND ".join(where), params
-
-    if normalized_search.isdigit() and normalized_search:
+            clauses.append("tipo_doc IN ('CNPJ','CPF','CEI')")
+    elif normalized_search.isdigit() and normalized_search:
         params["number"] = normalized_search
         params["number_prefix"] = f"{normalized_search}%"
-        where_clauses = [
-            "(numero_plano = %(number)s OR numero_plano LIKE %(number_prefix)s)",
-        ]
-        if occurrences_only:
-            where_clauses.append("situacao_codigo <> 'P_RESCISAO'")
-        where = " WHERE " + " AND ".join(where_clauses)
-        return where, params
-
-    if normalized_search:
+        clauses.append("(numero_plano = %(number)s OR numero_plano LIKE %(number_prefix)s)")
+    elif normalized_search:
         params["name_pattern"] = f"%{normalized_search}%"
-        where_clauses = ["razao_social ILIKE %(name_pattern)s"]
-        if occurrences_only:
-            where_clauses.append("situacao_codigo <> 'P_RESCISAO'")
-        where = " WHERE " + " AND ".join(where_clauses)
-        return where, params
+        clauses.append("razao_social ILIKE %(name_pattern)s")
+
+    if situacoes:
+        params["situacoes"] = tuple(situacoes)
+        clauses.append("situacao_codigo = ANY(%(situacoes)s)")
+
+    if dias_min is not None:
+        params["dias_min"] = dias_min
+        clauses.append("atraso_desde <= CURRENT_DATE - make_interval(days => %(dias_min)s)")
+
+    if saldo_min is not None:
+        params["saldo_min"] = saldo_min
+        clauses.append("COALESCE(saldo, 0) >= %(saldo_min)s")
+
+    if dt_sit_range:
+        start_clause, end_clause = _DT_SITUATION_RANGE_CLAUSES[dt_sit_range]
+        if start_clause:
+            clauses.append(start_clause)
+        if end_clause:
+            clauses.append(end_clause)
 
     if occurrences_only:
-        return " WHERE situacao_codigo <> 'P_RESCISAO'", params
+        clauses.append("situacao_codigo <> 'P_RESCISAO'")
+
+    if clauses:
+        return " WHERE " + " AND ".join(clauses), params
     return "", params
 
 
@@ -360,6 +449,10 @@ async def _fetch_keyset_page(
     search: str | None,
     tipo_doc: str | None,
     occurrences_only: bool,
+    situacoes: Sequence[str] | None,
+    dias_min: int | None,
+    saldo_min: int | None,
+    dt_sit_range: str | None,
     page_size: int,
     cursor_token: str | None,
     direction: str | None,
@@ -369,7 +462,15 @@ async def _fetch_keyset_page(
     Returns (rows, has_more) where `rows` are in display order.
     """
 
-    where_sql, params = _build_filters(search, tipo_doc=tipo_doc, occurrences_only=occurrences_only)
+    where_sql, params = _build_filters(
+        search,
+        tipo_doc=tipo_doc,
+        occurrences_only=occurrences_only,
+        situacoes=situacoes,
+        dias_min=dias_min,
+        saldo_min=saldo_min,
+        dt_sit_range=dt_sit_range,
+    )
     seek_condition = ""
     order_sql = " ORDER BY COALESCE(saldo,0) DESC, numero_plano ASC"
     is_prev = direction == "prev"
@@ -513,6 +614,13 @@ async def list_plans(
     direction: str | None = Query(None, pattern="^(next|prev)$", description="Direção da navegação"),
     tipo_doc: str | None = Query(None, pattern="^(CNPJ|CPF|CEI)$", description="Tipo do documento quando 'q' for numérico"),
     occurrences_only: bool = Query(False, description="Quando verdadeiro, retorna apenas planos com ocorrências (exclui P. RESCISAO)"),
+    situacao: list[str] | None = Query(None, description="Filtro por situação (códigos normalizados)"),
+    dias_min: int | None = Query(None, description="Mínimo de dias em atraso (90, 100, 120)"),
+    saldo_min: int | None = Query(None, description="Saldo mínimo em reais (10000, 50000, 150000, 500000, 1000000)"),
+    dt_sit_range: str | None = Query(
+        None,
+        description="Intervalo relativo para dt_situacao (LAST_3_MONTHS, LAST_2_MONTHS, LAST_MONTH, THIS_MONTH)",
+    ),
 ) -> PlansResponse:
     """Return the consolidated plans available for the dashboard."""
 
@@ -523,8 +631,43 @@ async def list_plans(
             detail="Credenciais de acesso ausentes.",
         )
 
+    situacao_values = _normalize_situacao_filter(situacao)
+    dias_threshold = _normalize_dias_min(dias_min)
+    saldo_threshold = _normalize_saldo_min(saldo_min)
+    dt_range_value = _normalize_dt_range(dt_sit_range)
+
+    filters_applied = bool(
+        situacao_values
+        or dias_threshold is not None
+        or saldo_threshold is not None
+        or dt_range_value is not None
+    )
+
+    filters_model = PlansFilters(
+        situacao=situacao_values or None,
+        dias_min=dias_threshold,
+        saldo_min=saldo_threshold,
+        dt_sit_range=dt_range_value,
+    )
+    if not (
+        filters_model.situacao
+        or filters_model.dias_min is not None
+        or filters_model.saldo_min is not None
+        or filters_model.dt_sit_range is not None
+    ):
+        filters_model = None
+
     connection_manager = get_connection_manager()
     use_keyset = _should_use_keyset(request)
+    if not use_keyset:
+        if (
+            filters_applied
+            or cursor
+            or direction
+            or page != 1
+            or page_size != KEYSET_DEFAULT_PAGE_SIZE
+        ):
+            use_keyset = True
     try:
         async with connection_manager as connection:
             await bind_session(connection, matricula)
@@ -534,13 +677,29 @@ async def list_plans(
                     search=q,
                     tipo_doc=tipo_doc,
                     occurrences_only=occurrences_only,
+                    situacoes=situacao_values,
+                    dias_min=dias_threshold,
+                    saldo_min=saldo_threshold,
+                    dt_sit_range=dt_range_value,
                     page_size=page_size,
                     cursor_token=cursor,
                     direction=direction or "next",
                 )
                 # total count with timeout + cache
-                where_sql, count_params = _build_filters(q, tipo_doc=tipo_doc, occurrences_only=occurrences_only)
-                cache_key = f"{matricula}|{q or ''}|{tipo_doc or ''}|occ={occurrences_only}"
+                where_sql, count_params = _build_filters(
+                    q,
+                    tipo_doc=tipo_doc,
+                    occurrences_only=occurrences_only,
+                    situacoes=situacao_values,
+                    dias_min=dias_threshold,
+                    saldo_min=saldo_threshold,
+                    dt_sit_range=dt_range_value,
+                )
+                cache_key = (
+                    f"{matricula}|{q or ''}|{tipo_doc or ''}|occ={occurrences_only}"
+                    f"|situ={','.join(situacao_values) if situacao_values else ''}"
+                    f"|dias={dias_threshold or ''}|saldo={saldo_threshold or ''}|dt={dt_range_value or ''}"
+                )
                 total_count = await _fast_total_count(
                     connection, where_sql=where_sql, params=count_params, cache_key=cache_key
                 )
@@ -606,7 +765,7 @@ async def list_plans(
 
         # Keep 'total' for backward compatibility: when known use total_count else len(items)
         total_compat = (total_count or 0) if total_known else len(items)
-        return PlansResponse(items=items, total=total_compat, paging=paging)
+        return PlansResponse(items=items, total=total_compat, paging=paging, filters=filters_model)
 
     # Legacy offset-based path preserved for compatibility
     if rows:
@@ -614,7 +773,7 @@ async def list_plans(
         total = int(total_raw) if total_raw is not None else len(rows)
     else:
         total = 0
-    return PlansResponse(items=items, total=total, paging=None)
+    return PlansResponse(items=items, total=total, paging=None, filters=filters_model)
 
 
 __all__ = ["router", "list_plans"]
