@@ -192,13 +192,13 @@ input:focus {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
 .controls__group {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: flex-start;
   flex-wrap: wrap;
   flex: 1 1 auto;
@@ -215,7 +215,7 @@ input:focus {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .controls__info {
@@ -1006,6 +1006,26 @@ input:focus {
 .kpi-row--warning { color: #F2C94C; }
 .kpi-row--success { color: #27AE60; }
 .kpi-row--danger { color: #EB5757; }
+
+.running-plan__col .kpi-card {
+  flex: 0 1 200px;
+  padding: 10px 12px;
+  gap: 6px;
+}
+
+.running-plan__col .kpi-row {
+  align-items: baseline;
+  gap: 12px;
+}
+
+.running-plan__col .kpi-label {
+  font-size: 10px;
+  letter-spacing: 0.4px;
+}
+
+.running-plan__col .kpi-value {
+  font-size: 16px;
+}
 
 .filters {
   display: flex;
