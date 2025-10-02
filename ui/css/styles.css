@@ -940,8 +940,13 @@ input:focus {
 
 .running-plan {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr auto;
   gap: 16px;
+  align-items: start;
+}
+
+.running-plan__col:last-child {
+  justify-self: end;
 }
 
 .running-plan__col {
