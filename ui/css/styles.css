@@ -1027,18 +1027,22 @@ input:focus {
 }
 
 .running-plan__col .kpi-row {
-  align-items: baseline;
-  gap: 16px;
+  align-items: center;
+  gap: 24px;
 }
 
 .running-plan__col .kpi-label {
   font-size: 12px;
   letter-spacing: 0.6px;
+  flex: 1;
 }
 
 .running-plan__col .kpi-value {
   font-size: 22px;
   line-height: 1.2;
+  flex-shrink: 0;
+  min-width: 3.5ch;
+  text-align: right;
 }
 
 .filters {
