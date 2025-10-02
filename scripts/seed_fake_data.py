@@ -19,6 +19,7 @@ import psycopg
 from psycopg import Connection, OperationalError
 from psycopg.errors import UndefinedFunction
 from psycopg.rows import dict_row
+from urllib.parse import urlsplit, urlunsplit
 
 
 LOGGER = logging.getLogger("seed")
@@ -236,6 +237,22 @@ def configure_logging() -> None:
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
+
+
+def mask_dsn_for_log(dsn: str) -> str:
+    try:
+        parts = urlsplit(dsn)
+    except ValueError:
+        return "***"
+
+    netloc = parts.netloc
+    if "@" in netloc:
+        creds, host = netloc.rsplit("@", 1)
+        user = creds.split(":", 1)[0] if creds else ""
+        netloc = f"{user}@{host}" if user else host
+
+    masked = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    return masked or "***"
 
 
 def connect() -> Connection:
