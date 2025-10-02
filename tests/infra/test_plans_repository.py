@@ -124,7 +124,12 @@ def test_registrar_historico_insere_quando_situacao_altera():
     connection.cursor.assert_called_once_with()
     sql, params = cursor.execute.call_args[0]
     assert "INSERT INTO app.plano_situacao_hist" in sql
-    assert params == ("plano-1", "sit-1", "2024-05-01", "Carga inicial")
+    assert params == (
+        "plano-1",
+        "sit-1",
+        "2024-05-01T00:00:00+00:00",
+        "Carga inicial",
+    )
 
 
 def test_registrar_historico_ignora_quando_situacao_repetida():
@@ -411,4 +416,3 @@ def test_resolver_resolucao_recarrega_cache_quando_transacao_finaliza():
     assert resultado == "atualizado"
     assert cache.resolucoes["R-123"] == "atualizado"
     assert not cache.pending_resolucoes
-

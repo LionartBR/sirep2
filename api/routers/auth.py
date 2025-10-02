@@ -8,6 +8,7 @@ from psycopg.errors import InvalidAuthorizationSpecification
 
 from api.dependencies import get_connection_manager
 from infra.db import bind_session
+from infra.runtime_credentials import set_gestao_base_password
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,9 @@ async def login(payload: LoginPayload) -> LoginResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro ao autenticar usuário.",
         ) from exc
+
+    senha = (payload.senha or "").strip()
+    set_gestao_base_password(senha or None)
 
     return LoginResponse(matricula=payload.matricula)
 

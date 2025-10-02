@@ -143,7 +143,6 @@ document.addEventListener('DOMContentLoaded', () => {
       username,
       remember: rememberInput.checked,
       name: displayName,
-      password: credentials.password,
     });
     form.reset();
     window.location.replace('/app/index.html');

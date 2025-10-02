@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from typing import Any, Iterable, Optional
 
@@ -336,7 +336,11 @@ class PlansRepository:
                     normalizado = dt_situacao_atual.astimezone(timezone.utc)
                 mudou_em = normalizado.isoformat()
             else:
-                mudou_em = dt_situacao_atual.isoformat()
+                mudou_em = datetime.combine(
+                    dt_situacao_atual,
+                    time.min,
+                    tzinfo=timezone.utc,
+                ).isoformat()
         else:
             mudou_em = datetime.now(timezone.utc).isoformat()
 

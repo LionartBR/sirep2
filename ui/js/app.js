@@ -2260,12 +2260,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (currentUser?.username) {
         payload.matricula = currentUser.username;
       }
-      if (window.Auth?.getPassword) {
-        const senha = Auth.getPassword();
-        if (senha) {
-          payload.senha = senha;
-        }
-      }
 
       const response = await fetch(`${PIPELINE_ENDPOINT}/start`, {
         method: 'POST',

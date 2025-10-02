@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
+from psycopg import AsyncConnection
 from psycopg.rows import dict_row
 
 from api.models import PlanSummaryResponse, PlansResponse
@@ -40,12 +41,19 @@ def _resolve_request_matricula(request: Request | None) -> str | None:
 
 
 def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
-    """Map a row from vw_planos_busca to PlanSummaryResponse."""
+    """Map a treatment table row joined with vw_planos_busca into the response model."""
 
     number = str(row.get("numero_plano") or "").strip()
     document = normalize_document(row.get("documento"))
     company_name_raw = row.get("razao_social") or row.get("razao")
     company_name = str(company_name_raw).strip() or None if company_name_raw else None
+    status_raw = row.get("situacao")
+    status = str(status_raw).strip() or None if status_raw else None
+    days_overdue_raw = row.get("dias_em_atraso")
+    try:
+        days_overdue = int(days_overdue_raw) if days_overdue_raw is not None else None
+    except (TypeError, ValueError):
+        days_overdue = None
     balance_raw = row.get("saldo")
     status_date = extract_date_from_timestamp(row.get("dt_situacao"))
 
@@ -53,11 +61,28 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
         number=number,
         document=document,
         company_name=company_name,
-        status=None,
-        days_overdue=None,
+        status=status,
+        days_overdue=days_overdue,
         balance=balance_raw,
         status_date=status_date,
     )
+
+
+_MIGRATION_SQL = """
+    INSERT INTO app.tratamento_plano (tenant_id, numero_plano)
+    SELECT app.current_tenant_id(), v.numero_plano
+      FROM app.vw_planos_busca AS v
+     WHERE v.situacao_codigo = 'P_RESCISAO'
+    ON CONFLICT (tenant_id, numero_plano) DO NOTHING
+"""
+
+
+async def _migrate_treatment_plans(connection: AsyncConnection) -> None:
+    """Insert P_RESCISAO plans into the treatment queue, avoiding duplicates."""
+
+    async with connection.cursor() as cur:
+        await cur.execute(_MIGRATION_SQL)
+    await connection.commit()
 
 
 @router.get("/plans", response_model=PlansResponse)
@@ -78,11 +103,15 @@ async def list_treatment_plans(
     offset = (page - 1) * page_size
 
     sql = (
-        "SELECT numero_plano, documento, razao_social, saldo, dt_situacao,"
-        " COUNT(*) OVER () AS total_count"
-        "  FROM app.vw_planos_busca"
-        " WHERE situacao_codigo = 'P_RESCISAO'"
-        " ORDER BY saldo DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano"
+        "SELECT v.numero_plano, v.documento, v.razao_social, v.situacao,"
+        "       v.dias_em_atraso, v.saldo, v.dt_situacao,"
+        "       COUNT(*) OVER () AS total_count"
+        "  FROM app.tratamento_plano AS tp"
+        "  JOIN app.vw_planos_busca AS v"
+        "    ON v.numero_plano = tp.numero_plano"
+        " WHERE tp.tenant_id = app.current_tenant_id()"
+        "   AND v.situacao_codigo = 'P_RESCISAO'"
+        " ORDER BY v.saldo DESC NULLS LAST, v.dt_situacao DESC NULLS LAST, v.numero_plano"
         " LIMIT %(limit)s OFFSET %(offset)s"
     )
 
@@ -107,10 +136,10 @@ async def list_treatment_plans(
 
 @router.post("/migrate", status_code=status.HTTP_204_NO_CONTENT)
 async def migrate_plans(request: Request) -> None:
-    """Synchronously 'migrate' all P_RESCISAO plans to the Treatment view.
+    """Synchronously copy all P_RESCISAO plans into the treatment queue.
 
-    For now, migration is a no-op that validates access and returns 204,
-    since the Treatment table reads directly from vw_planos_busca.
+    Reads the current tenant plans from ``app.vw_planos_busca`` and inserts the
+    plan numbers into ``app.tratamento_plano``, leaving existing entries untouched.
     """
 
     matricula = _resolve_request_matricula(request)
@@ -119,9 +148,17 @@ async def migrate_plans(request: Request) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciais de acesso ausentes.",
         )
-    # No operation required: the GET endpoint sources directly from the view.
-    return None
+    connection_manager = get_connection_manager()
+    try:
+        async with connection_manager as connection:
+            await bind_session(connection, matricula)
+            await _migrate_treatment_plans(connection)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Erro ao migrar planos para tratamento")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Não foi possível migrar os planos para tratamento.",
+        ) from exc
 
 
 __all__ = ["router"]
-
