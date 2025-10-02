@@ -809,7 +809,7 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
         assert "dt_situacao >= date_trunc('month', CURRENT_DATE)" in sql
         params = cursor_obj.executed_params
         assert params is not None
-        assert params["situacoes"] == ("P_RESCISAO", "RESCINDIDO")
+        assert list(params["situacoes"]) == ["P_RESCISAO", "RESCINDIDO"]
         assert params["dias_min"] == 90
         assert params["saldo_min"] == 50000
 

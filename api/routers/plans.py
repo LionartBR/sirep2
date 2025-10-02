@@ -375,8 +375,8 @@ def _build_filters(
         clauses.append("razao_social ILIKE %(name_pattern)s")
 
     if situacoes:
-        params["situacoes"] = tuple(situacoes)
-        clauses.append("situacao_codigo = ANY(%(situacoes)s)")
+        params["situacoes"] = list(situacoes)
+        clauses.append("situacao_codigo = ANY(%(situacoes)s::text[])")
 
     if dias_min is not None:
         params["dias_min"] = dias_min
