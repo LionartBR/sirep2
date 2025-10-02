@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.params import Param
 from psycopg import AsyncConnection
 from psycopg.errors import InvalidAuthorizationSpecification
 try:  # pragma: no cover - allow running under test stubs
@@ -79,12 +80,25 @@ _DT_SITUATION_RANGE_CLAUSES: dict[str, tuple[str | None, str | None]] = {
 }
 
 
-def _normalize_situacao_filter(values: Sequence[str] | None) -> list[str]:
-    if not values:
+def _unwrap_query_param(value: Any) -> Any:
+    """Return the underlying default when a FastAPI ``Param`` is provided."""
+
+    if isinstance(value, Param):
+        return value.default
+    return value
+
+
+def _normalize_situacao_filter(values: Sequence[str] | str | None) -> list[str]:
+    if values is None:
         return []
 
+    if isinstance(values, str):
+        iterable: Sequence[str] = [values]
+    else:
+        iterable = values
+
     normalized: list[str] = []
-    for value in values:
+    for value in iterable:
         candidate = str(value or "").strip().upper()
         if candidate in _FILTER_SITUATION_SET and candidate not in normalized:
             normalized.append(candidate)
@@ -630,6 +644,30 @@ async def list_plans(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciais de acesso ausentes.",
         )
+
+    q = _unwrap_query_param(q)
+    limit = _unwrap_query_param(limit)
+    offset = _unwrap_query_param(offset)
+    page = _unwrap_query_param(page)
+    page_size = _unwrap_query_param(page_size)
+    cursor = _unwrap_query_param(cursor)
+    direction = _unwrap_query_param(direction)
+    tipo_doc = _unwrap_query_param(tipo_doc)
+    occurrences_only = _unwrap_query_param(occurrences_only)
+    situacao = _unwrap_query_param(situacao)
+    dias_min = _unwrap_query_param(dias_min)
+    saldo_min = _unwrap_query_param(saldo_min)
+    dt_sit_range = _unwrap_query_param(dt_sit_range)
+
+    limit = int(limit) if limit is not None else DEFAULT_LIMIT
+    offset = int(offset) if offset is not None else 0
+    page = int(page) if page is not None else 1
+    page_size = int(page_size) if page_size is not None else KEYSET_DEFAULT_PAGE_SIZE
+    occurrences_only = bool(occurrences_only) if occurrences_only is not None else False
+    cursor = str(cursor) if cursor is not None else None
+    direction = str(direction) if direction is not None else None
+    tipo_doc = str(tipo_doc).upper() if tipo_doc else None
+    dt_sit_range = str(dt_sit_range).upper() if dt_sit_range else None
 
     situacao_values = _normalize_situacao_filter(situacao)
     dias_threshold = _normalize_dias_min(dias_min)

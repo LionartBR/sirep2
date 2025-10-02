@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Iterable, Optional
 
@@ -142,6 +142,7 @@ class PlansRepository:
             situacao_id=situacao_id,
             situacao_codigo=situacao_codigo,
             situacao_anterior=situacao_anterior,
+            dt_situacao_atual=campos.get("dt_situacao_atual"),
         )
 
         parcelas_preparadas = self._preparar_parcelas(parcelas_brutas)
@@ -330,16 +331,12 @@ class PlansRepository:
         if dt_situacao_atual is not None:
             if isinstance(dt_situacao_atual, datetime):
                 if dt_situacao_atual.tzinfo is None:
-                    mudou_em = dt_situacao_atual.replace(tzinfo=timezone.utc)
+                    normalizado = dt_situacao_atual.replace(tzinfo=timezone.utc)
                 else:
-                    mudou_em = dt_situacao_atual.astimezone(timezone.utc)
-                mudou_em = mudou_em.isoformat()
+                    normalizado = dt_situacao_atual.astimezone(timezone.utc)
+                mudou_em = normalizado.isoformat()
             else:
-                mudou_em = datetime.combine(
-                    dt_situacao_atual,
-                    time.min,
-                    tzinfo=timezone.utc,
-                ).isoformat()
+                mudou_em = dt_situacao_atual.isoformat()
         else:
             mudou_em = datetime.now(timezone.utc).isoformat()
 
