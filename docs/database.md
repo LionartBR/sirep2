@@ -1,266 +1,381 @@
 # SIREP DB — Documentação do Esquema (PostgreSQL)
 
-- **Versão PG:** 15.6+  
-- **Banco de Dados:** `sirep_db`  
-- **Timezone:** `America/Sao_Paulo`
-- **Encoding:** `UTF8`  
-- **Collate/CType (Windows):** `Portuguese_Brazil.1252`
-- **Extensões usadas:** `pgcrypto` (UUID/gen_random_uuid), `citext`, `pg_trgm`, `btree_gin`
+* **PostgreSQL**: **17.6**
+* **Database**: `sirep_db`
+* **Timezone**: `America/Sao_Paulo`
+* **Encoding**: `UTF8`
+* **Locale (Windows)**: `Portuguese_Brazil.1252` (collate/ctype)
+* **Extensões habilitadas**:
+
+  * **`pgcrypto`** (→ `gen_random_uuid()` / UUID)
+  * **`citext`** (texto case‑insensitive em catálogos/usuários)
+  * **`pg_trgm`** (trigram para busca por razão social)
+  * *(opcional)* `btree_gin`
 
 ## Visão geral
 
-- Arquitetura multi-tenant com RLS por `tenant_id` (todas as tabelas de negócio possuem essa coluna).
-- Perfis de sessão: `admin`, `worker`, `tech` (supervisão).
-- Auditoria com carimbos `created_at/_by`, `updated_at/_by`, `deleted_at/_by` e histórico de situação de plano.
-- Particionamento mensal para logs/auditoria (`audit.*`).
+* **Multi‑tenant** com **RLS**: todas as tabelas de negócio têm `tenant_id` e policies baseadas em `app.current_tenant_id()`.
+* **Perfis**: `admin`, `worker`, `tech` (papel do banco `sirep_tech`).
+* **Auditoria**: `created_at/_by`, `updated_at/_by`, `deleted_at/_by` + **histórico de situação** (`app.plano_situacao_hist`).
+* **Desempenho para UI**:
+
+  * `app.plano.dt_situacao_atual` (data efetiva da situação, mantida por trigger) — elimina `LATERAL` na view de busca.
+  * **Índices sargáveis** para SITUAÇÃO, DIAS, SALDO, DT SITUAÇÃO, razão social, documento.
+  * **Paginação por keyset** (ordenar por `saldo_total DESC, numero_plano`).
+
+---
 
 ## Papéis (roles)
 
-- `sirep_tech`: administração técnica (DDL, bypass de RLS via funções).
-- `sirep_admin`: administração funcional por tenant.
-- `sirep_worker`: operação (atualização de planos, leitura do restante).
-- `sirep_app`: papel de conexão do backend (RLS garante o isolamento).
+* **`sirep_tech`**: DDL/ops técnicas; pode ser owner de funções `SECURITY DEFINER` quando necessário.
+* **`sirep_admin`**: administração funcional **no próprio tenant**.
+* **`sirep_worker`**: operação (ex.: `UPDATE` em `app.plano` do tenant).
+* **`sirep_app`**: papel de conexão do backend; privilégios amplos de `SELECT`/DML delegados a RLS.
+
+---
 
 ## Schemas
 
-- `ref` — catálogos/lookups (códigos estáveis, sem acento/espaço).
-- `app` — tabelas de negócio e funções de sessão/RLS.
-- `audit` — execução de pipelines e eventos (particionado por data).
+* **`ref`** — Catálogos/lookups (códigos estáveis **sem acento/espaço**).
+* **`app`** — Tabelas de negócio, views para UI, funções de sessão/RLS.
+* **`audit`** — Logs de execução/eventos, **particionados por mês** (retenção 5 anos).
 
-## Convenções comuns de colunas
+---
 
-- `id uuid PRIMARY KEY DEFAULT gen_random_uuid()`
-- `tenant_id uuid NOT NULL` (FK `app.tenant`)
-- Soft-audit: `created_at timestamptz DEFAULT now()`, `created_by uuid`, `updated_at timestamptz`, `updated_by uuid`, `deleted_at timestamptz`, `deleted_by uuid`
-- Tabelas `ref.*`: `codigo citext UNIQUE`, `descricao text NOT NULL`, `sort_order smallint`, `ativo boolean DEFAULT true`
+## Convenções de colunas (negócio)
 
-## 1 Catálogos — `ref.*`
+* `id uuid PRIMARY KEY DEFAULT gen_random_uuid()`
+* `tenant_id uuid NOT NULL` (FK `app.tenant`)
+* Soft‑audit padrão:
+  `created_at timestamptz DEFAULT now()`, `created_by uuid`,
+  `updated_at timestamptz`, `updated_by uuid`,
+  `deleted_at timestamptz`, `deleted_by uuid`
 
-### 1.1 `ref.tipo_inscricao`
+---
 
-- Campos: `id`, `codigo` (`CNPJ` | `CPF` | `CEI`), `descricao`, `sort_order`, `ativo`
-- Índices: `UNIQUE(codigo)`
+## 1. Catálogos — `ref.*`
 
-### 1.2 `ref.situacao_plano`
+> Todos com: `id uuid`, `codigo citext UNIQUE`, `descricao text NOT NULL`, `sort_order smallint NULL`, `ativo boolean NOT NULL DEFAULT true`.
 
-- Exemplos de `codigo`: `EM_DIA`, `P_RESCISAO`, `RESCINDIDO`, `LIQUIDADO`, `SIT_ESPECIAL`, `GRDE_EMITIDA`
-- Índices: `UNIQUE(codigo)`
+* **`ref.tipo_inscricao`** — `CNPJ`, `CPF`, `CEI`.
+* **`ref.situacao_plano`** — `EM_DIA`, `P_RESCISAO`, `RESCINDIDO`, `LIQUIDADO`, `SIT_ESPECIAL`, `GRDE_EMITIDA`.
+* **`ref.tipo_plano`** — `ADM`, `JUD`, `INS`, `AJ`, `AI`, `AJI`, `JI`, `JA`.
+* **`ref.resolucao`** — p.ex. `974/20`, `430/98`.
+* **`ref.situacao_parcela`** — `PAGA`, `EM_ATRASO`, `A_VENCER`.
+* **`ref.base_fgts`** — p.ex. `SP`, `RJ`, `BR`, `BA`, `SC`, …
+  *(usada em `app.empregador_base_fgts`)*
 
-### 1.3 `ref.tipo_plano`
+---
 
-- Exemplos de `codigo`: `ADM`, `JUD`, `INS`, `AJ`, `AI`, `AJI`, `JI`, `JA`
-- Índices: `UNIQUE(codigo)`
-
-### 1.4 `ref.resolucao`
-
-- Exemplos de `codigo`: `974/20`, `430/98`
-- Índices: `UNIQUE(codigo)`
-
-### 1.5 `ref.situacao_parcela`
-
-- Exemplos de `codigo`: `PAGA`, `EM_ATRASO`, `A_VENCER`
-- Índices: `UNIQUE(codigo)`
-
-### 1.6 `ref.base_fgts`
-
-- Exemplos de `codigo`: `SP`, `RJ`, `BR`, `BA`, `SC`, …
-- Índices: `UNIQUE(codigo)`
-
-### (Opcional) `ref.etapa_gestao`
-
-- Catálogo de etapas do pipeline
-- Códigos: `CAPTURA_PLANOS`, `SITUACAO_ESPECIAL`, `GUIA_GRDE`
-
-## 2 Negócio — `app.*`
+## 2. Negócio — `app.*`
 
 ### 2.1 `app.tenant`
 
-- Campos: `id`, `nome citext UNIQUE`, `ativo boolean`, soft-audit
-- RLS: `SELECT` do próprio `id` ou `is_tech()`
-- Índices: `UNIQUE(nome)`
+* **Campos**: `id`, `nome citext UNIQUE`, `ativo`, soft‑audit.
+* **RLS**: `USING (id = app.current_tenant_id() OR app.is_tech())`.
 
 ### 2.2 `app.usuario`
 
-- Campos: `id`, `tenant_id`, `matricula citext`, `nome text`, `email citext NOT NULL`, `perfil text CHECK (perfil IN ('admin','worker'))`, `ativo boolean`, soft-audit
-- Restrição única: `(tenant_id, matricula)`
-- RLS: `SELECT` por tenant; `INSERT/UPDATE/DELETE` apenas `admin/tech`
+* **Campos**: `id`, `tenant_id`, `matricula citext`, `nome`, `email citext NOT NULL`, `perfil text CHECK (perfil IN ('admin','worker'))`, `ativo`, soft‑audit.
+* **UNIQUE**: `(tenant_id, matricula)`.
+* **RLS**: `SELECT` por tenant; `INSERT/UPDATE/DELETE` por `admin/tech`.
 
 ### 2.3 `app.empregador`
 
-- Campos: `id`, `tenant_id`, `tipo_inscricao_id` (FK `ref.tipo_inscricao`), `numero_inscricao text` (só dígitos), `razao_social citext`, `email`, `telefone`, `ativo`, soft-audit
-- Restrição única: `(tenant_id, tipo_inscricao_id, numero_inscricao)`
-- Índices: `GIN (razao_social gin_trgm_ops)`, `(tenant_id, numero_inscricao)`
-- RLS: `SELECT` por tenant; `INSERT/UPDATE/DELETE` `admin/tech`
+* **Campos**: `id`, `tenant_id`, `tipo_inscricao_id` (FK `ref.tipo_inscricao`), `numero_inscricao text` (**só dígitos**), `razao_social citext`, `email`, `telefone`, `ativo`, soft‑audit.
+* **UNIQUE**: `(tenant_id, tipo_inscricao_id, numero_inscricao)`.
+* **Índices**: `GIN (razao_social gin_trgm_ops)`, `(tenant_id, numero_inscricao)`.
+* **RLS**: `SELECT` por tenant; DML por `admin/tech`.
 
 ### 2.4 `app.empregador_base_fgts`
 
-- Campos: `tenant_id`, `empregador_id`, `base_fgts_id` (FK `ref.base_fgts`)
-- PK: `(tenant_id, empregador_id, base_fgts_id)`
-- RLS: igual a `empregador`
+* **Campos**: `tenant_id`, `empregador_id` (FK `app.empregador`), `base_fgts_id` (FK `ref.base_fgts`) — **PK composta** `(tenant_id, empregador_id, base_fgts_id)`.
+* **RLS**: igual a `empregador`.
 
 ### 2.5 `app.plano`
 
-- Campos principais: `id`, `tenant_id`, `empregador_id` (FK `app.empregador`), `numero_plano text` (só dígitos, `UNIQUE` global), `tipo_plano_id` (FK `ref.tipo_plano`), `resolucao_id` (FK `ref.resolucao`), `situacao_plano_id` (FK `ref.situacao_plano`), `competencia_ini date`, `competencia_fim date`, `dt_proposta date`, `qtd_parcelas smallint`, `saldo_total numeric`, `atraso_desde date` (mantido por trigger), `representacao text`, `status text`, `dt_situacao_atual timestamptz`, soft-audit
-- Índices: `UNIQUE(numero_plano)`, `(tenant_id, numero_plano)`, `(empregador_id)`, `(situacao_plano_id)`
-- RLS: `SELECT` por tenant; `INSERT` `admin/tech`; `UPDATE` `worker/admin/tech` (linhas do tenant); `DELETE` apenas `admin/tech`
+* **Essenciais**:
+  `id`, `tenant_id`, `empregador_id` (FK),
+  `numero_plano text` (**só dígitos, UNIQUE global**),
+  `tipo_plano_id` (FK `ref.tipo_plano`),
+  `resolucao_id` (FK `ref.resolucao`),
+  `situacao_plano_id` (FK `ref.situacao_plano`),
+  `competencia_ini date`, `competencia_fim date`,
+  `dt_proposta date`, `qtd_parcelas smallint`,
+  `saldo_total numeric`,
+  `atraso_desde date` (**derivado**),
+  `representacao text`, `status text`,
+  **`dt_situacao_atual timestamptz`** (**derivado por trigger**),
+  soft‑audit.
+
+* **Índices principais**:
+
+  * `UNIQUE(numero_plano)`
+  * `idx_plano_tenant_situacao` → `(tenant_id, situacao_plano_id)`
+  * `idx_plano_tenant_atraso` → `(tenant_id, atraso_desde)`
+  * `idx_plano_tenant_saldo_ord` → `(tenant_id, saldo_total DESC, numero_plano)` **(keyset)**
+  * `idx_plano_tenant_dt_sit` → `(tenant_id, dt_situacao_atual)`
+
+* **RLS**:
+
+  * `SELECT`: por tenant.
+  * `INSERT`: `admin/tech`.
+  * `UPDATE`: `worker/admin/tech` (linhas do tenant).
+  * `DELETE`: `admin/tech`.
 
 ### 2.6 `app.plano_situacao_hist`
 
-- Campos: `id`, `tenant_id`, `plano_id` (FK `app.plano`), `situacao_plano_id` (FK `ref.situacao_plano`), `mudou_em timestamptz` (data efetiva), `mudou_por uuid`, `observacao text`
-- Índices: `(plano_id, mudou_em DESC)`, `(tenant_id)`, `(situacao_plano_id)`
-- RLS: `SELECT` por tenant; `INSERT` `worker/admin/tech` (via trigger); `UPDATE/DELETE` `admin/tech`
+* **Campos**: `id`, `tenant_id`, `plano_id` (FK `app.plano` **ON DELETE CASCADE**), `situacao_plano_id` (FK `ref.situacao_plano`), `mudou_em timestamptz`, `mudou_por uuid`, `observacao text`.
+* **Índices**: `(plano_id, mudou_em DESC)`, `(tenant_id)`, `(situacao_plano_id)`.
+* **RLS**: `SELECT` por tenant; `INSERT` via trigger; `UPDATE/DELETE` por `admin/tech`.
+
+> **Triggers & lógica** (ver §4.3): usamos **duas** triggers separadas (`BEFORE`/`AFTER`) para evitar violação de FK.
 
 ### 2.7 `app.parcela`
 
-- Campos: `id`, `tenant_id`, `plano_id`, `nr_parcela int`, `vencimento date`, `valor numeric`, `situacao_parcela_id` (FK `ref.situacao_parcela`), `pago_em date`, `valor_pago numeric`, `qtd_parcelas_total smallint`, soft-audit
-- Restrição única: `(tenant_id, plano_id, nr_parcela, vencimento)`
-- Índices: `(tenant_id, situacao_parcela_id, vencimento)`, `(plano_id)`
-- RLS: igual a `plano`
+* **Campos**: `id`, `tenant_id`, `plano_id` (FK), `nr_parcela int`, `vencimento date`, `valor numeric`, `situacao_parcela_id` (FK `ref.situacao_parcela`), `pago_em date`, `valor_pago numeric`, `qtd_parcelas_total smallint`, soft‑audit.
+* **UNIQUE**: `(tenant_id, plano_id, nr_parcela, vencimento)`.
+* **Índices**: `(tenant_id, situacao_parcela_id, vencimento)`, `(plano_id)`.
+* **RLS**: igual a `plano`.
+* **Trigger**: recalcula `plano.atraso_desde` após DML (ver §4.3).
 
 ### 2.8 `app.comunicacao`
 
-- Uso para contato com empregador
-- Campos: `id`, `tenant_id`, `plano_id`, `metodo_id` (FK `ref.metodo_comunicacao`), `assunto text`, `corpo text`, `enviado_em timestamptz`, `status text`, soft-audit
-- RLS: `SELECT` por tenant; `INSERT/UPDATE/DELETE` `admin/tech`
+* **Campos**: `id`, `tenant_id`, `plano_id` (FK), `metodo_id` (FK `ref.metodo_comunicacao`), `assunto`, `corpo`, `enviado_em`, `status`, soft‑audit.
+* **RLS**: leitura por tenant; DML por `admin/tech`.
 
-## 3 Auditoria/Logs — `audit.*` (particionado)
+---
 
-> Nota: Em tabelas particionadas por `RANGE`, a PK/UNIQUE deve incluir a coluna de partição.
+## 3. Auditoria & Logs — `audit.*` (particionado por mês)
+
+> **Retenção**: 5 anos (60 meses).
+> **PKs** incluem a coluna de partição (boa prática em tabelas particionadas).
 
 ### 3.1 `audit.job_run`
 
-- Partição por: `started_at timestamptz`
-- Campos: `tenant_id`, `started_at`, `id`, `job_name text`, `status text` (`RUNNING` | `SUCCESS` | `ERROR` | `SKIPPED`), `finished_at timestamptz`, `payload jsonb`, `error_msg text`, `user_id uuid`
-- PK: `(tenant_id, started_at, id)`
-- Índices: `(tenant_id, started_at)`, `(job_name, started_at)`
-- RLS: `SELECT/INSERT/UPDATE` por tenant; `tech` geral
-- Helpers: `audit._ym(ts)`, `audit.ensure_job_run_partition(ts)`, trigger `audit.tg_ensure_job_run_partition()`
+* **Partição**: `RANGE (started_at)`
+* **Campos**: `tenant_id`, `id`, `job_name text`, `status text` (`RUNNING`/`SUCCESS`/`ERROR`/`SKIPPED`), `started_at timestamptz`, `finished_at timestamptz`, `payload jsonb`, `error_msg text`, `user_id uuid`.
+* **PK**: `(tenant_id, started_at, id)`.
+* **Índices**: `(tenant_id, started_at)`, `(tenant_id, job_name, started_at DESC)`.
+* **RLS**: `SELECT/INSERT/UPDATE` por tenant; `tech` geral.
+* **Helpers**: `audit._ym(ts)`, `audit.drop_old_partitions_job_run(p_keep_months)`; *(se aplicou)* `audit.ensure_job_run_partition()` + trigger para auto‑criação.
 
-### 3.2 `audit.job_step`
+### 3.2 `audit.evento`
 
-- Partição por: `job_started_at timestamptz`
-- Campos: `tenant_id`, `job_started_at`, `job_id`, `step_code citext`, `etapa_id uuid NULL`, `status text` (`PENDING` | `RUNNING` | `SUCCESS` | `ERROR` | `SKIPPED`), `started_at`, `finished_at`, `message text`, `data jsonb`, `user_id`
-- PK: `(tenant_id, job_started_at, job_id, step_code)`
-- FK lógica: `(tenant_id, job_started_at, job_id) → audit.job_run`
-- Índices: `(tenant_id, job_started_at DESC, job_id)`, `(step_code)`
-- RLS/Helpers: iguais a `job_run`; `audit.ensure_job_step_partition`, trigger `tg_ensure_job_step_partition`
+* **Partição**: `RANGE (event_time)`
+* **Campos**: `tenant_id`, `id`, `event_time`, `entity text` (`'pipeline'|'plano'|...`), `entity_id uuid`, `event_type text`, `severity text` (`'info'|'warn'|'error'`), `message`, `data jsonb`, `user_id uuid`.
+* **PK**: `(tenant_id, event_time, id)`.
+* **Índices**: `(tenant_id, event_time)`, `(entity, event_time)`.
+* **RLS**: `SELECT/INSERT/UPDATE` por tenant; `tech` geral.
+* **Helpers**: `audit.drop_old_partitions_evento(p_keep_months)`; *(se aplicou)* `audit.ensure_evento_partition()` + trigger.
 
-### 3.3 `audit.evento`
+### 3.3 `app.vw_pipeline_status` (view)
 
-- Partição por: `event_time timestamptz`
-- Campos: `tenant_id`, `event_time`, `id`, `entity text` (`'pipeline' | 'plano' | ...`), `entity_id uuid`, `event_type text`, `severity text` (`'info' | 'warn' | 'error'`), `message text`, `data jsonb`, `user_id uuid`
-- PK: `(tenant_id, event_time, id)`
-- Índices: `(tenant_id, event_time)`, `(entity, event_time)`
-- RLS/Helpers: `audit.ensure_evento_partition`, trigger `tg_ensure_evento_partition`
+* **Colunas**: `job_name`, `status`, `last_update_at`, `duration_text`
+  (última execução por `job_name` do tenant da sessão).
+* **Uso**: UI exibe “Última atualização em” e “Duração da última atualização”.
 
-## 4 Funções — `app.*`
+---
 
-### Sessão/Contexto & RLS
+## 4. Funções & Triggers — `app.*`
 
-- `app.set_tenant(p_tenant uuid) RETURNS void` — define `app.tenant_id` na sessão.
-- `app.set_user(p_user uuid) RETURNS void` — define `app.user_id` na sessão.
-- `app.current_tenant_id() RETURNS uuid` — lê GUC da sessão.
-- `app.current_user_id() RETURNS uuid` — lê GUC da sessão.
-- `app.current_user_perfil() RETURNS text` — retorna `'admin' | 'worker' | NULL`.
-- `app.current_user_is_admin() RETURNS boolean`
-- `app.current_user_is_worker() RETURNS boolean`
-- `app.is_tech() RETURNS boolean` — `pg_has_role(current_user,'sirep_tech','member')`.
+### 4.1 Sessão/Contexto & RLS (GUCs)
 
-### Provisionamento/Login
+* **GUCs**: `app.tenant_id`, `app.user_id`, `app.situacao_effective_ts`.
+* **Funções**:
 
-- `app.ensure_usuario(p_tenant, p_matricula, p_nome NULL, p_email NULL, p_perfil NULL) RETURNS uuid` — upsert de usuário por `(tenant, matricula)`, `email` obrigatório (usa placeholder se faltar).
-- `app.set_principal(p_tenant, p_matricula, p_nome NULL, p_email NULL, p_perfil NULL) RETURNS uuid` — provisiona/garante usuário e define `app.tenant_id`/`app.user_id`.
-- `app.set_principal_by_matricula(p_matricula, p_auto_create boolean DEFAULT false, p_nome NULL, p_email NULL, p_perfil text DEFAULT 'admin') RETURNS uuid` — resolve `(tenant,user)` pela matrícula; cria tenant/usuário padrão se `p_auto_create=true`.
-- `app.provision_tenant_and_user(p_matricula, p_nome, p_email NULL, p_perfil 'admin', p_tenant_nome NULL) RETURNS (tenant_id uuid, user_id uuid)` — cria (ou reutiliza) tenant `TENANT_<matricula>` e usuário; ajusta sessão.
-- `app.login_matricula(p_matricula citext) RETURNS uuid` — usado pelo backend para ligar sessão (define tenant, usuário e perfil ativos).
+  * `app.set_tenant(p_tenant uuid) RETURNS void`
+  * `app.set_user(p_user uuid) RETURNS void`
+  * `app.current_tenant_id() RETURNS uuid`
+  * `app.current_user_id() RETURNS uuid`
+  * `app.current_user_perfil() RETURNS text`
+  * `app.current_user_is_admin() RETURNS boolean`
+  * `app.current_user_is_worker() RETURNS boolean`
+  * `app.is_tech() RETURNS boolean`
+  * **Login/provisionamento**:
 
-### Regras de negócio
+    * `app.ensure_usuario(p_tenant, p_matricula, p_nome NULL, p_email NULL, p_perfil NULL) RETURNS uuid` *(usa e‑mail placeholder se não vier)*
+    * `app.set_principal(...) RETURNS uuid`
+    * `app.set_principal_by_matricula(p_matricula, p_auto_create boolean DEFAULT false, ...) RETURNS uuid`
+    * `app.provision_tenant_and_user(...) RETURNS (tenant_id uuid, user_id uuid)`
+    * `app.login_matricula(p_matricula citext) RETURNS uuid` *(preferido na API para ligar sessão)*
 
-- `app.recalc_plano_atraso(p_tenant uuid, p_plano uuid) RETURNS void` — recalcula `plano.atraso_desde` com base nas parcelas em atraso.
+### 4.2 Regras de negócio
 
-### Triggers (funções)
+* `app.recalc_plano_atraso(p_tenant uuid, p_plano uuid) RETURNS void` — recalcula `plano.atraso_desde` a partir de `app.parcela`.
 
-- `app.tg_enforce_tenant()` — preenche `NEW.tenant_id` e impede cross-tenant.
-- `app.tg_audit_stamp()` — mantém `created_at/_by` e `updated_at/_by`.
-- `app.tg_audit_stamp_hist()` — idem para histórico (só carimba se campo vier `NULL`).
-- `app.tg_plano_log_situacao()` — insere linha em `plano_situacao_hist` ao `INSERT/UPDATE` de `plano`. Usa `current_setting('app.situacao_effective_ts', true)` se definido; caso contrário, `now()`.
-- `app.tg_parcela_recalc_plano_atraso()` — ao `INSERT/UPDATE/DELETE` em `app.parcela`, chama `app.recalc_plano_atraso(...)`.
+### 4.3 Triggers (principais)
 
-## 5 Views úteis
+> **Situação do plano** (duas triggers para evitar FK antes da linha existir):
+
+* **`app.tg_plano_set_dt_situacao()`** — **BEFORE INSERT/UPDATE OF situacao_plano_id** em `app.plano`
+  Seta `NEW.dt_situacao_atual` usando `app._situacao_effective_ts()` (derivado de `app.situacao_effective_ts` ou `now()`).
+
+* **`app.tg_plano_log_situacao_after()`** — **AFTER INSERT/UPDATE OF situacao_plano_id** em `app.plano`
+  Insere em `app.plano_situacao_hist` (`mudou_em = NEW.dt_situacao_atual`), sem violar a FK.
+
+* **`app.tg_parcela_recalc_plano_atraso()`** — após DML em `app.parcela`, chama `app.recalc_plano_atraso(...)`.
+
+* **`app.tg_audit_stamp()`** — carimba `created_*`/`updated_*`.
+
+* **`app.tg_enforce_tenant()`** — garante `NEW.tenant_id` coerente e evita cross‑tenant.
+
+> **Helper**: `app._situacao_effective_ts() RETURNS timestamptz` — resolve timestamp efetivo.
+
+---
+
+## 5. Views para UI
 
 ### 5.1 `app.vw_planos_busca`
 
-- Colunas: `plano_id`, `numero_plano`, `razao_social`, `tipo_doc` (`CNPJ/CPF/CEI`), `documento` (só dígitos), `situacao_codigo/descricao`, `dias_em_atraso`, `saldo`, `dt_situacao`
-- Uso: busca por número do plano, razão social (`ILIKE %...%`) e documento (`CNPJ/CEI/CPF`).
+* **Colunas** *(para a grid e filtros)*:
+  `plano_id`, `numero_plano`, `razao_social`,
+  `tipo_doc` (`CNPJ/CPF/CEI`), `documento` (só dígitos),
+  `situacao_codigo`, `situacao`,
+  `dias_em_atraso` (cálculo visual),
+  `saldo`,
+  **`dt_situacao`** (de `p.dt_situacao_atual::date`),
+  **`atraso_desde`** (exposto p/ filtros sargáveis de atraso).
 
-### 5.2 Exports (opcional, usadas pela UI)
+* **Dicas de filtro sargável** (usadas pelo backend):
 
-- `app.vw_export_rescindidos_cnpj` / `app.vw_export_rescindidos_cpf` / `app.vw_export_rescindidos_cei` — exportam apenas números (um por linha) de planos rescindidos por período/filtros.
-- `app.vw_export_eventos` — exporta logs/eventos por período.
+  * **SITUAÇÃO**: `situacao_codigo IN (...)`.
+  * **DIAS**: **use `atraso_desde`** → `atraso_desde <= CURRENT_DATE - INTERVAL '90 days'` (não filtre por `dias_em_atraso`).
+  * **SALDO**: `saldo >= :min`.
+  * **DT SITUAÇÃO**: ranges sobre `dt_situacao` (`date_trunc('month', CURRENT_DATE)` etc.).
 
-> As views de export respeitam RLS via `app.current_tenant_id()`.
+### 5.2 `app.vw_pipeline_status`
 
-## 6 Policies de RLS (resumo)
+* **Colunas**: `job_name`, `status`, `last_update_at`, `duration_text`.
+* **Uso**: footer/status na UI.
 
-- Regra padrão nas tabelas `app.*`: `USING (tenant_id = app.current_tenant_id() OR app.is_tech())` com `WITH CHECK` similar.
-- Para `UPDATE/DELETE`, exige perfil conforme tabela.
-- Leitura de views: `GRANT SELECT` para `sirep_app`, `sirep_admin`, `sirep_worker`.
+### 5.3 Views de export (opcional)
 
-## 7 Índices recomendados (resumo)
+* `app.vw_export_rescindidos_cnpj` / `cpf` / `cei` — **uma linha = apenas número** do documento.
+* `app.vw_export_eventos` — eventos filtrados por período/tenant.
 
-- `app.plano`: `UNIQUE(numero_plano)`; `(tenant_id, numero_plano)`; `(empregador_id)`; `(situacao_plano_id)`
-- `app.empregador`: `UNIQUE(tenant_id, tipo_inscricao_id, numero_inscricao)`; `GIN (razao_social gin_trgm_ops)`; `(tenant_id, numero_inscricao)`
-- `app.parcela`: `UNIQUE(tenant_id, plano_id, nr_parcela, vencimento)`; `(tenant_id, situacao_parcela_id, vencimento)`; `(plano_id)`
-- `app.plano_situacao_hist`: `(plano_id, mudou_em DESC)`; `(tenant_id)`
-- `audit.job_run`: `(tenant_id, started_at)`; `(job_name, started_at)`
-- `audit.job_step`: `(tenant_id, job_started_at DESC, job_id)`; `(step_code)`
-- `audit.evento`: `(tenant_id, event_time)`; `(entity, event_time)`
+---
 
-## 8 Padrões de uso no backend
+## 6. Policies de RLS (padrão)
 
-- Ligar sessão pelo usuário (matrícula):
+* **USING**: `(tenant_id = app.current_tenant_id() OR app.is_tech())`
+* **WITH CHECK**: igual ao `USING` + restrições de perfil quando aplicável.
+* Tabelas **`app.*`** seguem essa regra, com exceções controladas via perfis (`admin/worker`) por tabela/ação.
+
+---
+
+## 7. Índices recomendados (resumo)
+
+* **`app.plano`**
+
+  * `UNIQUE(numero_plano)`
+  * `(tenant_id, situacao_plano_id)`
+  * `(tenant_id, atraso_desde)`
+  * `(tenant_id, saldo_total DESC, numero_plano)` ➊ *(keyset/ordenar)*
+  * `(tenant_id, dt_situacao_atual)` ➋ *(filtros por mês/últimos X meses)*
+
+* **`app.empregador`**
+
+  * `UNIQUE(tenant_id, tipo_inscricao_id, numero_inscricao)`
+  * `GIN (razao_social gin_trgm_ops)`
+  * `(tenant_id, numero_inscricao)`
+
+* **`app.plano_situacao_hist`**
+
+  * `(plano_id, mudou_em DESC)` *(se ainda consultar histórico diretamente)*
+
+* **`audit.job_run` / `audit.evento`**
+
+  * Ver §3.
+
+> **Sargabilidade**: sempre filtre por **`atraso_desde`** (não por cálculo), por **`dt_situacao_atual`** e por **`saldo_total`**. Isso permite usar esses índices com filtros cumulativos.
+
+---
+
+## 8. Padrões de uso no backend
+
+* **Sessão** (sempre no início da request):
+
   ```sql
   SELECT app.login_matricula(:matricula::citext);
   SET TIME ZONE 'America/Sao_Paulo';
   ```
-- Upsert de empregador por `(tenant, tipo_doc, numero)` (`UNIQUE`).
-- Upsert de plano por `numero_plano` (`UNIQUE` global) com cláusula:
+
+* **Busca na grid de planos**: usar **`app.vw_planos_busca`** com filtros sargáveis e **keyset pagination** por `saldo DESC, numero_plano`.
+
+* **Upsert de empregador**:
+
+  * Normalizar documento (`só dígitos`).
+  * `ON CONFLICT (tenant_id, tipo_inscricao_id, numero_inscricao) DO UPDATE ...`
+
+* **Upsert de plano**:
+
+  * `ON CONFLICT (numero_plano) DO UPDATE ...`
+    *(respeitando RLS; garantir `tenant_id=app.current_tenant_id()` na cláusula)*
+
+* **Mudança de situação com data oficial**:
+
   ```sql
-  ON CONFLICT (numero_plano) DO UPDATE ...
-  WHERE app.plano.tenant_id = app.current_tenant_id();
+  SET LOCAL app.situacao_effective_ts = :iso_ts;  -- ex.: '2025-10-01 00:00:00-03'
+  UPDATE app.plano
+     SET situacao_plano_id = (SELECT id FROM ref.situacao_plano WHERE codigo='RESCINDIDO')
+   WHERE numero_plano = :numero AND tenant_id = app.current_tenant_id();
   ```
-- Parcelas: `INSERT/UPDATE` por `(tenant, plano, nr_parcela, vencimento)` — trigger recalcula atraso.
-- Histórico de situação: usar `SET LOCAL app.situacao_effective_ts = :data_iso` para gravar data oficial.
-- Logs/etapas: `audit.job_run` + `audit.job_step` + `audit.evento` (particionado, RLS).
 
-## 9 Exemplos rápidos
+* **Parcelas**: merges por `(tenant, plano, nr_parcela, vencimento)`; trigger recalcula atraso.
 
-### Login de sessão
+* **Logs/etapas**: `audit.job_run` (inicio/fim/status), `audit.evento` (eventos), *(opcional)* `audit.job_step`.
+
+---
+
+## 9. Exemplos rápidos
+
+**Login de sessão**
 
 ```sql
 SELECT app.login_matricula('C150930'::citext);
 ```
 
-### Grid de planos (CNPJ)
+**Grid de planos (filtro por CNPJ + texto)**
 
 ```sql
-SELECT * FROM app.vw_planos_busca
-WHERE tipo_doc = 'CNPJ' AND razao_social ILIKE '%DEMO%'
-ORDER BY dt_situacao DESC NULLS LAST
-LIMIT 50 OFFSET 0;
+SELECT *
+FROM app.vw_planos_busca
+WHERE tipo_doc = 'CNPJ'
+  AND razao_social ILIKE '%'||:texto||'%'
+ORDER BY saldo DESC NULLS LAST, numero_plano
+LIMIT 10;
 ```
 
-### Marcar rescisão com data efetiva
+**Filtros cumulativos eficientes (ex.: GRDE + 120+ dias + mês corrente)**
+
+```sql
+SELECT *
+FROM app.vw_planos_busca
+WHERE situacao_codigo = 'GRDE_EMITIDA'
+  AND atraso_desde <= CURRENT_DATE - INTERVAL '120 days'
+  AND dt_situacao >= date_trunc('month', CURRENT_DATE)::date
+ORDER BY saldo DESC NULLS LAST, numero_plano
+LIMIT 10;
+```
+
+**Rescisão com data efetiva fornecida pelo sistema oficial**
 
 ```sql
 SET LOCAL app.situacao_effective_ts = '2025-10-01 00:00:00-03';
 UPDATE app.plano
-   SET situacao_plano_id = (SELECT id FROM ref.situacao_plano WHERE codigo='RESCINDIDO')
- WHERE numero_plano='2011003279' AND tenant_id = app.current_tenant_id();
+SET situacao_plano_id = (SELECT id FROM ref.situacao_plano WHERE codigo='RESCINDIDO')
+WHERE numero_plano='2011003279' AND tenant_id = app.current_tenant_id();
 ```
 
-## Anexos (boas práticas)
+---
 
-- Normalize `numero_plano`/documentos para só dígitos na aplicação.
-- Defina `statement_timeout` por transação se quiser limitar jobs (ex.: `SET LOCAL statement_timeout='300s'`).
-- Mantenha cache de catálogos no backend (`codigo → id`) com recarga eventual.
+## 10. Boas práticas & notas
+
+* **Normalização**: sempre armazene documentos e `numero_plano` **só dígitos**.
+* **Timeouts**: para contagens pesadas de UI, use `SET LOCAL statement_timeout='1500ms'` + cache no backend.
+* **Partições**: crie partições mensais antecipadamente (ou use funções `ensure_*`) e limpe com `drop_old_partitions_*` (retenção de 60 meses).
+* **RLS**: garanta que a aplicação **sempre** chama `app.login_matricula()` ao abrir a conexão.
+* **Auditoria de seeds/tests**: se não quiser `created_by`, limpe `app.user_id` com `SELECT app.set_user(NULL)`; caso queira, crie/obtenha o UUID do usuário e faça `SELECT app.set_user(:uuid)`.
+
+---

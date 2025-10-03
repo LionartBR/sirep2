@@ -27,7 +27,7 @@ from psycopg.errors import UndefinedFunction
 from psycopg.rows import dict_row
 from urllib.parse import urlsplit, urlunsplit
 
-from shared.config import get_database_settings
+from shared.config import get_database_settings, get_principal_settings
 
 
 LOGGER = logging.getLogger("seed")
@@ -120,7 +120,7 @@ ins AS (
 upd AS (
     UPDATE app.parcela p
        SET valor = %s,
-           situacao_parcela_id = COALESCE(%s, p.situicao_parcela_id),
+           situacao_parcela_id = COALESCE(%s, p.situacao_parcela_id),
            pago_em = %s,
            valor_pago = %s,
            qtd_parcelas_total = COALESCE(%s, p.qtd_parcelas_total),
@@ -198,14 +198,14 @@ EVENT_ENTITIES = ["app.plano", "app.empregador", "app.pipeline", "app.job"]
 
 @dataclass(slots=True)
 class Employer:
-    id: int
+    id: Identifier
     numero_inscricao: str
     razao_social: str
 
 
 @dataclass(slots=True)
 class PlanRecord:
-    id: int
+    id: Identifier
     numero_plano: str
     situacao_plano_id: Identifier
     situacao_codigo: str
@@ -300,6 +300,69 @@ def normalize_identifier(value: Any) -> Identifier:
         except ValueError:
             return text
     return str(value)
+
+
+def _coerce_identifier(value: Identifier) -> Identifier:
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if not text:
+        raise ValueError("Identifier value cannot be blank")
+    return text
+
+
+def _first_value(row: Any) -> Any:
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        for value in row.values():
+            return value
+        return None
+    if isinstance(row, (list, tuple)):
+        return row[0] if row else None
+    return row
+
+
+def _resolve_seed_principal() -> tuple[str, str, str, str]:
+    principal = get_principal_settings()
+
+    matricula = (principal.matricula or "SEED_BOT").strip() or "SEED_BOT"
+    nome = (principal.nome or "Seed Bot").strip() or "Seed Bot"
+    email = (principal.email or "").strip().lower()
+    if not email or "@" not in email:
+        local_part = matricula.lower().replace(" ", "_") or "seed_bot"
+        email = f"{local_part}@seed.bot"
+    perfil = (principal.perfil or "admin").strip() or "admin"
+
+    return matricula, nome, email, perfil
+
+
+def _normalize_severity(value: str) -> str:
+    normalized = value.strip().lower()
+    match normalized:
+        case "warning" | "warn":
+            return "warn"
+        case "error" | "err":
+            return "error"
+        case "info" | "information":
+            return "info"
+        case _:
+            return "info"
+
+
+def _normalize_job_status(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    match normalized:
+        case "running":
+            return "RUNNING"
+        case "success" | "ok" | "done":
+            return "SUCCESS"
+        case "skipped" | "skip" | "cancelled" | "canceled":
+            return "SKIPPED"
+        case "error" | "err" | "failure" | "failed":
+            return "ERROR"
+        case _:
+            return "ERROR"
 
 
 def _maybe_rewrite_localhost(dsn: str) -> str:
@@ -421,18 +484,52 @@ def connect() -> Connection:
 
 def ensure_tenant_and_user(conn: Connection, tenant_id: UUID) -> None:
     LOGGER.info("Stage 1: configuring tenant context")
+    matricula, nome, email, perfil = _resolve_seed_principal()
+    tenant_str = str(tenant_id)
     with conn.cursor() as cur:
         try:
-            cur.execute("SELECT app.set_tenant(%s)", (str(tenant_id),))
+            cur.execute("SELECT app.set_tenant(%s)", (tenant_str,))
             LOGGER.debug("app.set_tenant applied successfully")
         except UndefinedFunction:
             LOGGER.debug("app.set_tenant not available; falling back to GUCs")
+            cur.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_str,))
+
+        seed_user_uuid: str | None = None
+        try:
             cur.execute(
-                "SELECT set_config('app.tenant_id', %s, true)", (str(tenant_id),)
+                "SELECT app.ensure_usuario(%s, %s, %s, %s, %s)",
+                (tenant_str, matricula, nome, email, perfil),
             )
-            cur.execute("SELECT set_config('app.user_id', 'seed-bot', true)")
-        else:
-            cur.execute("SELECT set_config('app.user_id', 'seed-bot', true)")
+            row = cur.fetchone()
+            value = _first_value(row)
+            if value:
+                seed_user_uuid = str(value)
+                LOGGER.debug("Seed user provisioned with id %s", seed_user_uuid)
+        except UndefinedFunction:
+            LOGGER.debug("app.ensure_usuario not available; skipping seed user provisioning")
+        except Exception as exc:
+            LOGGER.warning(
+                "Failed to provision seed user via app.ensure_usuario; continuing with fallback: %s",
+                exc,
+            )
+
+        guc_user_value = seed_user_uuid or matricula
+        if seed_user_uuid:
+            try:
+                cur.execute("SELECT app.set_user(%s)", (seed_user_uuid,))
+                LOGGER.debug("app.set_user applied for seed user %s", seed_user_uuid)
+            except UndefinedFunction:
+                LOGGER.debug("app.set_user not available; falling back to GUCs")
+            except Exception as exc:
+                LOGGER.warning(
+                    "Failed to apply app.set_user for seed user %s; falling back to GUCs: %s",
+                    seed_user_uuid,
+                    exc,
+                )
+            else:
+                guc_user_value = seed_user_uuid
+
+        cur.execute("SELECT set_config('app.user_id', %s, true)", (guc_user_value,))
 
 
 def truncate_tenant_data(conn: Connection) -> None:
@@ -492,61 +589,86 @@ def insert_empregador(
     razao_social: str,
     email: str,
     telefone: str,
-) -> int:
+) -> Identifier:
     with conn.cursor() as cur:
         cur.execute(
             SQL_INSERT_EMPREGADOR,
-            (tipo_inscricao_id, numero_inscricao, razao_social, email, telefone),
+            (
+                _coerce_identifier(tipo_inscricao_id),
+                numero_inscricao,
+                razao_social,
+                email,
+                telefone,
+            ),
         )
         row = cur.fetchone()
-    return int(row["id"])
+    return normalize_identifier(row["id"])
 
 
 def insert_plano(
     conn: Connection,
     numero_plano: str,
-    empregador_id: int,
+    empregador_id: Identifier,
     tipo_plano_id: Identifier,
     resolucao_id: Identifier,
     situacao_plano_id: Identifier,
     dt_proposta: date,
     saldo_total: Decimal,
     atraso_desde: date | None,
-) -> int:
+) -> Identifier:
+    numero_plano_str = str(numero_plano).strip()
+    if not numero_plano_str:
+        raise ValueError("numero_plano must not be empty")
+    if not numero_plano_str.isdigit():
+        numero_plano_str = "".join(ch for ch in numero_plano_str if ch.isdigit())
+    if not numero_plano_str:
+        raise ValueError(f"Invalid numero_plano provided: {numero_plano}")
+    if len(numero_plano_str) > 10:
+        raise ValueError(
+            f"numero_plano '{numero_plano_str}' exceeds 10 digits; adjust generator"
+        )
+
+    params = (
+        numero_plano_str,
+        _coerce_identifier(empregador_id),
+        _coerce_identifier(tipo_plano_id),
+        _coerce_identifier(resolucao_id),
+        _coerce_identifier(situacao_plano_id),
+        dt_proposta,
+        saldo_total,
+        atraso_desde,
+    )
     with conn.cursor() as cur:
         cur.execute(
             SQL_INSERT_PLANO,
-            (
-                numero_plano,
-                empregador_id,
-                tipo_plano_id,
-                resolucao_id,
-                situacao_plano_id,
-                dt_proposta,
-                saldo_total,
-                atraso_desde,
-            ),
+            params,
         )
         row = cur.fetchone()
-    return int(row["id"])
+    return normalize_identifier(row["id"])
 
 
 def insert_plano_hist(
     conn: Connection,
-    plano_id: int,
+    plano_id: Identifier,
     situacao_id: Identifier,
     mudou_em: datetime,
     observacao: str,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
-            SQL_INSERT_PLANO_HIST, (plano_id, situacao_id, mudou_em, observacao)
+            SQL_INSERT_PLANO_HIST,
+            (
+                _coerce_identifier(plano_id),
+                _coerce_identifier(situacao_id),
+                mudou_em,
+                observacao,
+            ),
         )
 
 
 def upsert_parcela(
     conn: Connection,
-    plano_id: int,
+    plano_id: Identifier,
     nr_parcela: int,
     vencimento: date,
     valor: Decimal,
@@ -556,19 +678,23 @@ def upsert_parcela(
     qtd_total: int | None,
 ) -> None:
     params = (
-        plano_id,
+        _coerce_identifier(plano_id),
         nr_parcela,
         vencimento,
-        plano_id,
+        _coerce_identifier(plano_id),
         nr_parcela,
         vencimento,
         valor,
-        situacao_parcela_id,
+        _coerce_identifier(situacao_parcela_id)
+        if situacao_parcela_id is not None
+        else None,
         pago_em,
         valor_pago,
         qtd_total,
         valor,
-        situacao_parcela_id,
+        _coerce_identifier(situacao_parcela_id)
+        if situacao_parcela_id is not None
+        else None,
         pago_em,
         valor_pago,
         qtd_total,
@@ -580,11 +706,11 @@ def upsert_parcela(
 
 def open_job_run(
     conn: Connection, job_name: str, payload: dict[str, object]
-) -> tuple[int, datetime]:
+) -> tuple[Identifier, datetime]:
     with conn.cursor() as cur:
         cur.execute(SQL_INSERT_JOB_RUN, (job_name, json.dumps(payload)))
         row = cur.fetchone()
-    return int(row["id"]), row["started_at"]
+    return normalize_identifier(row["id"]), row["started_at"]
 
 
 def log_event(
@@ -596,6 +722,7 @@ def log_event(
     message: str,
     data: dict[str, object],
 ) -> None:
+    normalized_severity = _normalize_severity(severity)
     with conn.cursor() as cur:
         cur.execute(
             SQL_INSERT_EVENTO,
@@ -603,7 +730,7 @@ def log_event(
                 entity,
                 entity_id,
                 event_type,
-                severity,
+                normalized_severity,
                 message,
                 json.dumps(data, default=str),
             ),
@@ -627,18 +754,18 @@ def adjust_recent_event_times(
                 len(desired_times),
             )
             return
-        ids = [int(row["id"]) for row in rows]
+        ids = [normalize_identifier(row["id"]) for row in rows]
     ids.reverse()
     with conn.cursor() as cur:
         for event_id, event_time in zip(ids, desired_times, strict=False):
             cur.execute(
                 "UPDATE audit.evento SET event_time = %s WHERE id = %s",
-                (event_time, event_id),
+                (event_time, _coerce_identifier(event_id)),
             )
 
 
 def close_job_run(
-    conn: Connection, run_id: int, status: str
+    conn: Connection, run_id: Identifier, status: str
 ) -> tuple[datetime | None, datetime | None]:
     with conn.cursor() as cur:
         cur.execute(
@@ -656,19 +783,23 @@ def close_job_run(
     else:
         update_sql = "UPDATE audit.job_run SET status=%s WHERE id=%s RETURNING started_at, NULL::timestamptz"
 
+    normalized_status = _normalize_job_status(status)
     with conn.cursor() as cur:
-        cur.execute(update_sql, (status, run_id))
+        cur.execute(update_sql, (normalized_status, _coerce_identifier(run_id)))
         row = cur.fetchone()
     return row["started_at"], row["finished_at"]
 
 
 def adjust_job_run_times(
-    conn: Connection, run_id: int, started_at: datetime, finished_at: datetime
+    conn: Connection,
+    run_id: Identifier,
+    started_at: datetime,
+    finished_at: datetime,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE audit.job_run SET started_at = %s, finished_at = %s WHERE id = %s",
-            (started_at, finished_at, run_id),
+            (started_at, finished_at, _coerce_identifier(run_id)),
         )
 
 
@@ -714,7 +845,7 @@ def generate_numero_inscricao(rng: random.Random) -> str:
 
 def generate_numero_plano(rng: random.Random, existing: set[str]) -> str:
     while True:
-        numero = "".join(str(rng.randint(0, 9)) for _ in range(12))
+        numero = "".join(str(rng.randint(0, 9)) for _ in range(10))
         if numero not in existing:
             existing.add(numero)
             return numero
