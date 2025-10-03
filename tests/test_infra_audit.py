@@ -1,15 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
-import sys
 from unittest.mock import ANY, MagicMock, call
 
 import pytest
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 from infra.audit import JobRunHandle, finish_job_step, job_step, start_job_step
 

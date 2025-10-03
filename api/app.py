@@ -5,6 +5,11 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from infra.config import settings
+from services.orchestrator import PipelineOrchestrator
+
+from .routers import auth, pipeline, plans, treatment
+
 # Local alias replicating ``starlette.types.Scope`` to avoid depending on optional typing helpers at runtime.
 Scope = MutableMapping[str, Any]
 
@@ -21,13 +26,6 @@ class NoCacheStaticFiles(StaticFiles):
         response = await super().get_response(path, scope)
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response
-
-
-from infra.config import settings
-from services.orchestrator import PipelineOrchestrator
-
-from .routers import auth, pipeline, plans, treatment
-
 
 def create_app() -> FastAPI:
     """Configure the FastAPI application with routes and static assets."""

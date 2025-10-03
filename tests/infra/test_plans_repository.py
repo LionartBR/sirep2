@@ -1,18 +1,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from pathlib import Path
-import sys
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 from psycopg.rows import dict_row
 from psycopg.pq import TransactionStatus
-
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 from infra.repositories import LookupCache, PlanDTO, PlansRepository
 

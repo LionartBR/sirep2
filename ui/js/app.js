@@ -70,6 +70,10 @@ document.addEventListener('DOMContentLoaded', () => {
     treatmentTableElement?.tHead?.rows?.[0]?.cells?.length ??
     treatmentTableElement?.rows?.[0]?.cells?.length ??
     6;
+  const treatmentPagerRange = document.getElementById('treatmentPagerRange');
+  const treatmentPagerLabel = document.getElementById('treatmentPagerLabel');
+  const treatmentPagerPrevBtn = document.getElementById('treatmentPagerPrev');
+  const treatmentPagerNextBtn = document.getElementById('treatmentPagerNext');
 
   const PIPELINE_ENDPOINT = '/api/pipeline';
   const PLANS_ENDPOINT = '/api/plans';
@@ -1106,6 +1110,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const plansPagerLabel = document.getElementById('plansPagerLabel');
   const plansPagerRange = document.getElementById('plansPagerRange');
 
+  const treatmentPager = {
+    page: 1,
+    pageSize: DEFAULT_PLAN_PAGE_SIZE,
+    hasMore: false,
+    totalCount: null,
+    totalPages: null,
+    showingFrom: 0,
+    showingTo: 0,
+  };
+
   // Occurrences pager UI elements
   const occPagerPrevBtn = document.getElementById('occPagerPrev');
   const occPagerNextBtn = document.getElementById('occPagerNext');
@@ -1155,6 +1169,38 @@ document.addEventListener('DOMContentLoaded', () => {
       const canGoNext = !!plansPager.hasMore;
       plansPagerNextBtn.disabled = !canGoNext;
       plansPagerNextBtn.setAttribute('aria-disabled', String(!canGoNext));
+    }
+  };
+
+  const updateTreatmentPagerUI = () => {
+    if (treatmentPagerLabel) {
+      const totalPagesRaw = treatmentPager.totalPages ?? null;
+      const totalPagesNumber =
+        totalPagesRaw && Number.isFinite(totalPagesRaw) && totalPagesRaw > 0
+          ? Number(totalPagesRaw)
+          : 1;
+      const currentPage = Math.max(1, treatmentPager.page || 1);
+      treatmentPagerLabel.textContent = `pág. ${currentPage} de ${totalPagesNumber}`;
+    }
+    if (treatmentPagerRange) {
+      const totalKnown =
+        treatmentPager.totalCount !== null && treatmentPager.totalCount !== undefined;
+      const totalLabel = totalKnown
+        ? String(treatmentPager.totalCount)
+        : `~${Math.max(treatmentPager.showingTo, 0)}`;
+      const from = treatmentPager.showingFrom || 0;
+      const to = treatmentPager.showingTo || 0;
+      treatmentPagerRange.textContent = `exibindo ${from}–${to} de ${totalLabel} planos para rescisão`;
+    }
+    if (treatmentPagerPrevBtn) {
+      const canGoPrev = treatmentPager.page > 1;
+      treatmentPagerPrevBtn.disabled = !canGoPrev;
+      treatmentPagerPrevBtn.setAttribute('aria-disabled', String(!canGoPrev));
+    }
+    if (treatmentPagerNextBtn) {
+      const canGoNext = !!treatmentPager.hasMore;
+      treatmentPagerNextBtn.disabled = !canGoNext;
+      treatmentPagerNextBtn.setAttribute('aria-disabled', String(!canGoNext));
     }
   };
 
@@ -1735,6 +1781,25 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  if (treatmentPagerPrevBtn) {
+    treatmentPagerPrevBtn.addEventListener('click', () => {
+      if (treatmentPager.page <= 1) {
+        return;
+      }
+      const targetPage = Math.max(1, treatmentPager.page - 1);
+      void refreshTreatment({ showLoading: true, page: targetPage });
+    });
+  }
+  if (treatmentPagerNextBtn) {
+    treatmentPagerNextBtn.addEventListener('click', () => {
+      if (!treatmentPager.hasMore) {
+        return;
+      }
+      const targetPage = treatmentPager.page + 1;
+      void refreshTreatment({ showLoading: true, page: targetPage });
+    });
+  }
+
   const buildOccurrencesRequestUrl = ({ direction = null } = {}) => {
     const baseUrl =
       window.location.origin && window.location.origin !== 'null'
@@ -1852,13 +1917,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  const refreshTreatment = async ({ showLoading } = {}) => {
+  const refreshTreatment = async ({ showLoading, page: pageOverride } = {}) => {
     if (!treatmentTableBody || isFetchingTreatment) {
       return;
     }
     const shouldShowLoading = showLoading ?? !treatmentLoaded;
     if (shouldShowLoading) {
       renderTreatmentPlaceholder('carregando planos...', 'loading');
+    }
+
+    if (typeof pageOverride === 'number' && Number.isFinite(pageOverride)) {
+      treatmentPager.page = Math.max(1, Math.trunc(pageOverride));
+    } else if (!Number.isFinite(treatmentPager.page) || treatmentPager.page < 1) {
+      treatmentPager.page = 1;
     }
 
     isFetchingTreatment = true;
@@ -1868,6 +1939,8 @@ document.addEventListener('DOMContentLoaded', () => {
           ? window.location.origin
           : window.location.href;
       const url = new URL(`${TREATMENT_ENDPOINT}/plans`, baseUrl);
+      url.searchParams.set('page', String(treatmentPager.page));
+      url.searchParams.set('page_size', String(treatmentPager.pageSize || DEFAULT_PLAN_PAGE_SIZE));
       const requestHeaders = new Headers({ Accept: 'application/json' });
       const matricula = currentUser?.username?.trim();
       if (matricula) {
@@ -1884,6 +1957,72 @@ document.addEventListener('DOMContentLoaded', () => {
       if (kpiQueueEl) {
         kpiQueueEl.textContent = formatIntCount(total);
       }
+
+      const paging = payload?.paging || null;
+      if (paging && typeof paging === 'object') {
+        const pageValue = Number(paging.page);
+        treatmentPager.page = Number.isFinite(pageValue) && pageValue > 0 ? pageValue : treatmentPager.page;
+        const pageSizeValue = Number(paging.page_size);
+        if (Number.isFinite(pageSizeValue) && pageSizeValue > 0) {
+          treatmentPager.pageSize = pageSizeValue;
+        }
+        treatmentPager.hasMore = Boolean(paging.has_more);
+
+        const showingFromValue = Number(paging.showing_from);
+        treatmentPager.showingFrom = Number.isFinite(showingFromValue) && showingFromValue >= 0
+          ? showingFromValue
+          : items.length
+            ? (treatmentPager.page - 1) * treatmentPager.pageSize + 1
+            : 0;
+
+        const showingToValue = Number(paging.showing_to);
+        treatmentPager.showingTo = Number.isFinite(showingToValue) && showingToValue >= 0
+          ? showingToValue
+          : treatmentPager.showingFrom + items.length - (items.length ? 1 : 0);
+
+        treatmentPager.totalCount =
+          typeof paging.total_count === 'number' && Number.isFinite(paging.total_count)
+            ? paging.total_count
+            : (typeof total === 'number' && Number.isFinite(total) ? total : null);
+
+        const totalPagesValue = Number(paging.total_pages);
+        treatmentPager.totalPages = Number.isFinite(totalPagesValue) && totalPagesValue > 0
+          ? totalPagesValue
+          : treatmentPager.totalCount && treatmentPager.totalCount > 0
+            ? Math.ceil(treatmentPager.totalCount / treatmentPager.pageSize)
+            : null;
+      } else {
+        treatmentPager.page = Math.max(1, treatmentPager.page || 1);
+        treatmentPager.pageSize = treatmentPager.pageSize || DEFAULT_PLAN_PAGE_SIZE;
+        const showingFrom = items.length ? (treatmentPager.page - 1) * treatmentPager.pageSize + 1 : 0;
+        const showingTo = items.length ? showingFrom + items.length - 1 : 0;
+        treatmentPager.showingFrom = showingFrom;
+        treatmentPager.showingTo = showingTo;
+        treatmentPager.totalCount =
+          typeof total === 'number' && Number.isFinite(total) ? total : null;
+        treatmentPager.totalPages = treatmentPager.totalCount
+          ? Math.ceil(treatmentPager.totalCount / treatmentPager.pageSize)
+          : treatmentPager.totalCount === 0
+            ? 0
+            : null;
+        treatmentPager.hasMore = treatmentPager.totalCount !== null
+          ? showingTo < treatmentPager.totalCount
+          : items.length === treatmentPager.pageSize;
+      }
+
+      // Ensure showing bounds are non-negative integers.
+      treatmentPager.showingFrom = Math.max(0, Math.trunc(treatmentPager.showingFrom || 0));
+      treatmentPager.showingTo = Math.max(0, Math.trunc(treatmentPager.showingTo || 0));
+      treatmentPager.totalCount =
+        typeof treatmentPager.totalCount === 'number' && Number.isFinite(treatmentPager.totalCount)
+          ? Math.max(0, Math.trunc(treatmentPager.totalCount))
+          : treatmentPager.totalCount;
+      treatmentPager.totalPages =
+        typeof treatmentPager.totalPages === 'number' && Number.isFinite(treatmentPager.totalPages)
+          ? Math.max(0, Math.trunc(treatmentPager.totalPages))
+          : treatmentPager.totalPages;
+
+      updateTreatmentPagerUI();
       treatmentLoaded = true;
     } catch (error) {
       console.error('Erro ao carregar planos de tratamento.', error);
@@ -2318,7 +2457,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setStatus(defaultMessages.idle);
   void refreshPlans();
   void refreshOccurrences();
-  void refreshTreatment();
+  void refreshTreatment({ page: 1 });
   // Initialize KPI values with zeros; backend wiring can update these later
   updateKpiCounts({ queueCount: 0, rescindedCount: 0, remainingCount: 0 });
 
@@ -2446,7 +2585,7 @@ document.addEventListener('DOMContentLoaded', () => {
           throw new Error('Falha ao migrar planos.');
         }
         // On success, refresh Treatment table and KPI
-        void refreshTreatment({ showLoading: true });
+        void refreshTreatment({ showLoading: true, page: 1 });
       } catch (error) {
         console.error('Erro ao migrar planos para tratamento.', error);
       }

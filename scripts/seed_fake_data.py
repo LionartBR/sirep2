@@ -188,7 +188,13 @@ RESOLUCOES = [
     ("112/18", "Resolução 112/18"),
 ]
 
-JOB_NAMES = ["pipeline:sync", "pipeline:recompute", "import:plans", "metrics:refresh"]
+JOB_NAMES = [
+    "gestao_base",
+    "pipeline:sync",
+    "pipeline:recompute",
+    "import:plans",
+    "metrics:refresh",
+]
 
 EVENT_TYPES = ["STATE_CHANGE", "RESOURCE_SYNC", "VALIDATION", "ERROR"]
 
@@ -845,7 +851,9 @@ def humanize_duration(started_at: datetime, finished_at: datetime) -> str:
     return f"{hours}h {minutes:02d}m {seconds:02d}s"
 
 
-def format_duration_hms(started_at: datetime | None, finished_at: datetime | None) -> str | None:
+def format_duration_hms(
+    started_at: datetime | None, finished_at: datetime | None
+) -> str | None:
     if not started_at or not finished_at:
         return None
     delta = finished_at - started_at
@@ -865,7 +873,10 @@ def _get_job_run_columns(conn: Connection) -> set[str]:
                 "SELECT column_name FROM information_schema.columns"
                 " WHERE table_schema = 'audit' AND table_name = 'job_run'"
             )
-            _JOB_RUN_COLUMNS_CACHE = {row[0] if isinstance(row, tuple) else row["column_name"] for row in cur.fetchall()}
+            _JOB_RUN_COLUMNS_CACHE = {
+                row[0] if isinstance(row, tuple) else row["column_name"]
+                for row in cur.fetchall()
+            }
     return _JOB_RUN_COLUMNS_CACHE
 
 
@@ -1135,6 +1146,22 @@ def seed_plans_and_related(
     return seeded_plans
 
 
+def _build_job_run_sequence(total_runs: int, rng: random.Random) -> list[str]:
+    if total_runs <= 0:
+        return []
+    pool = list(JOB_NAMES)
+    if "gestao_base" not in pool:
+        pool.insert(0, "gestao_base")
+    sequence: list[str] = ["gestao_base"]
+    for _ in range(total_runs - 1):
+        sequence.append(rng.choice(pool))
+    if len(sequence) > 1:
+        tail = sequence[1:]
+        rng.shuffle(tail)
+        sequence[1:] = tail
+    return sequence
+
+
 def seed_job_runs_and_events(
     conn: Connection,
     rng: random.Random,
@@ -1147,9 +1174,21 @@ def seed_job_runs_and_events(
     if not plans:
         LOGGER.warning("No planos seeded; audit logs will reference generic entities")
 
-    for run_index in range(total_runs):
-        job_name = rng.choice(JOB_NAMES)
-        status = "SUCCESS" if run_index % 3 != 0 else rng.choice(["FAILURE", "SUCCESS"])
+    job_names = _build_job_run_sequence(total_runs, rng)
+    if not job_names:
+        return
+
+    anchor_now = datetime.now(timezone.utc)
+
+    for run_index, job_name in enumerate(job_names):
+        if job_name == "gestao_base":
+            status = "SUCCESS"
+        else:
+            status = (
+                "SUCCESS"
+                if run_index % 3 != 0
+                else rng.choice(["FAILURE", "SUCCESS", "ERROR"])
+            )
         payload = {
             "requested_by": "seed-bot",
             "retries": rng.randint(0, 2),
@@ -1158,9 +1197,14 @@ def seed_job_runs_and_events(
 
         run_id, started_at_actual = open_job_run(conn, job_name, payload)
         job_duration_minutes = rng.randint(2, 90)
-        job_start = datetime.now(timezone.utc) - timedelta(
-            days=rng.randint(0, 30), minutes=job_duration_minutes
-        )
+        if job_name == "gestao_base":
+            job_start = anchor_now - timedelta(
+                minutes=job_duration_minutes + rng.randint(1, 45)
+            )
+        else:
+            job_start = anchor_now - timedelta(
+                days=rng.randint(1, 30), minutes=job_duration_minutes
+            )
         job_finish = job_start + timedelta(
             minutes=job_duration_minutes, seconds=rng.randint(10, 350)
         )

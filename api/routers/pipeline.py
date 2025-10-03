@@ -177,8 +177,6 @@ async def get_pipeline_status(
     started_at = job_run_row.get("started_at") if job_run_row else None
     finished_at = job_run_row.get("finished_at") if job_run_row else None
 
-    if not last_update_at and row:
-        last_update_at = row.get("last_update_at")
     if not last_update_at:
         last_update_at = finished_at or started_at
     if not duration_text:

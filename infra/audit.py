@@ -448,6 +448,29 @@ def job_run(
         raise
 
 
+def _normalize_event_severity(severity: Optional[str]) -> str:
+    """Map caller-provided severities to the audit permitido triad."""
+
+    if severity is None:
+        return "info"
+
+    candidate = str(severity).strip().lower()
+    if not candidate:
+        return "info"
+
+    if candidate in {"info", "warn", "error"}:
+        return candidate
+
+    if candidate in {"warning", "warnings"}:
+        return "warn"
+    if candidate in {"fail", "fails", "failure", "fatal", "critical"}:
+        return "error"
+    if candidate in {"err", "erro", "error"}:
+        return "error"
+
+    return "info"
+
+
 def log_event(
     conn: Connection,
     *,
@@ -460,6 +483,7 @@ def log_event(
 ) -> None:
     """Insere um registro de auditoria na tabela ``audit.evento``."""
 
+    normalized_severity = _normalize_event_severity(severity)
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -468,7 +492,14 @@ def log_event(
             VALUES
               (app.current_tenant_id(), now(), %s, %s, %s, %s, %s, %s, app.current_user_id())
             """,
-            (entity, entity_id, event_type, severity, message, Json(data or {})),
+            (
+                entity,
+                entity_id,
+                event_type,
+                normalized_severity,
+                message,
+                Json(data or {}),
+            ),
         )
 
 
@@ -578,6 +609,7 @@ async def log_event_async(
 ) -> None:
     """Versão assíncrona de :func:`log_event`."""
 
+    normalized_severity = _normalize_event_severity(severity)
     async with aconn.cursor() as cur:
         await cur.execute(
             """
@@ -586,7 +618,14 @@ async def log_event_async(
             VALUES
               (app.current_tenant_id(), now(), %s, %s, %s, %s, %s, %s, app.current_user_id())
             """,
-            (entity, entity_id, event_type, severity, message, Json(data or {})),
+            (
+                entity,
+                entity_id,
+                event_type,
+                normalized_severity,
+                message,
+                Json(data or {}),
+            ),
         )
 
 

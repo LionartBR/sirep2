@@ -1,17 +1,11 @@
 import asyncio
-import sys
-from pathlib import Path
-
-import pytest
 from typing import Optional
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+import pytest
 
 from domain.enums import Step
-from services.base import ServiceResult, StepJobOutcome
 from domain.pipeline import PipelineStatus
+from services.base import ServiceResult, StepJobOutcome
 from services.gestao_base import service as gestao_module
 from services.orchestrator import PipelineOrchestrator
 

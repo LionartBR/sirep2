@@ -4,10 +4,11 @@ from typing import Optional
 
 import pydantic
 
+from domain.pipeline import PipelineState, PipelineStatus
+
 BaseModel = pydantic.BaseModel
 ConfigDict = getattr(pydantic, "ConfigDict", dict)
 _HAS_MODEL_VALIDATE = hasattr(BaseModel, "model_validate")
-from domain.pipeline import PipelineState, PipelineStatus
 
 
 class PipelineStartPayload(BaseModel):

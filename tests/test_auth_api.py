@@ -1,14 +1,8 @@
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException, status
 from psycopg.errors import InvalidAuthorizationSpecification
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 from api.routers import auth as auth_router
 

@@ -156,11 +156,11 @@ def _ensure_psycopg_stub() -> None:
 
     if "psycopg_pool" in missing_modules:
         sys.modules["psycopg_pool"] = _build_pool_module()
-
-
-_ensure_psycopg_stub()
-
-from psycopg.rows import dict_row
+try:
+    from psycopg.rows import dict_row
+except ModuleNotFoundError:
+    _ensure_psycopg_stub()
+    from psycopg.rows import dict_row
 
 
 def _ensure_fastapi_stub() -> None:
@@ -361,13 +361,11 @@ def _ensure_pydantic_stub() -> None:
     pydantic_module.ConfigDict = ConfigDict
 
     sys.modules["pydantic"] = pydantic_module
+try:  # noqa: F401 - ensure pydantic is importable for downstream modules
+    import pydantic  # type: ignore[attr-defined]
+except ModuleNotFoundError:  # pragma: no cover - exercised on environments without pydantic
+    _ensure_pydantic_stub()
 
-
-_ensure_pydantic_stub()
-
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 from api.models import PlansFilters, PlansResponse
 from api.routers import plans
@@ -384,32 +382,11 @@ from shared.config import PrincipalSettings
         ("GRDE emitida", "GRDE Emitida"),
         ("Liquidado", "LIQUIDADO"),
         ("Rescindido", "RESCINDIDO"),
-        ("EM_DIA", "EM_DIA"),
-    ],
-)
-def test_row_to_plan_summary_formats_status(raw: str, expected: str) -> None:
-    summary = plans._row_to_plan_summary({"numero_plano": "42", "situacao": raw})
-
-    assert summary.status == expected
-
-
-def test_row_to_plan_summary_handles_missing_status() -> None:
-    summary = plans._row_to_plan_summary({"numero_plano": "42"})
-
-    assert summary.status is None
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("Passivel de Rescisao", "P. RESCISAO"),
-        ("Passível de Rescisão", "P. RESCISAO"),
-        ("Situacao especial", "SIT. ESPECIAL"),
-        ("Situação especial", "SIT. ESPECIAL"),
-        ("GRDE emitida", "GRDE Emitida"),
-        ("Liquidado", "LIQUIDADO"),
-        ("Rescindido", "RESCINDIDO"),
-        ("EM_DIA", "EM_DIA"),
+        ("Em atraso", "EM ATRASO"),
+        ("Em_atraso", "EM ATRASO"),
+        ("EM_DIA", "EM DIA"),
+        ("Em Dia", "EM DIA"),
+        ("Em dia", "EM DIA"),
     ],
 )
 def test_row_to_plan_summary_formats_status(raw: str, expected: str) -> None:

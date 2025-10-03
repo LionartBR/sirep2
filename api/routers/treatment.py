@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from psycopg.rows import dict_row
 
-from api.models import PlanSummaryResponse, PlansResponse
+from api.models import PlanSummaryResponse, PlansPaging, PlansResponse
 from api.dependencies import get_connection_manager
 from infra.db import bind_session
 from infra.repositories._helpers import extract_date_from_timestamp
@@ -71,7 +72,7 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
 async def list_treatment_plans(
     request: Request,
     page: int = Query(1, ge=1, description="Página atual (base 1)"),
-    page_size: int = Query(50, ge=1, le=200, description="Itens por página"),
+    page_size: int = Query(10, ge=1, le=10, description="Itens por página (máx. 10)"),
 ) -> PlansResponse:
     """Return plans currently eligible for treatment (P_RESCISAO)."""
 
@@ -82,7 +83,8 @@ async def list_treatment_plans(
             detail="Credenciais de acesso ausentes.",
         )
 
-    offset = (page - 1) * page_size
+    effective_page_size = max(1, min(page_size, 10))
+    offset = (page - 1) * effective_page_size
 
     sql = (
         "SELECT v.numero_plano, v.documento, v.razao_social, v.situacao,"
@@ -99,7 +101,7 @@ async def list_treatment_plans(
         async with connection_manager as connection:
             await bind_session(connection, matricula)
             async with connection.cursor(row_factory=dict_row) as cur:
-                await cur.execute(sql, {"limit": page_size, "offset": offset})
+                await cur.execute(sql, {"limit": effective_page_size, "offset": offset})
                 rows = await cur.fetchall()
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Erro ao carregar planos para tratamento")
@@ -110,7 +112,25 @@ async def list_treatment_plans(
 
     items = [_row_to_plan_summary(row) for row in rows]
     total = int(rows[0].get("total_count") or 0) if rows else 0
-    return PlansResponse(items=items, total=total, paging=None)
+
+    showing_from = offset + 1 if rows else 0
+    showing_to = offset + len(rows) if rows else 0
+    total_pages = math.ceil(total / effective_page_size) if total else 0
+    has_more = offset + len(rows) < total
+
+    paging = PlansPaging(
+        page=page,
+        page_size=effective_page_size,
+        has_more=has_more,
+        next_cursor=None,
+        prev_cursor=None,
+        showing_from=showing_from,
+        showing_to=showing_to,
+        total_count=total,
+        total_pages=total_pages,
+    )
+
+    return PlansResponse(items=items, total=total, paging=paging)
 
 
 @router.post("/migrate", status_code=status.HTTP_204_NO_CONTENT)
