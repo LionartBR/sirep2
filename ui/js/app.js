@@ -112,6 +112,8 @@ document.addEventListener('DOMContentLoaded', () => {
       THIS_MONTH: 'Mês atual',
     },
   };
+  let plansHasResults = false;
+  let occHasResults = false;
   let filterWrappers = [];
   let currentPlansSearchTerm = '';
   let currentOccurrencesSearchTerm = '';
@@ -443,6 +445,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  const hasActiveFilters = () =>
+    filtersState.situacao.length > 0 ||
+    filtersState.diasMin !== null ||
+    filtersState.saldoMin !== null ||
+    Boolean(filtersState.dtRange);
+
+  const resetFiltersState = () => {
+    filtersState.situacao = [];
+    filtersState.diasMin = null;
+    filtersState.saldoMin = null;
+    filtersState.dtRange = null;
+  };
+
   const renderPlansPlaceholder = (message, modifier = 'empty') => {
     if (!plansTableBody) {
       return;
@@ -454,11 +469,50 @@ document.addEventListener('DOMContentLoaded', () => {
       row.classList.add(`table__row--${modifier}`);
     }
     const cell = document.createElement('td');
-    cell.className = 'table__cell';
+    cell.className = 'table__cell table__cell--empty';
     cell.colSpan = plansColumnCount;
-    cell.textContent = message;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-empty';
+
+    const messageEl = document.createElement('p');
+    messageEl.className = 'table-empty__message';
+    messageEl.textContent = message;
+    wrapper.appendChild(messageEl);
+
+    const isEmptyState = modifier === 'empty';
+    const showFilterContext = isEmptyState && hasActiveFilters();
+    if (showFilterContext) {
+      const hint = document.createElement('p');
+      hint.className = 'table-empty__hint';
+      hint.textContent = 'Os filtros selecionados podem estar escondendo alguns planos.';
+      wrapper.appendChild(hint);
+
+      const chipsHolder = document.createElement('div');
+      chipsHolder.className = 'table-active-filters table-active-filters--floating';
+      chipsHolder.dataset.filterChips = 'plans-empty';
+      wrapper.appendChild(chipsHolder);
+      attachFilterChipHandler(chipsHolder);
+
+      const actions = document.createElement('div');
+      actions.className = 'table-empty__actions';
+      const clearButton = document.createElement('button');
+      clearButton.type = 'button';
+      clearButton.className = 'table-empty__clear';
+      clearButton.textContent = 'Limpar filtros';
+      clearButton.addEventListener('click', () => {
+        clearAllFilters();
+      });
+      actions.appendChild(clearButton);
+      wrapper.appendChild(actions);
+    }
+
+    cell.appendChild(wrapper);
     row.appendChild(cell);
     plansTableBody.appendChild(row);
+    if (isEmptyState) {
+      plansHasResults = false;
+      renderFilterChips();
+    }
   };
 
   const renderPlanRows = (items) => {
@@ -476,6 +530,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    plansHasResults = true;
     plans.forEach((item) => {
       const row = document.createElement('tr');
       row.className = 'table__row';
@@ -522,6 +577,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       plansTableBody.appendChild(row);
     });
+
+    renderFilterChips();
   };
 
   const renderOccurrenceRows = (items) => {
@@ -535,6 +592,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    occHasResults = true;
     rows.forEach((item) => {
       const row = document.createElement('tr');
       row.className = 'table__row';
@@ -581,6 +639,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       occTableBody.appendChild(row);
     });
+
+    renderFilterChips();
   };
 
   const renderTreatmentPlaceholder = (message, modifier = 'empty') => {
@@ -665,6 +725,8 @@ document.addEventListener('DOMContentLoaded', () => {
     cell.textContent = message;
     row.appendChild(cell);
     occTableBody.appendChild(row);
+    occHasResults = false;
+    renderFilterChips();
   };
 
   const resetPlansPagination = () => {
@@ -699,7 +761,9 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const renderFilterChips = () => {
-    const containers = [plansFiltersChipsContainer, occFiltersChipsContainer].filter(Boolean);
+    const containers = Array.from(document.querySelectorAll('[data-filter-chips]')).filter(
+      (node) => node instanceof HTMLElement,
+    );
     if (!containers.length) {
       return;
     }
@@ -718,13 +782,30 @@ document.addEventListener('DOMContentLoaded', () => {
       chips.push({ type: 'dtRange', value: filtersState.dtRange });
     }
 
+    const hasChips = chips.length > 0;
+
     containers.forEach((container) => {
-      if (!(container instanceof HTMLElement)) {
-        return;
+      const scope = container.getAttribute('data-filter-chips') ?? '';
+      const isPlanContainer = scope.startsWith('plans');
+      const isPlanEmptyContainer = scope === 'plans-empty';
+      const isOccContainer = scope.startsWith('occ');
+      const isOccEmptyContainer = scope === 'occ-empty';
+
+      let shouldShow = hasChips;
+
+      if (isPlanContainer) {
+        shouldShow =
+          hasChips &&
+          ((plansHasResults && !isPlanEmptyContainer) || (!plansHasResults && isPlanEmptyContainer));
+      } else if (isOccContainer) {
+        shouldShow =
+          hasChips &&
+          ((occHasResults && !isOccEmptyContainer) || (!occHasResults && isOccEmptyContainer));
       }
-      if (!chips.length) {
-        container.innerHTML = '';
+
+      if (!shouldShow) {
         container.hidden = true;
+        container.innerHTML = '';
         return;
       }
 
@@ -738,10 +819,11 @@ document.addEventListener('DOMContentLoaded', () => {
         button.dataset.filterType = type;
         button.dataset.filterValue = value;
         const label = getFilterLabel(type, value);
+        button.setAttribute('aria-label', `Remover filtro ${label}`);
         button.innerHTML = `
           <span class="filter-chip__label">${label}</span>
-          <span class="filter-chip__remove" aria-hidden="true">x</span>
-          <span class="sr-only">Remover filtro</span>
+          <span class="filter-chip__remove" aria-hidden="true">×</span>
+          <span class="sr-only">Remover filtro ${label}</span>
         `;
         container.appendChild(button);
       });
@@ -816,6 +898,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (closeDropdown) {
       closeAllFilterDropdowns();
     }
+  };
+
+  const clearAllFilters = ({ closeDropdown = true } = {}) => {
+    resetFiltersState();
+    applyFilters({ closeDropdown });
   };
 
   const setupFilters = () => {
