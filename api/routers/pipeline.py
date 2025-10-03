@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from datetime import datetime
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from psycopg.rows import dict_row
@@ -42,6 +43,20 @@ def _resolve_request_matricula(request: Request | None) -> str | None:
     principal = get_principal_settings()
     matricula = (principal.matricula or "").strip() if principal.matricula else ""
     return matricula or None
+
+
+def _format_duration(
+    started_at: Optional[datetime], finished_at: Optional[datetime]
+) -> Optional[str]:
+    if not started_at or not finished_at:
+        return None
+    delta = finished_at - started_at
+    total_seconds = int(delta.total_seconds())
+    if total_seconds < 0:
+        total_seconds = abs(total_seconds)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
 def get_orchestrator(request: Request) -> PipelineOrchestrator:
@@ -109,7 +124,7 @@ async def get_pipeline_status(
             async with connection.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     (
-                        "SELECT job_name, status, last_update_at, duration_text"
+                        "SELECT job_name, status, last_update_at, duration_text, started_at, finished_at"
                         "  FROM app.vw_pipeline_status"
                         " WHERE job_name = %(job_name)s"
                         " LIMIT 1"
@@ -134,11 +149,29 @@ async def get_pipeline_status(
             finished_at=None,
         )
 
+    last_update_at: Optional[datetime] = None
+    duration_text: Optional[str] = None
+    status_value: Optional[str] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+    last_update_at = row.get("last_update_at")
+    duration_text = row.get("duration_text") or None
+    status_value = str(row.get("status") or "N/A")
+    job_name = str(row.get("job_name") or job_name)
+    started_at = row.get("started_at")
+    finished_at = row.get("finished_at")
+
+    if not duration_text:
+        duration_text = _format_duration(started_at, finished_at)
+    if not last_update_at:
+        last_update_at = finished_at or started_at
+
     return PipelineStatusViewResponse(
-        job_name=str(row.get("job_name") or job_name),
-        status=str(row.get("status") or "N/A"),
-        last_update_at=row.get("last_update_at"),
-        duration_text=(row.get("duration_text") or None),
-        started_at=None,
-        finished_at=None,
+        job_name=job_name,
+        status=status_value or "N/A",
+        last_update_at=last_update_at,
+        duration_text=duration_text,
+        started_at=started_at,
+        finished_at=finished_at,
     )

@@ -720,13 +720,50 @@ document.addEventListener('DOMContentLoaded', () => {
       row.classList.add(`table__row--${modifier}`);
     }
     const cell = document.createElement('td');
-    cell.className = 'table__cell';
+    cell.className = 'table__cell table__cell--empty';
     cell.colSpan = occColumnCount;
-    cell.textContent = message;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-empty';
+
+    const messageEl = document.createElement('p');
+    messageEl.className = 'table-empty__message';
+    messageEl.textContent = message;
+    wrapper.appendChild(messageEl);
+
+    const isEmptyState = modifier === 'empty';
+    const showFilterContext = isEmptyState && hasActiveFilters();
+    if (showFilterContext) {
+      const hint = document.createElement('p');
+      hint.className = 'table-empty__hint';
+      hint.textContent = 'Os filtros selecionados podem estar ocultando as ocorrências recentes.';
+      wrapper.appendChild(hint);
+
+      const chipsHolder = document.createElement('div');
+      chipsHolder.className = 'table-active-filters table-active-filters--floating';
+      chipsHolder.dataset.filterChips = 'occ-empty';
+      wrapper.appendChild(chipsHolder);
+      attachFilterChipHandler(chipsHolder);
+
+      const actions = document.createElement('div');
+      actions.className = 'table-empty__actions';
+      const clearButton = document.createElement('button');
+      clearButton.type = 'button';
+      clearButton.className = 'table-empty__clear';
+      clearButton.textContent = 'Limpar filtros';
+      clearButton.addEventListener('click', () => {
+        clearAllFilters();
+      });
+      actions.appendChild(clearButton);
+      wrapper.appendChild(actions);
+    }
+
+    cell.appendChild(wrapper);
     row.appendChild(cell);
     occTableBody.appendChild(row);
-    occHasResults = false;
-    renderFilterChips();
+    if (isEmptyState) {
+      occHasResults = false;
+      renderFilterChips();
+    }
   };
 
   const resetPlansPagination = () => {

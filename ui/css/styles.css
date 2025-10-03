@@ -877,6 +877,11 @@ input:focus {
   border-bottom: 1px solid var(--border);
 }
 
+.table__cell--empty {
+  border-bottom: none;
+  background: transparent;
+}
+
 .table__cell--copyable {
   position: relative;
   padding: 0;

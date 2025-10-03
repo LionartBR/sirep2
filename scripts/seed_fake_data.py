@@ -506,7 +506,9 @@ def ensure_tenant_and_user(conn: Connection, tenant_id: UUID) -> None:
                 seed_user_uuid = str(value)
                 LOGGER.debug("Seed user provisioned with id %s", seed_user_uuid)
         except UndefinedFunction:
-            LOGGER.debug("app.ensure_usuario not available; skipping seed user provisioning")
+            LOGGER.debug(
+                "app.ensure_usuario not available; skipping seed user provisioning"
+            )
         except Exception as exc:
             LOGGER.warning(
                 "Failed to provision seed user via app.ensure_usuario; continuing with fallback: %s",
@@ -540,7 +542,9 @@ def truncate_tenant_data(conn: Connection) -> None:
             LOGGER.info("%s: removed %s rows", label, cur.rowcount)
 
 
-def fetch_reference_map(conn: Connection, schema: str, table: str) -> dict[str, Identifier]:
+def fetch_reference_map(
+    conn: Connection, schema: str, table: str
+) -> dict[str, Identifier]:
     query = f"SELECT codigo, id FROM {schema}.{table}"
     with conn.cursor() as cur:
         cur.execute(query)
@@ -550,13 +554,17 @@ def fetch_reference_map(conn: Connection, schema: str, table: str) -> dict[str, 
         codigo = str(row["codigo"]).strip().upper()
         identifier_raw = row["id"]
         if identifier_raw is None:
-            LOGGER.warning("%s.%s has entry %s with null id; skipping", schema, table, codigo)
+            LOGGER.warning(
+                "%s.%s has entry %s with null id; skipping", schema, table, codigo
+            )
             continue
         mapping[codigo] = normalize_identifier(identifier_raw)
     return mapping
 
 
-def get_or_create_tipo_plano(conn: Connection, codigo: str, descricao: str) -> Identifier:
+def get_or_create_tipo_plano(
+    conn: Connection, codigo: str, descricao: str
+) -> Identifier:
     normalized = codigo.strip().upper()
     with conn.cursor() as cur:
         cur.execute("SELECT id FROM ref.tipo_plano WHERE codigo = %s", (normalized,))
@@ -569,7 +577,9 @@ def get_or_create_tipo_plano(conn: Connection, codigo: str, descricao: str) -> I
     return normalize_identifier(created["id"])
 
 
-def get_or_create_resolucao(conn: Connection, codigo: str, descricao: str) -> Identifier:
+def get_or_create_resolucao(
+    conn: Connection, codigo: str, descricao: str
+) -> Identifier:
     normalized = codigo.strip()
     with conn.cursor() as cur:
         cur.execute("SELECT id FROM ref.resolucao WHERE codigo = %s", (normalized,))
