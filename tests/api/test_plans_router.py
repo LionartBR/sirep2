@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 from types import ModuleType
 import importlib
@@ -362,14 +361,14 @@ def _ensure_pydantic_stub() -> None:
 
     sys.modules["pydantic"] = pydantic_module
 try:  # noqa: F401 - ensure pydantic is importable for downstream modules
-    import pydantic  # type: ignore[attr-defined]
+    import pydantic  # type: ignore[attr-defined]  # noqa: F401
 except ModuleNotFoundError:  # pragma: no cover - exercised on environments without pydantic
     _ensure_pydantic_stub()
 
 
-from api.models import PlansFilters, PlansResponse
-from api.routers import plans
-from shared.config import PrincipalSettings
+from api.models import PlansFilters, PlansResponse  # noqa: E402
+from api.routers import plans  # noqa: E402
+from shared.config import PrincipalSettings  # noqa: E402
 
 
 @pytest.mark.parametrize(
