@@ -55,6 +55,8 @@ IGNORE_DIRS = {
     "gestao_base",
     "scripts",
     ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
 }
 
 # Arquivos específicos a ignorar (por nome exato)
