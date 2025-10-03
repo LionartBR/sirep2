@@ -528,7 +528,7 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
         assert response.items[0].number == "12345"
         assert response.items[0].document == "12345678000190"
         assert response.items[0].company_name == "Empresa Teste"
-        assert response.items[0].status == "EM_DIA"
+        assert response.items[0].status == "EM DIA"
         assert response.items[0].days_overdue == 12
         assert response.items[0].balance == Decimal("1500.50")
         assert response.items[0].status_date == date(2024, 5, 1)

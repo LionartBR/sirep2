@@ -47,6 +47,8 @@ _STATUS_LABELS = {
     "GRDE_EMITIDA": "GRDE Emitida",
     "LIQUIDADO": "LIQUIDADO",
     "RESCINDIDO": "RESCINDIDO",
+    "EM_ATRASO": "EM ATRASO",
+    "EM_DIA": "EM DIA",
 }
 
 _FILTER_SITUATION_CODES: tuple[str, ...] = (
@@ -260,9 +262,14 @@ def _format_status(value: Any) -> str | None:
 
     ascii_text = _remove_accents(text)
     upper_ascii = ascii_text.upper()
+    compact = upper_ascii.replace(" ", "_")
     # Heurística para capturar descrições como "Passível de Rescisão"
     if "PASSIV" in upper_ascii and "RESC" in upper_ascii:
         normalized = "P_RESCISAO"
+    elif "ATRASO" in upper_ascii:
+        normalized = "EM_ATRASO"
+    elif compact in {"EM_DIA", "EMDIA"}:
+        normalized = "EM_DIA"
     else:
         normalized = normalizar_situacao(ascii_text)
 
