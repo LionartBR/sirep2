@@ -34,6 +34,7 @@ LOGGER = logging.getLogger("seed")
 
 
 Identifier = int | str
+_JOB_RUN_COLUMNS_CACHE: set[str] | None = None
 
 
 SQL_INSERT_TIPO_PLANO = """INSERT INTO ref.tipo_plano (codigo, descricao, ativo)
@@ -777,25 +778,36 @@ def adjust_recent_event_times(
 def close_job_run(
     conn: Connection, run_id: Identifier, status: str
 ) -> tuple[datetime | None, datetime | None]:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_schema = 'audit' AND table_name = 'job_run'"
-        )
-        cols = {row["column_name"] for row in cur.fetchall()}
+    cols = _get_job_run_columns(conn)
     if "status" not in cols:
         LOGGER.info(
             "audit.job_run.status column absent; skipping close for run %s", run_id
         )
         return None, None
 
-    if "finished_at" in cols:
-        update_sql = "UPDATE audit.job_run SET status=%s, finished_at=now() WHERE id=%s RETURNING started_at, finished_at"
-    else:
-        update_sql = "UPDATE audit.job_run SET status=%s WHERE id=%s RETURNING started_at, NULL::timestamptz"
-
     normalized_status = _normalize_job_status(status)
+    set_clauses = ["status = %s"]
+    params: list[object] = [normalized_status]
+
+    has_finished = "finished_at" in cols
+    has_duration = "duration_text" in cols
+
+    if has_finished:
+        set_clauses.append("finished_at = now()")
+    if has_duration:
+        set_clauses.append("duration_text = NULL")
+
+    returning_clause = "RETURNING started_at"
+    if has_finished:
+        returning_clause += ", finished_at"
+    else:
+        returning_clause += ", NULL::timestamptz AS finished_at"
+
+    update_sql = f"UPDATE audit.job_run SET {', '.join(set_clauses)} WHERE id = %s {returning_clause}"
+    params.append(_coerce_identifier(run_id))
+
     with conn.cursor() as cur:
-        cur.execute(update_sql, (normalized_status, _coerce_identifier(run_id)))
+        cur.execute(update_sql, params)
         row = cur.fetchone()
     return row["started_at"], row["finished_at"]
 
@@ -806,11 +818,23 @@ def adjust_job_run_times(
     started_at: datetime,
     finished_at: datetime,
 ) -> None:
+    cols = _get_job_run_columns(conn)
+    set_clauses = ["started_at = %s"]
+    params: list[object] = [started_at]
+
+    if "finished_at" in cols:
+        set_clauses.append("finished_at = %s")
+        params.append(finished_at)
+    if "duration_text" in cols:
+        duration_value = format_duration_hms(started_at, finished_at)
+        set_clauses.append("duration_text = %s")
+        params.append(duration_value)
+
+    params.append(_coerce_identifier(run_id))
+
+    update_sql = f"UPDATE audit.job_run SET {', '.join(set_clauses)} WHERE id = %s"
     with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE audit.job_run SET started_at = %s, finished_at = %s WHERE id = %s",
-            (started_at, finished_at, _coerce_identifier(run_id)),
-        )
+        cur.execute(update_sql, params)
 
 
 def humanize_duration(started_at: datetime, finished_at: datetime) -> str:
@@ -819,6 +843,30 @@ def humanize_duration(started_at: datetime, finished_at: datetime) -> str:
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     return f"{hours}h {minutes:02d}m {seconds:02d}s"
+
+
+def format_duration_hms(started_at: datetime | None, finished_at: datetime | None) -> str | None:
+    if not started_at or not finished_at:
+        return None
+    delta = finished_at - started_at
+    total_seconds = int(delta.total_seconds())
+    if total_seconds < 0:
+        total_seconds = abs(total_seconds)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def _get_job_run_columns(conn: Connection) -> set[str]:
+    global _JOB_RUN_COLUMNS_CACHE
+    if _JOB_RUN_COLUMNS_CACHE is None:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns"
+                " WHERE table_schema = 'audit' AND table_name = 'job_run'"
+            )
+            _JOB_RUN_COLUMNS_CACHE = {row[0] if isinstance(row, tuple) else row["column_name"] for row in cur.fetchall()}
+    return _JOB_RUN_COLUMNS_CACHE
 
 
 def normalize_seed(seed_value: int | None, rng: random.Random) -> None:

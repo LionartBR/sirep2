@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from psycopg import AsyncConnection
 from psycopg.rows import dict_row
 
 from ..models import (
@@ -57,6 +58,25 @@ def _format_duration(
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+async def _fetch_latest_job_run(
+    connection: AsyncConnection,
+    job_name: str,
+) -> dict[str, Any] | None:
+    async with connection.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            (
+                "SELECT status, started_at, finished_at"
+                "  FROM audit.job_run"
+                " WHERE tenant_id = app.current_tenant_id()"
+                "   AND job_name = %(job_name)s"
+                " ORDER BY COALESCE(finished_at, started_at) DESC"
+                " LIMIT 1"
+            ),
+            {"job_name": job_name},
+        )
+        return await cur.fetchone()
 
 
 def get_orchestrator(request: Request) -> PipelineOrchestrator:
@@ -124,7 +144,7 @@ async def get_pipeline_status(
             async with connection.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     (
-                        "SELECT job_name, status, last_update_at, duration_text, started_at, finished_at"
+                        "SELECT job_name, status, last_update_at, duration_text"
                         "  FROM app.vw_pipeline_status"
                         " WHERE job_name = %(job_name)s"
                         " LIMIT 1"
@@ -132,6 +152,7 @@ async def get_pipeline_status(
                     {"job_name": job_name},
                 )
                 row: dict[str, Any] | None = await cur.fetchone()
+            job_run_row = await _fetch_latest_job_run(connection, job_name)
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Erro ao consultar vw_pipeline_status")
         raise HTTPException(
@@ -139,7 +160,7 @@ async def get_pipeline_status(
             detail="Não foi possível consultar o status da pipeline.",
         ) from exc
 
-    if not row:
+    if not row and not job_run_row:
         return PipelineStatusViewResponse(
             job_name=job_name,
             status="N/A",
@@ -149,26 +170,28 @@ async def get_pipeline_status(
             finished_at=None,
         )
 
-    last_update_at: Optional[datetime] = None
-    duration_text: Optional[str] = None
-    status_value: Optional[str] = None
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
+    last_update_at = row.get("last_update_at") if row else None
+    duration_text = (row.get("duration_text") or None) if row else None
+    status_value = str(row.get("status") or "N/A") if row else "N/A"
+    job_name_value = str(row.get("job_name") or job_name) if row else job_name
+    started_at = job_run_row.get("started_at") if job_run_row else None
+    finished_at = job_run_row.get("finished_at") if job_run_row else None
 
-    last_update_at = row.get("last_update_at")
-    duration_text = row.get("duration_text") or None
-    status_value = str(row.get("status") or "N/A")
-    job_name = str(row.get("job_name") or job_name)
-    started_at = row.get("started_at")
-    finished_at = row.get("finished_at")
-
-    if not duration_text:
-        duration_text = _format_duration(started_at, finished_at)
+    if not last_update_at and row:
+        last_update_at = row.get("last_update_at")
     if not last_update_at:
         last_update_at = finished_at or started_at
+    if not duration_text:
+        duration_text = _format_duration(started_at, finished_at)
+    if row and row.get("duration_text"):
+        duration_text = row.get("duration_text") or duration_text
+    if (not status_value or status_value == "N/A") and job_run_row:
+        run_status = job_run_row.get("status")
+        if run_status:
+            status_value = str(run_status)
 
     return PipelineStatusViewResponse(
-        job_name=job_name,
+        job_name=job_name_value,
         status=status_value or "N/A",
         last_update_at=last_update_at,
         duration_text=duration_text,
