@@ -1,24 +1,40 @@
 from __future__ import annotations
 
 import logging
-import math
-from typing import Any
+from typing import Iterable
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from psycopg.rows import dict_row
 
-from api.models import PlanSummaryResponse, PlansPaging, PlansResponse
 from api.dependencies import get_connection_manager
+from api.models import (
+    TreatmentCloseRequest,
+    TreatmentItemsResponse,
+    TreatmentItemResponse,
+    TreatmentMigrateRequest,
+    TreatmentMigrationResponse,
+    TreatmentPagingResponse,
+    TreatmentRescindRequest,
+    TreatmentSkipRequest,
+    TreatmentStateResponse,
+    TreatmentTotalsResponse,
+)
+from domain.treatment import TreatmentItem, TreatmentState, TreatmentTotals
 from infra.db import bind_session
-from infra.repositories._helpers import extract_date_from_timestamp
+from services.treatment import (
+    TreatmentConflictError,
+    TreatmentNotFoundError,
+    TreatmentService,
+)
 from shared.config import get_principal_settings
-from shared.text import normalize_document
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/treatment", tags=["treatment"])
 
-_REQUEST_PRINCIPAL_HEADER_CANDIDATES = (
+DEFAULT_GRID = "PLANOS_P_RESCISAO"
+
+_REQUEST_PRINCIPAL_HEADER_CANDIDATES: Iterable[str] = (
     "x-user-registration",
     "x-user-id",
     "x-app-user-registration",
@@ -40,42 +56,42 @@ def _resolve_request_matricula(request: Request | None) -> str | None:
     return matricula or None
 
 
-def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
-    """Map a treatment table row joined with vw_planos_busca into the response model."""
-
-    number = str(row.get("numero_plano") or "").strip()
-    document = normalize_document(row.get("documento"))
-    company_name_raw = row.get("razao_social") or row.get("razao")
-    company_name = str(company_name_raw).strip() or None if company_name_raw else None
-    status_raw = row.get("situacao")
-    status = str(status_raw).strip() or None if status_raw else None
-    days_overdue_raw = row.get("dias_em_atraso")
-    try:
-        days_overdue = int(days_overdue_raw) if days_overdue_raw is not None else None
-    except (TypeError, ValueError):
-        days_overdue = None
-    balance_raw = row.get("saldo")
-    status_date = extract_date_from_timestamp(row.get("dt_situacao"))
-
-    return PlanSummaryResponse(
-        number=number,
-        document=document,
-        company_name=company_name,
-        status=status,
-        days_overdue=days_overdue,
-        balance=balance_raw,
-        status_date=status_date,
+def _to_totals_response(totals: TreatmentTotals) -> TreatmentTotalsResponse:
+    return TreatmentTotalsResponse(
+        pending=totals.pending,
+        processed=totals.processed,
+        skipped=totals.skipped,
     )
 
 
-@router.get("/plans", response_model=PlansResponse)
-async def list_treatment_plans(
-    request: Request,
-    page: int = Query(1, ge=1, description="Página atual (base 1)"),
-    page_size: int = Query(10, ge=1, le=10, description="Itens por página (máx. 10)"),
-) -> PlansResponse:
-    """Return plans currently eligible for treatment (P_RESCISAO)."""
+def _to_state_response(state: TreatmentState) -> TreatmentStateResponse:
+    return TreatmentStateResponse(
+        has_open=state.has_open,
+        lote_id=state.lote_id,
+        totals=_to_totals_response(state.totals),
+    )
 
+
+def _to_item_response(item: TreatmentItem) -> TreatmentItemResponse:
+    company = (item.razao_social or "").strip() or None
+    return TreatmentItemResponse(
+        lote_id=item.lote_id,
+        plano_id=item.plano_id,
+        number=item.numero_plano,
+        document=item.documento,
+        company_name=company,
+        balance=item.saldo,
+        status_date=item.dt_situacao,
+        status=item.status,
+        situacao_codigo=item.situacao_codigo,
+    )
+
+
+@router.get("/state", response_model=TreatmentStateResponse)
+async def get_treatment_state(
+    request: Request,
+    grid: str = Query(DEFAULT_GRID, alias="grid"),
+) -> TreatmentStateResponse:
     matricula = _resolve_request_matricula(request)
     if not matricula:
         raise HTTPException(
@@ -83,82 +99,223 @@ async def list_treatment_plans(
             detail="Credenciais de acesso ausentes.",
         )
 
-    effective_page_size = max(1, min(page_size, 10))
-    offset = (page - 1) * effective_page_size
-
-    sql = (
-        "SELECT v.numero_plano, v.documento, v.razao_social, v.situacao,"
-        "       v.dias_em_atraso, v.saldo, v.dt_situacao,"
-        "       COUNT(*) OVER () AS total_count"
-        "  FROM app.vw_planos_busca AS v"
-        " WHERE v.situacao_codigo = 'P_RESCISAO'"
-        " ORDER BY v.saldo DESC NULLS LAST, v.dt_situacao DESC NULLS LAST, v.numero_plano"
-        " LIMIT %(limit)s OFFSET %(offset)s"
-    )
-
     connection_manager = get_connection_manager()
     try:
         async with connection_manager as connection:
             await bind_session(connection, matricula)
-            async with connection.cursor(row_factory=dict_row) as cur:
-                await cur.execute(sql, {"limit": effective_page_size, "offset": offset})
-                rows = await cur.fetchall()
+            service = TreatmentService(connection)
+            state = await service.get_state(grid=grid)
     except Exception as exc:  # pragma: no cover - defensive
-        logger.exception("Erro ao carregar planos para tratamento")
+        logger.exception("Erro ao carregar estado do tratamento")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Não foi possível carregar os planos para tratamento.",
+            detail="Não foi possível carregar o estado do tratamento.",
         ) from exc
 
-    items = [_row_to_plan_summary(row) for row in rows]
-    total = int(rows[0].get("total_count") or 0) if rows else 0
-
-    showing_from = offset + 1 if rows else 0
-    showing_to = offset + len(rows) if rows else 0
-    total_pages = math.ceil(total / effective_page_size) if total else 0
-    has_more = offset + len(rows) < total
-
-    paging = PlansPaging(
-        page=page,
-        page_size=effective_page_size,
-        has_more=has_more,
-        next_cursor=None,
-        prev_cursor=None,
-        showing_from=showing_from,
-        showing_to=showing_to,
-        total_count=total,
-        total_pages=total_pages,
-    )
-
-    return PlansResponse(items=items, total=total, paging=paging)
+    return _to_state_response(state)
 
 
-@router.post("/migrate", status_code=status.HTTP_204_NO_CONTENT)
-async def migrate_plans(request: Request) -> None:
-    """Trigger a refresh of treatment data without persisting duplicates."""
-
+@router.post("/migrate", response_model=TreatmentMigrationResponse)
+async def migrate_treatment(
+    request: Request,
+    payload: TreatmentMigrateRequest,
+) -> TreatmentMigrationResponse:
     matricula = _resolve_request_matricula(request)
     if not matricula:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciais de acesso ausentes.",
         )
+
+    grid = (payload.grid or DEFAULT_GRID).strip().upper() or DEFAULT_GRID
+    if grid != DEFAULT_GRID:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Grid de tratamento não suportada.",
+        )
+
     connection_manager = get_connection_manager()
     try:
         async with connection_manager as connection:
             await bind_session(connection, matricula)
-            async with connection.cursor() as cur:
-                await cur.execute(
-                    "SELECT COUNT(*) FROM app.vw_planos_busca"
-                    " WHERE situacao_codigo = 'P_RESCISAO'"
-                )
-                await cur.fetchone()
+            service = TreatmentService(connection)
+            result = await service.migrate(grid=grid, filters=payload.filters)
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Erro ao migrar planos para tratamento")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Não foi possível migrar os planos para tratamento.",
         ) from exc
+
+    return TreatmentMigrationResponse(
+        lote_id=result.lote_id,
+        items_seeded=result.items_seeded,
+        created=result.created,
+    )
+
+
+@router.get("/items", response_model=TreatmentItemsResponse)
+async def list_treatment_items(
+    request: Request,
+    lote_id: UUID,
+    status_value: str = Query("pending", alias="status"),
+    page_size: int = Query(10, ge=1, le=50),
+    cursor: str | None = Query(None),
+    direction: str = Query("next", regex="^(next|prev)$"),
+) -> TreatmentItemsResponse:
+    matricula = _resolve_request_matricula(request)
+    if not matricula:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais de acesso ausentes.",
+        )
+
+    connection_manager = get_connection_manager()
+    try:
+        async with connection_manager as connection:
+            await bind_session(connection, matricula)
+            service = TreatmentService(connection)
+            page = await service.list_items(
+                lote_id=lote_id,
+                status=status_value,
+                page_size=page_size,
+                cursor=cursor,
+                direction=direction,
+            )
+    except TreatmentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc) or "Item não encontrado.",
+        ) from exc
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Erro ao carregar itens do tratamento")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Não foi possível carregar os itens do tratamento.",
+        ) from exc
+
+    items = [_to_item_response(item) for item in page.items]
+    paging = TreatmentPagingResponse(
+        next_cursor=page.next_cursor,
+        prev_cursor=page.prev_cursor,
+        has_more=page.has_more,
+        page_size=page.page_size,
+    )
+    return TreatmentItemsResponse(items=items, paging=paging)
+
+
+@router.post("/rescind")
+async def rescind_treatment_item(
+    request: Request,
+    payload: TreatmentRescindRequest,
+) -> dict[str, bool]:
+    matricula = _resolve_request_matricula(request)
+    if not matricula:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais de acesso ausentes.",
+        )
+
+    effective_iso = payload.data_rescisao.isoformat()
+    connection_manager = get_connection_manager()
+    try:
+        async with connection_manager as connection:
+            await bind_session(connection, matricula)
+            service = TreatmentService(connection)
+            await service.rescind(
+                lote_id=payload.lote_id,
+                plano_id=payload.plano_id,
+                effective_dt_iso=effective_iso,
+            )
+    except TreatmentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc) or "Item não encontrado.",
+        ) from exc
+    except TreatmentConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc) or "Operação não permitida no estado atual.",
+        ) from exc
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Erro ao rescindir plano do tratamento")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Não foi possível rescindir o plano selecionado.",
+        ) from exc
+
+    return {"ok": True}
+
+
+@router.post("/skip")
+async def skip_treatment_item(
+    request: Request,
+    payload: TreatmentSkipRequest,
+) -> dict[str, bool]:
+    matricula = _resolve_request_matricula(request)
+    if not matricula:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais de acesso ausentes.",
+        )
+
+    connection_manager = get_connection_manager()
+    try:
+        async with connection_manager as connection:
+            await bind_session(connection, matricula)
+            service = TreatmentService(connection)
+            await service.skip(lote_id=payload.lote_id, plano_id=payload.plano_id)
+    except TreatmentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc) or "Item não encontrado.",
+        ) from exc
+    except TreatmentConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc) or "Operação não permitida no estado atual.",
+        ) from exc
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Erro ao pular item do tratamento")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Não foi possível marcar o item como ignorado.",
+        ) from exc
+
+    return {"ok": True}
+
+
+@router.post("/close")
+async def close_treatment_batch(
+    request: Request,
+    payload: TreatmentCloseRequest,
+) -> dict[str, bool]:
+    matricula = _resolve_request_matricula(request)
+    if not matricula:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais de acesso ausentes.",
+        )
+
+    connection_manager = get_connection_manager()
+    try:
+        async with connection_manager as connection:
+            await bind_session(connection, matricula)
+            service = TreatmentService(connection)
+            await service.close(lote_id=payload.lote_id)
+    except TreatmentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc) or "Lote não encontrado.",
+        ) from exc
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Erro ao encerrar lote de tratamento")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Não foi possível encerrar o lote.",
+        ) from exc
+
+    return {"ok": True}
 
 
 __all__ = ["router"]

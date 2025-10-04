@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
+from uuid import UUID
 
 import pydantic
 
@@ -88,6 +89,88 @@ class PlansResponse(BaseModel):
     total: int
     paging: PlansPaging | None = None
     filters: PlansFilters | None = None
+
+
+class TreatmentTotalsResponse(BaseModel):
+    """Aggregated counts for a treatment batch."""
+
+    pending: int
+    processed: int
+    skipped: int
+
+
+class TreatmentStateResponse(BaseModel):
+    """High-level status for the treatment workflow."""
+
+    has_open: bool
+    lote_id: UUID | None = None
+    totals: TreatmentTotalsResponse
+
+
+class TreatmentMigrationResponse(BaseModel):
+    """Payload returned after requesting a treatment snapshot."""
+
+    lote_id: UUID
+    items_seeded: int
+    created: bool | None = None
+
+
+class TreatmentItemResponse(BaseModel):
+    """Single item inside a treatment batch."""
+
+    lote_id: UUID
+    plano_id: UUID
+    number: str
+    document: Optional[str] = None
+    company_name: Optional[str] = None
+    balance: Optional[Decimal] = None
+    status_date: Optional[date] = None
+    status: str
+    situacao_codigo: Optional[str] = None
+
+
+class TreatmentPagingResponse(BaseModel):
+    """Keyset paging metadata for treatment items."""
+
+    next_cursor: str | None = None
+    prev_cursor: str | None = None
+    has_more: bool
+    page_size: int
+
+
+class TreatmentItemsResponse(BaseModel):
+    """Response structure for the treatment items endpoint."""
+
+    items: list[TreatmentItemResponse]
+    paging: TreatmentPagingResponse
+
+
+class TreatmentMigrateRequest(BaseModel):
+    """Payload accepted by the treatment migration endpoint."""
+
+    grid: str = "PLANOS_P_RESCISAO"
+    filters: dict[str, Any] | None = None
+
+
+class TreatmentRescindRequest(BaseModel):
+    """Payload for plan rescission within a batch."""
+
+    lote_id: UUID
+    plano_id: UUID
+    data_rescisao: datetime
+
+
+class TreatmentSkipRequest(BaseModel):
+    """Payload to mark an item as skipped."""
+
+    lote_id: UUID
+    plano_id: UUID
+
+
+class TreatmentCloseRequest(BaseModel):
+    """Payload for closing a treatment batch."""
+
+    lote_id: UUID
 
 
 class PipelineStatusViewResponse(BaseModel):

@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnStart = document.getElementById('btnStart');
   const btnPause = document.getElementById('btnPause');
   const btnContinue = document.getElementById('btnContinue');
+  const btnCloseTreatment = document.getElementById('btnCloseTreatment');
   const progressContainer = document.querySelector('.progress');
   const progressBar = progressContainer?.querySelector('.progress__bar');
   const runningPlanNumberEl = document.getElementById('currentPlanNumber');
@@ -79,6 +80,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const PLANS_ENDPOINT = '/api/plans';
   const TREATMENT_ENDPOINT = '/api/treatment';
   const DEFAULT_PLAN_PAGE_SIZE = 10;
+  const TREATMENT_GRID = 'PLANOS_P_RESCISAO';
+  let treatmentBatchId = null;
+  let treatmentTotals = { pending: 0, processed: 0, skipped: 0 };
+  let treatmentStatusFilter = 'pending';
   const tableSearchState = {
     plans: '',
     occurrences: '',
@@ -141,6 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let isFetchingPlans = false;
   let isFetchingOccurrences = false;
   let isFetchingTreatment = false;
+  let isFetchingTreatmentState = false;
   let plansLoaded = false;
   let occurrencesLoaded = false;
   let treatmentLoaded = false;
@@ -647,7 +653,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderFilterChips();
   };
 
-  const renderTreatmentPlaceholder = (message, modifier = 'empty') => {
+  const renderTreatmentPlaceholder = (message = 'nenhum lote aberto. clique em "Migrar planos".', modifier = 'empty') => {
     if (!treatmentTableBody) {
       return;
     }
@@ -658,7 +664,7 @@ document.addEventListener('DOMContentLoaded', () => {
       row.classList.add(`table__row--${modifier}`);
     }
     const cell = document.createElement('td');
-    cell.className = 'table__cell';
+    cell.className = 'table__cell table__cell--empty';
     cell.colSpan = treatmentColumnCount;
     cell.textContent = message;
     row.appendChild(cell);
@@ -672,12 +678,15 @@ document.addEventListener('DOMContentLoaded', () => {
     treatmentTableBody.innerHTML = '';
     const plans = Array.isArray(items) ? items : [];
     if (!plans.length) {
-      renderTreatmentPlaceholder('nada a exibir por aqui.');
+      renderTreatmentPlaceholder('nenhum item pendente neste lote.');
       return;
     }
     plans.forEach((item) => {
       const row = document.createElement('tr');
       row.className = 'table__row';
+      if (item?.plano_id) {
+        row.dataset.planId = String(item.plano_id);
+      }
 
       const planCell = document.createElement('td');
       planCell.className = 'table__cell';
@@ -705,13 +714,84 @@ document.addEventListener('DOMContentLoaded', () => {
       row.appendChild(statusDateCell);
 
       const actionsCell = document.createElement('td');
-      actionsCell.className = 'table__cell';
-      actionsCell.textContent = '—';
+      actionsCell.className = 'table__cell table__cell--actions';
+      const actionsWrapper = document.createElement('div');
+      actionsWrapper.className = 'table-actions';
+
+      const rescindButton = document.createElement('button');
+      rescindButton.type = 'button';
+      rescindButton.className = 'btn btn--ghost';
+      rescindButton.textContent = 'Rescindir';
+      rescindButton.addEventListener('click', () => {
+        void handleRescind(item, rescindButton);
+      });
+      actionsWrapper.appendChild(rescindButton);
+
+      const skipButton = document.createElement('button');
+      skipButton.type = 'button';
+      skipButton.className = 'btn btn--ghost';
+      skipButton.textContent = 'Pular';
+      skipButton.addEventListener('click', () => {
+        void handleSkip(item, skipButton);
+      });
+      actionsWrapper.appendChild(skipButton);
+
+      actionsCell.appendChild(actionsWrapper);
       row.appendChild(actionsCell);
 
       treatmentTableBody.appendChild(row);
     });
   };
+
+  const resetTreatmentPagination = () => {
+    treatmentPager.page = 1;
+    treatmentPager.nextCursor = null;
+    treatmentPager.prevCursor = null;
+    treatmentPager.hasMoreNext = false;
+    treatmentPager.hasMorePrev = false;
+    treatmentPager.lastCount = 0;
+  };
+
+  const setTreatmentTotals = (totals) => {
+    const pending = Number(totals?.pending) || 0;
+    const processed = Number(totals?.processed) || 0;
+    const skipped = Number(totals?.skipped) || 0;
+    treatmentTotals = {
+      pending: pending < 0 ? 0 : pending,
+      processed: processed < 0 ? 0 : processed,
+      skipped: skipped < 0 ? 0 : skipped,
+    };
+    updateTreatmentKpis();
+  };
+
+  const buildTreatmentFilters = () => {
+    const filters = {};
+    if (Array.isArray(filtersState.situacao) && filtersState.situacao.length) {
+      filters.situacao = filtersState.situacao;
+    }
+    if (typeof filtersState.diasMin === 'number' && Number.isFinite(filtersState.diasMin)) {
+      filters.dias_min = filtersState.diasMin;
+    }
+    if (typeof filtersState.saldoMin === 'number' && Number.isFinite(filtersState.saldoMin)) {
+      filters.saldo_min = filtersState.saldoMin;
+    }
+    if (filtersState.dtRange) {
+      filters.dt_sit_range = filtersState.dtRange;
+    }
+    return Object.keys(filters).length ? filters : null;
+  };
+
+  function updateTreatmentKpis() {
+    if (kpiQueueEl) {
+      kpiQueueEl.textContent = formatIntCount(treatmentTotals.pending ?? 0);
+    }
+    if (kpiRescindedEl) {
+      kpiRescindedEl.textContent = formatIntCount(treatmentTotals.processed ?? 0);
+    }
+    if (kpiFailuresEl) {
+      kpiFailuresEl.textContent = formatIntCount(treatmentTotals.skipped ?? 0);
+    }
+  }
 
   const renderOccurrencesPlaceholder = (message, modifier = 'empty') => {
     if (!occTableBody) {
@@ -1113,11 +1193,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const treatmentPager = {
     page: 1,
     pageSize: DEFAULT_PLAN_PAGE_SIZE,
-    hasMore: false,
-    totalCount: null,
-    totalPages: null,
-    showingFrom: 0,
-    showingTo: 0,
+    nextCursor: null,
+    prevCursor: null,
+    hasMoreNext: false,
+    hasMorePrev: false,
+    lastCount: 0,
   };
 
   // Occurrences pager UI elements
@@ -1173,32 +1253,27 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const updateTreatmentPagerUI = () => {
+    const currentPage = Math.max(1, treatmentPager.page || 1);
     if (treatmentPagerLabel) {
-      const totalPagesRaw = treatmentPager.totalPages ?? null;
-      const totalPagesNumber =
-        totalPagesRaw && Number.isFinite(totalPagesRaw) && totalPagesRaw > 0
-          ? Number(totalPagesRaw)
-          : 1;
-      const currentPage = Math.max(1, treatmentPager.page || 1);
-      treatmentPagerLabel.textContent = `pág. ${currentPage} de ${totalPagesNumber}`;
+      treatmentPagerLabel.textContent = `pág. ${currentPage} de 1`;
     }
     if (treatmentPagerRange) {
-      const totalKnown =
-        treatmentPager.totalCount !== null && treatmentPager.totalCount !== undefined;
-      const totalLabel = totalKnown
-        ? String(treatmentPager.totalCount)
-        : `~${Math.max(treatmentPager.showingTo, 0)}`;
-      const from = treatmentPager.showingFrom || 0;
-      const to = treatmentPager.showingTo || 0;
-      treatmentPagerRange.textContent = `exibindo ${from}–${to} de ${totalLabel} planos para rescisão`;
+      const showingFrom = treatmentPager.lastCount
+        ? (currentPage - 1) * treatmentPager.pageSize + 1
+        : 0;
+      const showingTo = treatmentPager.lastCount
+        ? showingFrom + treatmentPager.lastCount - 1
+        : 0;
+      const totalLabel = showingTo ? `~${showingTo}` : '0';
+      treatmentPagerRange.textContent = `exibindo ${showingFrom}–${showingTo} de ${totalLabel} planos para rescisão`;
     }
     if (treatmentPagerPrevBtn) {
-      const canGoPrev = treatmentPager.page > 1;
+      const canGoPrev = currentPage > 1 && Boolean(treatmentPager.prevCursor);
       treatmentPagerPrevBtn.disabled = !canGoPrev;
       treatmentPagerPrevBtn.setAttribute('aria-disabled', String(!canGoPrev));
     }
     if (treatmentPagerNextBtn) {
-      const canGoNext = !!treatmentPager.hasMore;
+      const canGoNext = Boolean(treatmentPager.hasMoreNext && treatmentPager.nextCursor);
       treatmentPagerNextBtn.disabled = !canGoNext;
       treatmentPagerNextBtn.setAttribute('aria-disabled', String(!canGoNext));
     }
@@ -1783,20 +1858,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (treatmentPagerPrevBtn) {
     treatmentPagerPrevBtn.addEventListener('click', () => {
-      if (treatmentPager.page <= 1) {
+      if (treatmentPager.page <= 1 || !treatmentPager.prevCursor) {
         return;
       }
-      const targetPage = Math.max(1, treatmentPager.page - 1);
-      void refreshTreatment({ showLoading: true, page: targetPage });
+      void refreshTreatment({ direction: 'prev', cursor: treatmentPager.prevCursor });
     });
   }
   if (treatmentPagerNextBtn) {
     treatmentPagerNextBtn.addEventListener('click', () => {
-      if (!treatmentPager.hasMore) {
+      if (!treatmentPager.hasMoreNext || !treatmentPager.nextCursor) {
         return;
       }
-      const targetPage = treatmentPager.page + 1;
-      void refreshTreatment({ showLoading: true, page: targetPage });
+      void refreshTreatment({ direction: 'next', cursor: treatmentPager.nextCursor });
     });
   }
 
@@ -1917,19 +1990,109 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  const refreshTreatment = async ({ showLoading, page: pageOverride } = {}) => {
+  const fetchTreatmentState = async ({ refreshItems = true } = {}) => {
+    if (isFetchingTreatmentState) {
+      return null;
+    }
+    isFetchingTreatmentState = true;
+    const baseUrl =
+      window.location.origin && window.location.origin !== 'null'
+        ? window.location.origin
+        : window.location.href;
+    const url = new URL(`${TREATMENT_ENDPOINT}/state`, baseUrl);
+    url.searchParams.set('grid', TREATMENT_GRID);
+    const headers = new Headers({ Accept: 'application/json' });
+    const matricula = currentUser?.username?.trim();
+    if (matricula) {
+      headers.set('X-User-Registration', matricula);
+    }
+
+    try {
+      const response = await fetch(url.toString(), { headers });
+      if (!response.ok) {
+        throw new Error('Falha ao obter estado do tratamento.');
+      }
+      const payload = await response.json();
+      const hasOpen = Boolean(payload?.has_open);
+      const loteIdRaw = hasOpen ? payload?.lote_id ?? null : null;
+      const loteId = loteIdRaw ? String(loteIdRaw) : null;
+      setTreatmentTotals(payload?.totals ?? {});
+
+      if (btnCloseTreatment) {
+        const disable = !hasOpen || !loteId;
+        btnCloseTreatment.disabled = disable;
+        btnCloseTreatment.setAttribute('aria-disabled', String(disable));
+      }
+
+      if (!hasOpen || !loteId) {
+        treatmentBatchId = null;
+        resetTreatmentPagination();
+        updateTreatmentPagerUI();
+        renderTreatmentPlaceholder();
+        treatmentLoaded = true;
+        return payload;
+      }
+
+      const batchChanged = treatmentBatchId !== loteId;
+      treatmentBatchId = loteId;
+      if (batchChanged) {
+        resetTreatmentPagination();
+      }
+      if (refreshItems || batchChanged) {
+        await refreshTreatment({ reset: batchChanged, showLoading: !treatmentLoaded });
+      } else {
+        updateTreatmentPagerUI();
+      }
+      return payload;
+    } catch (error) {
+      console.error('Erro ao carregar o estado do tratamento.', error);
+      treatmentBatchId = null;
+      setTreatmentTotals({ pending: 0, processed: 0, skipped: 0 });
+      resetTreatmentPagination();
+      updateTreatmentPagerUI();
+      if (btnCloseTreatment) {
+        btnCloseTreatment.disabled = true;
+        btnCloseTreatment.setAttribute('aria-disabled', 'true');
+      }
+      if (!treatmentLoaded) {
+        renderTreatmentPlaceholder('Não foi possível carregar os planos.', 'error');
+      }
+      return null;
+    } finally {
+      isFetchingTreatmentState = false;
+    }
+  };
+
+  const refreshTreatment = async ({
+    cursor,
+    direction = 'next',
+    reset = false,
+    showLoading,
+  } = {}) => {
     if (!treatmentTableBody || isFetchingTreatment) {
       return;
     }
+    if (!treatmentBatchId) {
+      resetTreatmentPagination();
+      updateTreatmentPagerUI();
+      renderTreatmentPlaceholder();
+      return;
+    }
+
+    const normalizedDirection = direction === 'prev' ? 'prev' : 'next';
+    if (reset) {
+      resetTreatmentPagination();
+    }
+
+    let requestCursor = cursor;
+    if (requestCursor === undefined) {
+      requestCursor =
+        normalizedDirection === 'prev' ? treatmentPager.prevCursor : treatmentPager.nextCursor;
+    }
+
     const shouldShowLoading = showLoading ?? !treatmentLoaded;
     if (shouldShowLoading) {
       renderTreatmentPlaceholder('carregando planos...', 'loading');
-    }
-
-    if (typeof pageOverride === 'number' && Number.isFinite(pageOverride)) {
-      treatmentPager.page = Math.max(1, Math.trunc(pageOverride));
-    } else if (!Number.isFinite(treatmentPager.page) || treatmentPager.page < 1) {
-      treatmentPager.page = 1;
     }
 
     isFetchingTreatment = true;
@@ -1938,89 +2101,60 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.origin && window.location.origin !== 'null'
           ? window.location.origin
           : window.location.href;
-      const url = new URL(`${TREATMENT_ENDPOINT}/plans`, baseUrl);
-      url.searchParams.set('page', String(treatmentPager.page));
+      const url = new URL(`${TREATMENT_ENDPOINT}/items`, baseUrl);
+      url.searchParams.set('lote_id', String(treatmentBatchId));
+      url.searchParams.set('status', treatmentStatusFilter);
       url.searchParams.set('page_size', String(treatmentPager.pageSize || DEFAULT_PLAN_PAGE_SIZE));
-      const requestHeaders = new Headers({ Accept: 'application/json' });
+      url.searchParams.set('direction', normalizedDirection);
+      if (requestCursor) {
+        url.searchParams.set('cursor', requestCursor);
+      }
+
+      const headers = new Headers({ Accept: 'application/json' });
       const matricula = currentUser?.username?.trim();
       if (matricula) {
-        requestHeaders.set('X-User-Registration', matricula);
+        headers.set('X-User-Registration', matricula);
       }
-      const response = await fetch(url.toString(), { headers: requestHeaders });
+
+      const response = await fetch(url.toString(), { headers });
       if (!response.ok) {
-        throw new Error('Não foi possível carregar os planos.');
+        throw new Error('Não foi possível carregar os itens do tratamento.');
       }
+
       const payload = await response.json();
       const items = Array.isArray(payload?.items) ? payload.items : [];
       renderTreatmentRows(items);
-      const total = typeof payload?.total === 'number' ? payload.total : items.length;
-      if (kpiQueueEl) {
-        kpiQueueEl.textContent = formatIntCount(total);
-      }
 
-      const paging = payload?.paging || null;
-      if (paging && typeof paging === 'object') {
-        const pageValue = Number(paging.page);
-        treatmentPager.page = Number.isFinite(pageValue) && pageValue > 0 ? pageValue : treatmentPager.page;
-        const pageSizeValue = Number(paging.page_size);
-        if (Number.isFinite(pageSizeValue) && pageSizeValue > 0) {
-          treatmentPager.pageSize = pageSizeValue;
+      const paging = payload?.paging || {};
+      const pageSizeValue = Number(paging.page_size);
+      if (Number.isFinite(pageSizeValue) && pageSizeValue > 0) {
+        treatmentPager.pageSize = pageSizeValue;
+      }
+      treatmentPager.nextCursor = paging?.next_cursor || null;
+      treatmentPager.prevCursor = paging?.prev_cursor || null;
+      treatmentPager.lastCount = items.length;
+
+      if (!reset && requestCursor) {
+        if (normalizedDirection === 'next') {
+          treatmentPager.page += 1;
+        } else if (normalizedDirection === 'prev') {
+          treatmentPager.page = Math.max(1, treatmentPager.page - 1);
         }
-        treatmentPager.hasMore = Boolean(paging.has_more);
-
-        const showingFromValue = Number(paging.showing_from);
-        treatmentPager.showingFrom = Number.isFinite(showingFromValue) && showingFromValue >= 0
-          ? showingFromValue
-          : items.length
-            ? (treatmentPager.page - 1) * treatmentPager.pageSize + 1
-            : 0;
-
-        const showingToValue = Number(paging.showing_to);
-        treatmentPager.showingTo = Number.isFinite(showingToValue) && showingToValue >= 0
-          ? showingToValue
-          : treatmentPager.showingFrom + items.length - (items.length ? 1 : 0);
-
-        treatmentPager.totalCount =
-          typeof paging.total_count === 'number' && Number.isFinite(paging.total_count)
-            ? paging.total_count
-            : (typeof total === 'number' && Number.isFinite(total) ? total : null);
-
-        const totalPagesValue = Number(paging.total_pages);
-        treatmentPager.totalPages = Number.isFinite(totalPagesValue) && totalPagesValue > 0
-          ? totalPagesValue
-          : treatmentPager.totalCount && treatmentPager.totalCount > 0
-            ? Math.ceil(treatmentPager.totalCount / treatmentPager.pageSize)
-            : null;
       } else {
-        treatmentPager.page = Math.max(1, treatmentPager.page || 1);
-        treatmentPager.pageSize = treatmentPager.pageSize || DEFAULT_PLAN_PAGE_SIZE;
-        const showingFrom = items.length ? (treatmentPager.page - 1) * treatmentPager.pageSize + 1 : 0;
-        const showingTo = items.length ? showingFrom + items.length - 1 : 0;
-        treatmentPager.showingFrom = showingFrom;
-        treatmentPager.showingTo = showingTo;
-        treatmentPager.totalCount =
-          typeof total === 'number' && Number.isFinite(total) ? total : null;
-        treatmentPager.totalPages = treatmentPager.totalCount
-          ? Math.ceil(treatmentPager.totalCount / treatmentPager.pageSize)
-          : treatmentPager.totalCount === 0
-            ? 0
-            : null;
-        treatmentPager.hasMore = treatmentPager.totalCount !== null
-          ? showingTo < treatmentPager.totalCount
-          : items.length === treatmentPager.pageSize;
+        treatmentPager.page = Math.max(1, treatmentPager.page);
       }
 
-      // Ensure showing bounds are non-negative integers.
-      treatmentPager.showingFrom = Math.max(0, Math.trunc(treatmentPager.showingFrom || 0));
-      treatmentPager.showingTo = Math.max(0, Math.trunc(treatmentPager.showingTo || 0));
-      treatmentPager.totalCount =
-        typeof treatmentPager.totalCount === 'number' && Number.isFinite(treatmentPager.totalCount)
-          ? Math.max(0, Math.trunc(treatmentPager.totalCount))
-          : treatmentPager.totalCount;
-      treatmentPager.totalPages =
-        typeof treatmentPager.totalPages === 'number' && Number.isFinite(treatmentPager.totalPages)
-          ? Math.max(0, Math.trunc(treatmentPager.totalPages))
-          : treatmentPager.totalPages;
+      if (normalizedDirection === 'next') {
+        treatmentPager.hasMoreNext = Boolean(paging?.has_more);
+        treatmentPager.hasMorePrev = treatmentPager.page > 1;
+      } else {
+        treatmentPager.hasMorePrev = Boolean(paging?.has_more);
+        treatmentPager.hasMoreNext = true;
+      }
+
+      if (treatmentPager.page <= 1) {
+        treatmentPager.hasMorePrev = false;
+      }
 
       updateTreatmentPagerUI();
       treatmentLoaded = true;
@@ -2033,6 +2167,93 @@ document.addEventListener('DOMContentLoaded', () => {
       isFetchingTreatment = false;
     }
   };
+
+  async function handleRescind(item, button) {
+    if (!treatmentBatchId || !item?.plano_id) {
+      return;
+    }
+    const targetButton = button ?? null;
+    if (targetButton) {
+      targetButton.disabled = true;
+      targetButton.setAttribute('aria-disabled', 'true');
+    }
+    try {
+      const baseUrl =
+        window.location.origin && window.location.origin !== 'null'
+          ? window.location.origin
+          : window.location.href;
+      const url = new URL(`${TREATMENT_ENDPOINT}/rescind`, baseUrl);
+      const headers = new Headers({ Accept: 'application/json', 'Content-Type': 'application/json' });
+      const matricula = currentUser?.username?.trim();
+      if (matricula) {
+        headers.set('X-User-Registration', matricula);
+      }
+      const payload = {
+        lote_id: treatmentBatchId,
+        plano_id: item.plano_id,
+        data_rescisao: new Date().toISOString(),
+      };
+      const response = await fetch(url.toString(), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error('Falha ao rescindir o plano.');
+      }
+      await fetchTreatmentState({ refreshItems: true });
+    } catch (error) {
+      console.error('Erro ao rescindir plano.', error);
+    } finally {
+      if (targetButton) {
+        targetButton.disabled = false;
+        targetButton.setAttribute('aria-disabled', 'false');
+      }
+    }
+  }
+
+  async function handleSkip(item, button) {
+    if (!treatmentBatchId || !item?.plano_id) {
+      return;
+    }
+    const targetButton = button ?? null;
+    if (targetButton) {
+      targetButton.disabled = true;
+      targetButton.setAttribute('aria-disabled', 'true');
+    }
+    try {
+      const baseUrl =
+        window.location.origin && window.location.origin !== 'null'
+          ? window.location.origin
+          : window.location.href;
+      const url = new URL(`${TREATMENT_ENDPOINT}/skip`, baseUrl);
+      const headers = new Headers({ Accept: 'application/json', 'Content-Type': 'application/json' });
+      const matricula = currentUser?.username?.trim();
+      if (matricula) {
+        headers.set('X-User-Registration', matricula);
+      }
+      const payload = {
+        lote_id: treatmentBatchId,
+        plano_id: item.plano_id,
+      };
+      const response = await fetch(url.toString(), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error('Falha ao ignorar o item.');
+      }
+      await fetchTreatmentState({ refreshItems: true });
+    } catch (error) {
+      console.error('Erro ao ignorar item de tratamento.', error);
+    } finally {
+      if (targetButton) {
+        targetButton.disabled = false;
+        targetButton.setAttribute('aria-disabled', 'false');
+      }
+    }
+  }
 
   const setupOccurrencesSearchObserver = () => {
     const occurrencesPanel = document.getElementById('occurrencesTablePanel');
@@ -2427,6 +2648,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         treatmentPanel.removeAttribute('hidden');
         basePanel.setAttribute('hidden', 'hidden');
+        void fetchTreatmentState({ refreshItems: !treatmentLoaded });
       }
     };
 
@@ -2457,7 +2679,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setStatus(defaultMessages.idle);
   void refreshPlans();
   void refreshOccurrences();
-  void refreshTreatment({ page: 1 });
+  void fetchTreatmentState({ refreshItems: true });
   // Initialize KPI values with zeros; backend wiring can update these later
   updateKpiCounts({ queueCount: 0, rescindedCount: 0, remainingCount: 0 });
 
@@ -2580,14 +2802,63 @@ document.addEventListener('DOMContentLoaded', () => {
         if (matricula) {
           headers.set('X-User-Registration', matricula);
         }
-        const response = await fetch(url.toString(), { method: 'POST', headers });
+        const payload = { grid: TREATMENT_GRID };
+        const filtersPayload = buildTreatmentFilters();
+        if (filtersPayload) {
+          payload.filters = filtersPayload;
+        }
+        const response = await fetch(url.toString(), {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        });
         if (!response.ok) {
           throw new Error('Falha ao migrar planos.');
         }
-        // On success, refresh Treatment table and KPI
-        void refreshTreatment({ showLoading: true, page: 1 });
+        await response.json().catch(() => null);
+        await fetchTreatmentState({ refreshItems: true });
       } catch (error) {
         console.error('Erro ao migrar planos para tratamento.', error);
+      }
+    });
+  }
+
+  if (btnCloseTreatment) {
+    btnCloseTreatment.addEventListener('click', async () => {
+      if (!treatmentBatchId) {
+        return;
+      }
+      btnCloseTreatment.disabled = true;
+      btnCloseTreatment.setAttribute('aria-disabled', 'true');
+
+      try {
+        const baseUrl =
+          window.location.origin && window.location.origin !== 'null'
+            ? window.location.origin
+            : window.location.href;
+        const url = new URL(`${TREATMENT_ENDPOINT}/close`, baseUrl);
+        const headers = new Headers({ 'Accept': 'application/json', 'Content-Type': 'application/json' });
+        const matricula = currentUser?.username?.trim();
+        if (matricula) {
+          headers.set('X-User-Registration', matricula);
+        }
+        const payload = { lote_id: treatmentBatchId };
+        const response = await fetch(url.toString(), {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          throw new Error('Falha ao encerrar o lote.');
+        }
+        await response.json().catch(() => null);
+        await fetchTreatmentState({ refreshItems: true });
+      } catch (error) {
+        console.error('Erro ao encerrar lote de tratamento.', error);
+        if (treatmentBatchId) {
+          btnCloseTreatment.disabled = false;
+          btnCloseTreatment.setAttribute('aria-disabled', 'false');
+        }
       }
     });
   }

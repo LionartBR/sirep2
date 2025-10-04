@@ -5,6 +5,7 @@ from .events import EventsRepository
 from .lookups import LookupCache
 from .occurrences import OccurrenceRepository
 from .plans import PlansRepository
+from .treatment import TreatmentRepository
 
 __all__ = [
     "EventsRepository",
@@ -12,4 +13,5 @@ __all__ = [
     "OccurrenceRepository",
     "PlanDTO",
     "PlansRepository",
+    "TreatmentRepository",
 ]
