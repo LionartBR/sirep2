@@ -155,6 +155,8 @@ def _ensure_psycopg_stub() -> None:
 
     if "psycopg_pool" in missing_modules:
         sys.modules["psycopg_pool"] = _build_pool_module()
+
+
 try:
     from psycopg.rows import dict_row
 except ModuleNotFoundError:
@@ -360,9 +362,13 @@ def _ensure_pydantic_stub() -> None:
     pydantic_module.ConfigDict = ConfigDict
 
     sys.modules["pydantic"] = pydantic_module
+
+
 try:  # noqa: F401 - ensure pydantic is importable for downstream modules
     import pydantic  # type: ignore[attr-defined]  # noqa: F401
-except ModuleNotFoundError:  # pragma: no cover - exercised on environments without pydantic
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - exercised on environments without pydantic
     _ensure_pydantic_stub()
 
 

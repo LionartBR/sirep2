@@ -27,6 +27,7 @@ class NoCacheStaticFiles(StaticFiles):
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response
 
+
 def create_app() -> FastAPI:
     """Configure the FastAPI application with routes and static assets."""
 

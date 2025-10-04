@@ -51,6 +51,12 @@ document.addEventListener('DOMContentLoaded', () => {
     plansTableElement?.tHead?.rows?.[0]?.cells?.length ??
     plansTableElement?.rows?.[0]?.cells?.length ??
     8;
+  const plansActionsMenuContainer = document.querySelector('[data-plans-actions-menu]');
+  const plansActionsTrigger = document.getElementById('plansActionsTrigger');
+  const plansActionsMenu = document.getElementById('plansActionsMenu');
+  const plansSelectAllAction = plansActionsMenu?.querySelector('[data-action="select-all"]') ?? null;
+  const plansSelectAllLabel = plansSelectAllAction?.querySelector('span') ?? null;
+  const plansActionsSeparator = plansActionsMenu?.querySelector('[data-role="separator"]') ?? null;
   const plansFiltersChipsContainer = document.getElementById('plansFiltersChips');
   const occFiltersChipsContainer = document.getElementById('occFiltersChips');
 
@@ -94,6 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
     saldoMin: null,
     dtRange: null,
   };
+  const plansSelection = new Set();
   const FILTER_LABELS = {
     situacao: {
       P_RESCISAO: 'P. Rescisão',
@@ -150,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let plansLoaded = false;
   let occurrencesLoaded = false;
   let treatmentLoaded = false;
+  let isPlansActionsMenuOpen = false;
   let shouldRefreshPlansAfterRun = false;
   let lastSuccessfulFinishedAt = null;
 
@@ -468,10 +476,293 @@ document.addEventListener('DOMContentLoaded', () => {
     filtersState.dtRange = null;
   };
 
+  const planCheckboxSelector = "input[type='checkbox'][data-plan-checkbox]";
+
+  const getFirstVisiblePlansAction = () => {
+    if (!plansActionsMenu) {
+      return null;
+    }
+    const items = plansActionsMenu.querySelectorAll('.table-actions-menu__item');
+    for (const item of items) {
+      if (!(item instanceof HTMLElement)) {
+        continue;
+      }
+      if (!item.hidden && !item.disabled) {
+        return item;
+      }
+    }
+    return null;
+  };
+
+  const updatePlansActionsMenuState = () => {
+    if (!plansActionsMenu) {
+      return;
+    }
+    const checkboxSelector = planCheckboxSelector;
+    const totalCheckboxes = plansTableBody
+      ? plansTableBody.querySelectorAll(checkboxSelector).length
+      : 0;
+    const checkedCheckboxes = plansTableBody
+      ? plansTableBody.querySelectorAll(`${checkboxSelector}:checked`).length
+      : 0;
+    const hasSelection = plansSelection.size > 0 || checkedCheckboxes > 0;
+    const allSelected = totalCheckboxes > 0 && checkedCheckboxes === totalCheckboxes;
+
+    const requiresSelectionItems = plansActionsMenu.querySelectorAll('[data-requires-selection]');
+    requiresSelectionItems.forEach((node) => {
+      if (!(node instanceof HTMLElement)) {
+        return;
+      }
+      if (hasSelection) {
+        node.hidden = false;
+        node.removeAttribute('aria-hidden');
+      } else {
+        node.hidden = true;
+        node.setAttribute('aria-hidden', 'true');
+      }
+    });
+
+    if (plansActionsSeparator instanceof HTMLElement) {
+      if (hasSelection) {
+        plansActionsSeparator.removeAttribute('hidden');
+      } else {
+        plansActionsSeparator.setAttribute('hidden', 'hidden');
+      }
+    }
+
+    if (plansSelectAllAction instanceof HTMLElement) {
+      const isDisabled = totalCheckboxes === 0;
+      plansSelectAllAction.disabled = isDisabled;
+      plansSelectAllAction.setAttribute('aria-disabled', String(isDisabled));
+      plansSelectAllAction.dataset.mode = allSelected ? 'clear' : 'select';
+      if (plansSelectAllLabel) {
+        plansSelectAllLabel.textContent = allSelected ? 'Desmarcar todos' : 'Selecionar todos';
+      }
+    }
+
+    if (!hasSelection && isPlansActionsMenuOpen && plansActionsMenu) {
+      const activeElement = document.activeElement;
+      if (
+        activeElement instanceof HTMLElement &&
+        plansActionsMenu.contains(activeElement) &&
+        activeElement !== plansSelectAllAction
+      ) {
+        const firstItem = getFirstVisiblePlansAction();
+        if (firstItem) {
+          firstItem.focus();
+        }
+      }
+    }
+  };
+
+  const closePlansActionsMenu = (options = {}) => {
+    const { focusTrigger = false } = options;
+    if (!plansActionsMenu || !plansActionsMenuContainer || !plansActionsTrigger) {
+      return;
+    }
+    plansActionsMenuContainer.classList.remove('table-actions-menu--open');
+    plansActionsMenu.setAttribute('hidden', 'hidden');
+    plansActionsTrigger.setAttribute('aria-expanded', 'false');
+    isPlansActionsMenuOpen = false;
+    if (focusTrigger) {
+      plansActionsTrigger.focus();
+    }
+  };
+
+  const openPlansActionsMenu = (options = {}) => {
+    const { focusFirst = false } = options;
+    if (!plansActionsMenu || !plansActionsMenuContainer || !plansActionsTrigger) {
+      return;
+    }
+    updatePlansActionsMenuState();
+    plansActionsMenuContainer.classList.add('table-actions-menu--open');
+    plansActionsMenu.removeAttribute('hidden');
+    plansActionsTrigger.setAttribute('aria-expanded', 'true');
+    isPlansActionsMenuOpen = true;
+    if (focusFirst) {
+      const firstItem = getFirstVisiblePlansAction();
+      if (firstItem) {
+        window.requestAnimationFrame(() => {
+          firstItem.focus();
+        });
+      }
+    }
+  };
+
+  const togglePlansActionsMenu = () => {
+    if (isPlansActionsMenuOpen) {
+      closePlansActionsMenu();
+    } else {
+      openPlansActionsMenu();
+    }
+  };
+
+  const applyPlanRowSelectionState = (row, checked) => {
+    if (!row) {
+      return;
+    }
+    row.classList.toggle('table__row--selected', Boolean(checked));
+    row.setAttribute('aria-selected', String(Boolean(checked)));
+  };
+
+  const setPlanSelection = (planId, checked, { checkbox, row } = {}) => {
+    if (checkbox instanceof HTMLInputElement) {
+      checkbox.checked = Boolean(checked);
+    }
+    if (row instanceof HTMLElement) {
+      applyPlanRowSelectionState(row, checked);
+    }
+    const hasIdentifier = typeof planId === 'string' && planId.trim().length > 0;
+    if (!hasIdentifier) {
+      return;
+    }
+    if (checked) {
+      plansSelection.add(planId);
+    } else {
+      plansSelection.delete(planId);
+    }
+  };
+
+  const selectAllPlansOnPage = () => {
+    if (!plansTableBody) {
+      return;
+    }
+    const checkboxes = plansTableBody.querySelectorAll(planCheckboxSelector);
+    if (!checkboxes.length) {
+      return;
+    }
+    plansSelection.clear();
+    checkboxes.forEach((checkbox) => {
+      if (!(checkbox instanceof HTMLInputElement)) {
+        return;
+      }
+      const row = checkbox.closest('tr');
+      const planId = checkbox.dataset.planId ?? row?.dataset.planId ?? '';
+      setPlanSelection(planId, true, { checkbox, row });
+    });
+    updatePlansActionsMenuState();
+  };
+
+  const deselectAllPlansOnPage = () => {
+    if (!plansTableBody) {
+      return;
+    }
+    const checkboxes = plansTableBody.querySelectorAll(planCheckboxSelector);
+    if (!checkboxes.length) {
+      plansSelection.clear();
+      updatePlansActionsMenuState();
+      return;
+    }
+    checkboxes.forEach((checkbox) => {
+      if (!(checkbox instanceof HTMLInputElement)) {
+        return;
+      }
+      const row = checkbox.closest('tr');
+      const planId = checkbox.dataset.planId ?? row?.dataset.planId ?? '';
+      setPlanSelection(planId, false, { checkbox, row });
+    });
+    plansSelection.clear();
+    updatePlansActionsMenuState();
+  };
+
+  if (plansActionsTrigger && plansActionsMenu && plansActionsMenuContainer) {
+    plansActionsTrigger.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      togglePlansActionsMenu();
+    });
+
+    plansActionsTrigger.addEventListener('keydown', (event) => {
+      if (event.key === ' ' || event.key === 'Enter') {
+        event.preventDefault();
+        if (isPlansActionsMenuOpen) {
+          closePlansActionsMenu();
+        } else {
+          openPlansActionsMenu({ focusFirst: true });
+        }
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        openPlansActionsMenu({ focusFirst: true });
+      } else if (event.key === 'Escape' && isPlansActionsMenuOpen) {
+        event.preventDefault();
+        closePlansActionsMenu();
+      }
+    });
+
+    plansActionsMenu.addEventListener('click', (event) => {
+      const target = event.target instanceof HTMLElement
+        ? event.target.closest('.table-actions-menu__item')
+        : null;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const action = target.dataset.action || '';
+      if (action === 'select-all') {
+        const shouldClear = target.dataset.mode === 'clear';
+        if (shouldClear) {
+          deselectAllPlansOnPage();
+        } else {
+          selectAllPlansOnPage();
+        }
+      }
+      updatePlansActionsMenuState();
+      closePlansActionsMenu();
+    });
+
+    plansActionsMenu.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closePlansActionsMenu({ focusTrigger: true });
+      }
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!isPlansActionsMenuOpen) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (plansActionsMenuContainer.contains(target)) {
+        return;
+      }
+      closePlansActionsMenu();
+    });
+
+    document.addEventListener('focusin', (event) => {
+      if (!isPlansActionsMenuOpen) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (plansActionsMenuContainer.contains(target)) {
+        return;
+      }
+      closePlansActionsMenu();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && isPlansActionsMenuOpen) {
+        event.preventDefault();
+        closePlansActionsMenu({ focusTrigger: true });
+      }
+    });
+  }
+
+  updatePlansActionsMenuState();
+
   const renderPlansPlaceholder = (message, modifier = 'empty') => {
     if (!plansTableBody) {
       return;
     }
+    plansSelection.clear();
+    updatePlansActionsMenuState();
+    closePlansActionsMenu();
     plansTableBody.innerHTML = '';
     const row = document.createElement('tr');
     row.className = 'table__row table__row--empty';
@@ -530,6 +821,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     plansTableBody.innerHTML = '';
+    plansSelection.clear();
+    closePlansActionsMenu();
     const plans = Array.isArray(items) ? items : [];
     if (!plans.length) {
       if (currentPlansSearchTerm) {
@@ -544,6 +837,18 @@ document.addEventListener('DOMContentLoaded', () => {
     plans.forEach((item) => {
       const row = document.createElement('tr');
       row.className = 'table__row';
+      row.setAttribute('aria-selected', 'false');
+
+      const planNumberRaw = item?.number ?? '';
+      const planId =
+        typeof planNumberRaw === 'string'
+          ? planNumberRaw.trim()
+          : typeof planNumberRaw === 'number'
+            ? String(planNumberRaw)
+            : '';
+      if (planId) {
+        row.dataset.planId = planId;
+      }
 
       const planCell = document.createElement('td');
       planCell.className = 'table__cell';
@@ -581,14 +886,30 @@ document.addEventListener('DOMContentLoaded', () => {
       row.appendChild(statusDateCell);
 
       const actionsCell = document.createElement('td');
-      actionsCell.className = 'table__cell';
-      actionsCell.textContent = '—';
+      actionsCell.className = 'table__cell table__cell--select';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.dataset.planCheckbox = 'true';
+      if (planId) {
+        checkbox.dataset.planId = planId;
+      }
+      checkbox.setAttribute(
+        'aria-label',
+        planId ? `Selecionar plano ${planId}` : 'Selecionar plano',
+      );
+      checkbox.addEventListener('change', () => {
+        const isChecked = checkbox.checked;
+        setPlanSelection(planId, isChecked, { checkbox, row });
+        updatePlansActionsMenuState();
+      });
+      actionsCell.appendChild(checkbox);
       row.appendChild(actionsCell);
 
       plansTableBody.appendChild(row);
     });
 
     renderFilterChips();
+    updatePlansActionsMenuState();
   };
 
   const renderOccurrenceRows = (items) => {
@@ -750,6 +1071,8 @@ document.addEventListener('DOMContentLoaded', () => {
     treatmentPager.hasMoreNext = false;
     treatmentPager.hasMorePrev = false;
     treatmentPager.lastCount = 0;
+    treatmentPager.currentCursor = null;
+    treatmentPager.currentDirection = 'next';
   };
 
   const setTreatmentTotals = (totals) => {
@@ -762,6 +1085,17 @@ document.addEventListener('DOMContentLoaded', () => {
       skipped: skipped < 0 ? 0 : skipped,
     };
     updateTreatmentKpis();
+  };
+
+  const getTreatmentTotalForStatus = (status) => {
+    const normalized = typeof status === 'string' ? status.trim().toLowerCase() : 'pending';
+    if (normalized === 'processed') {
+      return Math.max(0, Number(treatmentTotals.processed) || 0);
+    }
+    if (normalized === 'skipped') {
+      return Math.max(0, Number(treatmentTotals.skipped) || 0);
+    }
+    return Math.max(0, Number(treatmentTotals.pending) || 0);
   };
 
   const buildTreatmentFilters = () => {
@@ -1198,6 +1532,8 @@ document.addEventListener('DOMContentLoaded', () => {
     hasMoreNext: false,
     hasMorePrev: false,
     lastCount: 0,
+    currentCursor: null,
+    currentDirection: 'next',
   };
 
   // Occurrences pager UI elements
@@ -1253,27 +1589,39 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const updateTreatmentPagerUI = () => {
-    const currentPage = Math.max(1, treatmentPager.page || 1);
-    if (treatmentPagerLabel) {
-      treatmentPagerLabel.textContent = `pág. ${currentPage} de 1`;
+    const pageSize = Number(treatmentPager.pageSize) || DEFAULT_PLAN_PAGE_SIZE;
+    const totalForStatus = getTreatmentTotalForStatus(treatmentStatusFilter);
+    const totalValue = Number.isFinite(totalForStatus) ? totalForStatus : 0;
+    const totalPages = totalValue > 0 ? Math.ceil(totalValue / pageSize) : 1;
+    let currentPage = Math.max(1, Number(treatmentPager.page) || 1);
+    if (currentPage > totalPages) {
+      currentPage = totalPages;
+      treatmentPager.page = currentPage;
     }
+
+    if (treatmentPagerLabel) {
+      treatmentPagerLabel.textContent = `pág. ${currentPage} de ${totalPages}`;
+    }
+
     if (treatmentPagerRange) {
-      const showingFrom = treatmentPager.lastCount
-        ? (currentPage - 1) * treatmentPager.pageSize + 1
+      const rowsOnPage = Math.max(0, Number(treatmentPager.lastCount) || 0);
+      const showingFrom = rowsOnPage ? (currentPage - 1) * pageSize + 1 : 0;
+      const showingTo = rowsOnPage
+        ? Math.min(totalValue, showingFrom + rowsOnPage - 1)
         : 0;
-      const showingTo = treatmentPager.lastCount
-        ? showingFrom + treatmentPager.lastCount - 1
-        : 0;
-      const totalLabel = showingTo ? `~${showingTo}` : '0';
+      const totalLabel = totalValue.toLocaleString('pt-BR');
       treatmentPagerRange.textContent = `exibindo ${showingFrom}–${showingTo} de ${totalLabel} planos para rescisão`;
     }
+
     if (treatmentPagerPrevBtn) {
       const canGoPrev = currentPage > 1 && Boolean(treatmentPager.prevCursor);
       treatmentPagerPrevBtn.disabled = !canGoPrev;
       treatmentPagerPrevBtn.setAttribute('aria-disabled', String(!canGoPrev));
     }
+
     if (treatmentPagerNextBtn) {
-      const canGoNext = Boolean(treatmentPager.hasMoreNext && treatmentPager.nextCursor);
+      const canGoNext =
+        currentPage < totalPages && Boolean(treatmentPager.hasMoreNext && treatmentPager.nextCursor);
       treatmentPagerNextBtn.disabled = !canGoNext;
       treatmentPagerNextBtn.setAttribute('aria-disabled', String(!canGoNext));
     }
@@ -2065,7 +2413,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const refreshTreatment = async ({
     cursor,
-    direction = 'next',
+    direction,
     reset = false,
     showLoading,
   } = {}) => {
@@ -2079,15 +2427,26 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const normalizedDirection = direction === 'prev' ? 'prev' : 'next';
-    if (reset) {
-      resetTreatmentPagination();
+    const hasCursorParam = cursor !== undefined;
+    let normalizedDirection;
+    if (hasCursorParam || typeof direction === 'string') {
+      normalizedDirection = direction === 'prev' ? 'prev' : 'next';
+    } else {
+      normalizedDirection = treatmentPager.currentDirection || 'next';
     }
 
-    let requestCursor = cursor;
-    if (requestCursor === undefined) {
-      requestCursor =
-        normalizedDirection === 'prev' ? treatmentPager.prevCursor : treatmentPager.nextCursor;
+    if (reset) {
+      resetTreatmentPagination();
+      treatmentPager.currentDirection = normalizedDirection;
+    }
+
+    let requestCursor;
+    if (hasCursorParam) {
+      requestCursor = cursor;
+    } else if (reset) {
+      requestCursor = null;
+    } else {
+      requestCursor = treatmentPager.currentCursor;
     }
 
     const shouldShowLoading = showLoading ?? !treatmentLoaded;
@@ -2134,23 +2493,53 @@ document.addEventListener('DOMContentLoaded', () => {
       treatmentPager.prevCursor = paging?.prev_cursor || null;
       treatmentPager.lastCount = items.length;
 
-      if (!reset && requestCursor) {
+      const hasResults = items.length > 0;
+
+      if (reset) {
+        treatmentPager.page = 1;
+      } else if (hasCursorParam && requestCursor && hasResults) {
         if (normalizedDirection === 'next') {
           treatmentPager.page += 1;
         } else if (normalizedDirection === 'prev') {
           treatmentPager.page = Math.max(1, treatmentPager.page - 1);
         }
-      } else {
+      } else if (!hasCursorParam) {
         treatmentPager.page = Math.max(1, treatmentPager.page);
       }
 
-      if (normalizedDirection === 'next') {
-        treatmentPager.hasMoreNext = Boolean(paging?.has_more);
-        treatmentPager.hasMorePrev = treatmentPager.page > 1;
+      if (reset) {
+        treatmentPager.currentCursor = requestCursor ?? null;
+        treatmentPager.currentDirection = normalizedDirection;
+      } else if (hasCursorParam) {
+        if (hasResults) {
+          treatmentPager.currentCursor = requestCursor ?? null;
+          treatmentPager.currentDirection = normalizedDirection;
+        }
       } else {
-        treatmentPager.hasMorePrev = Boolean(paging?.has_more);
-        treatmentPager.hasMoreNext = true;
+        if (requestCursor !== undefined) {
+          treatmentPager.currentCursor = requestCursor ?? null;
+        }
+        treatmentPager.currentDirection = normalizedDirection;
       }
+
+      const totalForStatus = getTreatmentTotalForStatus(treatmentStatusFilter);
+      const totalPages = totalForStatus > 0 ? Math.ceil(totalForStatus / treatmentPager.pageSize) : 1;
+      if (treatmentPager.page > totalPages) {
+        treatmentPager.page = totalPages;
+      }
+      treatmentPager.page = Math.max(1, treatmentPager.page);
+
+      const hasMorePrev =
+        (normalizedDirection === 'prev' && hasCursorParam)
+          ? Boolean(paging?.has_more)
+          : treatmentPager.page > 1;
+      const hasMoreNext =
+        (normalizedDirection === 'next' && hasCursorParam)
+          ? Boolean(paging?.has_more)
+          : treatmentPager.page < totalPages;
+
+      treatmentPager.hasMorePrev = hasMorePrev && Boolean(treatmentPager.prevCursor);
+      treatmentPager.hasMoreNext = hasMoreNext && Boolean(treatmentPager.nextCursor);
 
       if (treatmentPager.page <= 1) {
         treatmentPager.hasMorePrev = false;

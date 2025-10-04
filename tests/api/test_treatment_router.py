@@ -35,7 +35,9 @@ class _DummyManager:
         self.last_connection = connection
         return connection
 
-    async def __aexit__(self, exc_type, exc, tb) -> bool:  # pragma: no cover - no cleanup
+    async def __aexit__(
+        self, exc_type, exc, tb
+    ) -> bool:  # pragma: no cover - no cleanup
         return False
 
 
@@ -64,7 +66,9 @@ async def _noop_bind(connection: object, matricula: str) -> None:
     return None
 
 
-def test_get_treatment_state_returns_open_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_treatment_state_returns_open_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = _DummyManager()
     monkeypatch.setattr(treatment, "get_connection_manager", lambda: manager)
 
@@ -119,7 +123,11 @@ def test_get_treatment_state_returns_open_batch(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_get_treatment_state_without_auth(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(treatment, "get_principal_settings", lambda: PrincipalSettings(None, None, None, None, None))
+    monkeypatch.setattr(
+        treatment,
+        "get_principal_settings",
+        lambda: PrincipalSettings(None, None, None, None, None),
+    )
 
     request = _make_request({})
     with pytest.raises(treatment.HTTPException) as excinfo:
@@ -146,13 +154,17 @@ def test_migrate_treatment_returns_payload(monkeypatch: pytest.MonkeyPatch) -> N
         def __init__(self, connection: object) -> None:
             self.connection = connection
 
-        async def migrate(self, *, grid: str, filters: dict[str, object] | None) -> TreatmentMigrationResult:
+        async def migrate(
+            self, *, grid: str, filters: dict[str, object] | None
+        ) -> TreatmentMigrationResult:
             _StubService.payloads.append((grid, filters))
             return result
 
     monkeypatch.setattr(treatment, "TreatmentService", _StubService)
 
-    payload = TreatmentMigrateRequest(grid=treatment.DEFAULT_GRID, filters={"saldo_min": 1000})
+    payload = TreatmentMigrateRequest(
+        grid=treatment.DEFAULT_GRID, filters={"saldo_min": 1000}
+    )
     request = _make_request({"x-user-registration": "mat-001"})
 
     response = _run(treatment.migrate_treatment(request, payload))
@@ -163,8 +175,14 @@ def test_migrate_treatment_returns_payload(monkeypatch: pytest.MonkeyPatch) -> N
     assert _StubService.payloads == [(treatment.DEFAULT_GRID, {"saldo_min": 1000})]
 
 
-def test_migrate_treatment_rejects_unsupported_grid(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(treatment, "get_principal_settings", lambda: PrincipalSettings(None, "mat", None, None, None))
+def test_migrate_treatment_rejects_unsupported_grid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        treatment,
+        "get_principal_settings",
+        lambda: PrincipalSettings(None, "mat", None, None, None),
+    )
     request = _make_request({"x-user-registration": "mat"})
     payload = TreatmentMigrateRequest(grid="OTHER", filters=None)
 
@@ -285,7 +303,9 @@ def test_rescind_treatment_item_calls_service(monkeypatch: pytest.MonkeyPatch) -
         def __init__(self, connection: object) -> None:
             self.connection = connection
 
-        async def rescind(self, *, lote_id: UUID, plano_id: UUID, effective_dt_iso: str) -> None:
+        async def rescind(
+            self, *, lote_id: UUID, plano_id: UUID, effective_dt_iso: str
+        ) -> None:
             calls.append(
                 {
                     "lote_id": lote_id,
@@ -311,7 +331,9 @@ def test_rescind_treatment_item_calls_service(monkeypatch: pytest.MonkeyPatch) -
     assert calls[0]["effective_dt_iso"] == payload.data_rescisao.isoformat()
 
 
-def test_rescind_treatment_item_handles_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_rescind_treatment_item_handles_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = _DummyManager()
     monkeypatch.setattr(treatment, "get_connection_manager", lambda: manager)
     monkeypatch.setattr(treatment, "bind_session", _noop_bind)
@@ -325,7 +347,9 @@ def test_rescind_treatment_item_handles_not_found(monkeypatch: pytest.MonkeyPatc
         def __init__(self, connection: object) -> None:
             self.connection = connection
 
-        async def rescind(self, *, lote_id: UUID, plano_id: UUID, effective_dt_iso: str) -> None:
+        async def rescind(
+            self, *, lote_id: UUID, plano_id: UUID, effective_dt_iso: str
+        ) -> None:
             raise TreatmentNotFoundError("Item não encontrado")
 
     monkeypatch.setattr(treatment, "TreatmentService", _StubService)

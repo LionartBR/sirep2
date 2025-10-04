@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from dataclasses import dataclass
-from datetime import datetime
 from decimal import Decimal
 from typing import Any, Mapping, Optional, Sequence
 from uuid import UUID
@@ -129,7 +128,9 @@ class TreatmentRepository:
             rows = await cur.fetchall()
         mapping: dict[str, int] = {}
         for row in rows:
-            status_key = str(row.get("status_key") or "").strip().lower() or _CURSOR_SENTINEL
+            status_key = (
+                str(row.get("status_key") or "").strip().lower() or _CURSOR_SENTINEL
+            )
             mapping[status_key] = int(row.get("total") or 0)
         return TreatmentTotals(
             pending=mapping.get("pending", 0),
@@ -337,9 +338,13 @@ class TreatmentRepository:
             )
             return cur.rowcount or 0
 
-    async def update_plan_to_rescinded(self, *, plano_id: UUID, effective_ts: str) -> int:
+    async def update_plan_to_rescinded(
+        self, *, plano_id: UUID, effective_ts: str
+    ) -> int:
         async with self._connection.cursor() as cur:
-            await cur.execute("SET LOCAL app.situacao_effective_ts = %s", (effective_ts,))
+            await cur.execute(
+                "SET LOCAL app.situacao_effective_ts = %s", (effective_ts,)
+            )
             await cur.execute(
                 """
                 UPDATE app.plano

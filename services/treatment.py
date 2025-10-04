@@ -53,7 +53,9 @@ class TreatmentService:
     async def get_state(self, grid: str = _GRID_PLANOS_P_RESCISAO) -> TreatmentState:
         batch = await self._repo.fetch_open_batch(grid)
         if not batch:
-            return TreatmentState(has_open=False, lote_id=None, totals=TreatmentTotals())
+            return TreatmentState(
+                has_open=False, lote_id=None, totals=TreatmentTotals()
+            )
         totals = await self._repo.fetch_totals(batch.id)
         return TreatmentState(has_open=True, lote_id=batch.id, totals=totals)
 
