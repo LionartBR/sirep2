@@ -10,7 +10,7 @@ from decimal import Decimal
 from collections.abc import Sequence
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.params import Param
 from psycopg import AsyncConnection
 from psycopg.errors import InvalidAuthorizationSpecification
@@ -24,7 +24,13 @@ except Exception:  # pragma: no cover - fallback for tests without full psycopg
 
 from psycopg.rows import dict_row
 
-from api.models import PlanSummaryResponse, PlansFilters, PlansPaging, PlansResponse
+from api.models import (
+    PlanQueueStatusResponse,
+    PlanSummaryResponse,
+    PlansFilters,
+    PlansPaging,
+    PlansResponse,
+)
 from api.dependencies import get_connection_manager
 from infra.db import bind_session
 from infra.repositories._helpers import (
@@ -33,12 +39,26 @@ from infra.repositories._helpers import (
     only_digits,
     to_decimal,
 )
-from shared.config import get_principal_settings
+from api.security import resolve_request_matricula, role_required
+
+try:  # pragma: no cover - fallback for tests overriding this attribute
+    from shared.config import get_principal_settings  # type: ignore
+except Exception:  # pragma: no cover - default stub when config is absent
+
+    def get_principal_settings():
+        class _Principal:
+            matricula: str | None = None
+
+        return _Principal()
 from shared.text import normalize_document
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/plans", tags=["plans"])
+router = APIRouter(
+    prefix="/plans",
+    tags=["plans"],
+    dependencies=[Depends(role_required("GESTOR"))],
+)
 
 
 _STATUS_LABELS = {
@@ -139,66 +159,82 @@ def _normalize_dt_range(value: str | None) -> str | None:
 
 PLAN_DEFAULT_QUERY = """
     SELECT
-        numero_plano,
-        documento,
-        razao_social,
-        situacao,
-        dias_em_atraso,
-        saldo,
-        dt_situacao,
-        COUNT(*) OVER () AS total_count
-      FROM app.vw_planos_busca
-     ORDER BY saldo DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
+        planos.numero_plano,
+        planos.documento,
+        planos.razao_social,
+        planos.situacao,
+        planos.dias_em_atraso,
+        planos.saldo,
+        planos.dt_situacao,
+        COUNT(*) OVER () AS total_count,
+        trat.filas,
+        trat.users_enfileirando,
+        trat.lotes
+      FROM app.vw_planos_busca AS planos
+ LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
+     ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
 
 PLAN_SEARCH_BY_NUMBER_QUERY = """
     SELECT
-        numero_plano,
-        documento,
-        razao_social,
-        situacao,
-        dias_em_atraso,
-        saldo,
-        dt_situacao,
-        COUNT(*) OVER () AS total_count
-      FROM app.vw_planos_busca
-     WHERE numero_plano = %(number)s
-        OR numero_plano LIKE %(number_prefix)s
-     ORDER BY saldo DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
+        planos.numero_plano,
+        planos.documento,
+        planos.razao_social,
+        planos.situacao,
+        planos.dias_em_atraso,
+        planos.saldo,
+        planos.dt_situacao,
+        COUNT(*) OVER () AS total_count,
+        trat.filas,
+        trat.users_enfileirando,
+        trat.lotes
+      FROM app.vw_planos_busca AS planos
+ LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
+     WHERE planos.numero_plano = %(number)s
+        OR planos.numero_plano LIKE %(number_prefix)s
+     ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
 
 PLAN_SEARCH_BY_NAME_QUERY = """
     SELECT
-        numero_plano,
-        documento,
-        razao_social,
-        situacao,
-        dias_em_atraso,
-        saldo,
-        dt_situacao,
-        COUNT(*) OVER () AS total_count
-      FROM app.vw_planos_busca
-     WHERE razao_social ILIKE %(name_pattern)s
-     ORDER BY saldo DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
+        planos.numero_plano,
+        planos.documento,
+        planos.razao_social,
+        planos.situacao,
+        planos.dias_em_atraso,
+        planos.saldo,
+        planos.dt_situacao,
+        COUNT(*) OVER () AS total_count,
+        trat.filas,
+        trat.users_enfileirando,
+        trat.lotes
+      FROM app.vw_planos_busca AS planos
+ LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
+     WHERE planos.razao_social ILIKE %(name_pattern)s
+     ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
 
 PLAN_SEARCH_BY_DOCUMENT_QUERY = """
     SELECT
-        numero_plano,
-        documento,
-        razao_social,
-        situacao,
-        dias_em_atraso,
-        saldo,
-        dt_situacao,
-        COUNT(*) OVER () AS total_count
-      FROM app.vw_planos_busca
-     WHERE documento = %(document)s
-       AND tipo_doc IN ('CNPJ', 'CPF', 'CEI')
-     ORDER BY saldo DESC NULLS LAST, dt_situacao DESC NULLS LAST, numero_plano
+        planos.numero_plano,
+        planos.documento,
+        planos.razao_social,
+        planos.situacao,
+        planos.dias_em_atraso,
+        planos.saldo,
+        planos.dt_situacao,
+        COUNT(*) OVER () AS total_count,
+        trat.filas,
+        trat.users_enfileirando,
+        trat.lotes
+      FROM app.vw_planos_busca AS planos
+ LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
+     WHERE planos.documento = %(document)s
+       AND planos.tipo_doc IN ('CNPJ', 'CPF', 'CEI')
+     ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
 
@@ -206,14 +242,6 @@ DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 KEYSET_DEFAULT_PAGE_SIZE = 10
 KEYSET_MAX_PAGE_SIZE = 200
-_REQUEST_PRINCIPAL_HEADER_CANDIDATES = (
-    "x-user-registration",
-    "x-user-id",
-    "x-app-user-registration",
-    "x-app-user-id",
-)
-
-
 # Simple in-memory TTL cache for total counts
 _total_count_cache: dict[str, tuple[float, int]] = {}
 
@@ -235,6 +263,15 @@ def _normalize_balance(value: Any) -> Decimal | None:
     if decimal_value is None:
         return None
     return decimal_value
+
+
+def _normalize_queue_count(value: Any) -> int:
+    """Coerce queue counters to non-negative integers."""
+
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _normalize_document(value: Any) -> str | None:
@@ -301,6 +338,16 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
     balance = _normalize_balance(balance_raw)
     status_date = extract_date_from_timestamp(row.get("dt_situacao"))
 
+    filas = _normalize_queue_count(row.get("filas"))
+    users = _normalize_queue_count(row.get("users_enfileirando") or row.get("users"))
+    lotes = _normalize_queue_count(row.get("lotes"))
+    treatment_queue = PlanQueueStatusResponse(
+        enqueued=any(value > 0 for value in (filas, users, lotes)),
+        filas=filas,
+        users=users,
+        lotes=lotes,
+    )
+
     return PlanSummaryResponse(
         number=number,
         document=document,
@@ -309,6 +356,7 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
         days_overdue=days_overdue,
         balance=balance,
         status_date=status_date,
+        treatment_queue=treatment_queue,
     )
 
 
@@ -370,6 +418,7 @@ def _build_filters(
     dias_min: int | None = None,
     saldo_min: int | None = None,
     dt_sit_range: str | None = None,
+    table_alias: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Return SQL WHERE clause and params according to filtering semantics."""
 
@@ -378,47 +427,58 @@ def _build_filters(
     params: dict[str, Any] = {}
     clauses: list[str] = []
 
+    def col(name: str) -> str:
+        return f"{table_alias}.{name}" if table_alias else name
+
     if digits and len(digits) in (11, 12, 14):
-        clauses.append("documento = %(document)s")
+        clauses.append(f"{col('documento')} = %(document)s")
         params["document"] = digits
         if tipo_doc and tipo_doc in {"CNPJ", "CPF", "CEI"}:
-            clauses.append("tipo_doc = %(tipo_doc)s")
+            clauses.append(f"{col('tipo_doc')} = %(tipo_doc)s")
             params["tipo_doc"] = tipo_doc
         else:
-            clauses.append("tipo_doc IN ('CNPJ','CPF','CEI')")
+            clauses.append(f"{col('tipo_doc')} IN ('CNPJ','CPF','CEI')")
     elif normalized_search.isdigit() and normalized_search:
         params["number"] = normalized_search
         params["number_prefix"] = f"{normalized_search}%"
         clauses.append(
-            "(numero_plano = %(number)s OR numero_plano LIKE %(number_prefix)s)"
+            f"({col('numero_plano')} = %(number)s OR {col('numero_plano')} LIKE %(number_prefix)s)"
         )
     elif normalized_search:
         params["name_pattern"] = f"%{normalized_search}%"
-        clauses.append("razao_social ILIKE %(name_pattern)s")
+        clauses.append(f"{col('razao_social')} ILIKE %(name_pattern)s")
 
     if situacoes:
         params["situacoes"] = list(situacoes)
-        clauses.append("situacao_codigo = ANY(%(situacoes)s::text[])")
+        clauses.append(f"{col('situacao_codigo')} = ANY(%(situacoes)s::text[])")
 
     if dias_min is not None:
         params["dias_min"] = dias_min
         clauses.append(
-            "atraso_desde <= CURRENT_DATE - make_interval(days => %(dias_min)s)"
+            f"{col('atraso_desde')} <= CURRENT_DATE - make_interval(days => %(dias_min)s)"
         )
 
     if saldo_min is not None:
         params["saldo_min"] = saldo_min
-        clauses.append("COALESCE(saldo, 0) >= %(saldo_min)s")
+        clauses.append(f"COALESCE({col('saldo')}, 0) >= %(saldo_min)s")
 
     if dt_sit_range:
         start_clause, end_clause = _DT_SITUATION_RANGE_CLAUSES[dt_sit_range]
         if start_clause:
-            clauses.append(start_clause)
+            clauses.append(
+                start_clause
+                if not table_alias
+                else start_clause.replace("dt_situacao", f"{table_alias}.dt_situacao")
+            )
         if end_clause:
-            clauses.append(end_clause)
+            clauses.append(
+                end_clause
+                if not table_alias
+                else end_clause.replace("dt_situacao", f"{table_alias}.dt_situacao")
+            )
 
     if occurrences_only:
-        clauses.append("situacao_codigo <> 'P_RESCISAO'")
+        clauses.append(f"{col('situacao_codigo')} <> 'P_RESCISAO'")
 
     if clauses:
         return " WHERE " + " AND ".join(clauses), params
@@ -445,7 +505,8 @@ async def _fast_total_count(
             await cur.execute("BEGIN")
             await cur.execute("SET LOCAL statement_timeout = '1500ms'")
             await cur.execute(
-                f"SELECT COUNT(*) AS cnt FROM app.vw_planos_busca{where_sql}", params
+                f"SELECT COUNT(*) AS cnt FROM app.vw_planos_busca AS planos{where_sql}",
+                params,
             )
             row = await cur.fetchone()
             await cur.execute("COMMIT")
@@ -494,9 +555,11 @@ async def _fetch_keyset_page(
         dias_min=dias_min,
         saldo_min=saldo_min,
         dt_sit_range=dt_sit_range,
+        table_alias="planos",
     )
+
     seek_condition = ""
-    order_sql = " ORDER BY COALESCE(saldo,0) DESC, numero_plano ASC"
+    order_sql = " ORDER BY COALESCE(planos.saldo,0) DESC, planos.numero_plano ASC"
     is_prev = direction == "prev"
 
     if cursor_token:
@@ -511,15 +574,17 @@ async def _fetch_keyset_page(
         numero_val = str(numero_raw or "")
         if is_prev:
             seek_condition = (
-                "(COALESCE(saldo,0) > %(first_saldo)s"
-                " OR (COALESCE(saldo,0) = %(first_saldo)s AND numero_plano < %(first_numero)s))"
+                "(COALESCE(planos.saldo,0) > %(first_saldo)s"
+                " OR (COALESCE(planos.saldo,0) = %(first_saldo)s AND planos.numero_plano < %(first_numero)s))"
             )
             params.update({"first_saldo": saldo_val, "first_numero": numero_val})
-            order_sql = " ORDER BY COALESCE(saldo,0) ASC, numero_plano DESC"
+            order_sql = (
+                " ORDER BY COALESCE(planos.saldo,0) ASC, planos.numero_plano DESC"
+            )
         else:
             seek_condition = (
-                "(COALESCE(saldo,0) < %(last_saldo)s"
-                " OR (COALESCE(saldo,0) = %(last_saldo)s AND numero_plano > %(last_numero)s))"
+                "(COALESCE(planos.saldo,0) < %(last_saldo)s"
+                " OR (COALESCE(planos.saldo,0) = %(last_saldo)s AND planos.numero_plano > %(last_numero)s))"
             )
             params.update({"last_saldo": saldo_val, "last_numero": numero_val})
 
@@ -536,8 +601,11 @@ async def _fetch_keyset_page(
         )
 
     sql = (
-        "SELECT numero_plano, documento, razao_social, situacao, dias_em_atraso, saldo, dt_situacao"
-        " FROM app.vw_planos_busca"
+        "SELECT planos.numero_plano, planos.documento, planos.razao_social, planos.situacao,"
+        " planos.dias_em_atraso, planos.saldo, planos.dt_situacao,"
+        " trat.filas, trat.users_enfileirando, trat.lotes"
+        " FROM app.vw_planos_busca AS planos"
+        " LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id"
         f"{where_clause}{order_sql}{limit_sql}"
     )
 
@@ -557,22 +625,6 @@ async def _fetch_keyset_page(
         rows = fetched[:page_size]
 
     return rows, has_more
-
-
-def _resolve_request_matricula(request: Request | None) -> str | None:
-    """Retrieve the matricula provided by the caller or fallback to defaults."""
-
-    if request is not None:
-        for header in _REQUEST_PRINCIPAL_HEADER_CANDIDATES:
-            value = request.headers.get(header)
-            if value:
-                candidate = value.split(",", 1)[0].strip()
-                if candidate:
-                    return candidate
-
-    principal = get_principal_settings()
-    matricula = (principal.matricula or "").strip() if principal.matricula else ""
-    return matricula or None
 
 
 async def _fetch_plan_rows(
@@ -668,7 +720,7 @@ async def list_plans(
 ) -> PlansResponse:
     """Return the consolidated plans available for the dashboard."""
 
-    matricula = _resolve_request_matricula(request)
+    matricula = resolve_request_matricula(request, get_principal_settings)
     if not matricula:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -762,6 +814,7 @@ async def list_plans(
                     dias_min=dias_threshold,
                     saldo_min=saldo_threshold,
                     dt_sit_range=dt_range_value,
+                    table_alias="planos",
                 )
                 cache_key = (
                     f"{matricula}|{q or ''}|{tipo_doc or ''}|occ={occurrences_only}"

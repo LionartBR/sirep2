@@ -14,36 +14,19 @@ from ..models import (
     PipelineStatusViewResponse,
 )
 from api.dependencies import get_connection_manager
+from api.security import resolve_request_matricula, role_required
 from infra.db import bind_session
-from shared.config import get_principal_settings
 from services.orchestrator import (
     PipelineAlreadyRunningError,
     PipelineOrchestrator,
 )
 
-router = APIRouter(prefix="/pipeline", tags=["pipeline"])
-logger = logging.getLogger(__name__)
-
-_REQUEST_PRINCIPAL_HEADER_CANDIDATES = (
-    "x-user-registration",
-    "x-user-id",
-    "x-app-user-registration",
-    "x-app-user-id",
+router = APIRouter(
+    prefix="/pipeline",
+    tags=["pipeline"],
+    dependencies=[Depends(role_required("GESTOR"))],
 )
-
-
-def _resolve_request_matricula(request: Request | None) -> str | None:
-    if request is not None:
-        for header in _REQUEST_PRINCIPAL_HEADER_CANDIDATES:
-            value = request.headers.get(header)
-            if value:
-                candidate = value.split(",", 1)[0].strip()
-                if candidate:
-                    return candidate
-
-    principal = get_principal_settings()
-    matricula = (principal.matricula or "").strip() if principal.matricula else ""
-    return matricula or None
+logger = logging.getLogger(__name__)
 
 
 def _format_duration(
@@ -130,7 +113,7 @@ async def get_pipeline_status(
     Binds the session using app.login_matricula and preserves RLS.
     """
 
-    matricula = _resolve_request_matricula(request)
+    matricula = resolve_request_matricula(request)
     if not matricula:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

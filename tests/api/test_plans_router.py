@@ -398,12 +398,16 @@ def test_row_to_plan_summary_formats_status(raw: str, expected: str) -> None:
     summary = plans._row_to_plan_summary({"numero_plano": "42", "situacao": raw})
 
     assert summary.status == expected
+    assert summary.treatment_queue is not None
+    assert summary.treatment_queue.enqueued is False
 
 
 def test_row_to_plan_summary_handles_missing_status() -> None:
     summary = plans._row_to_plan_summary({"numero_plano": "42"})
 
     assert summary.status is None
+    assert summary.treatment_queue is not None
+    assert summary.treatment_queue.enqueued is False
 
 
 class _DummyCursor:
@@ -682,6 +686,8 @@ def test_get_plans_search_by_number_returns_success(
         assert isinstance(response, PlansResponse)
         assert response.total == 1
         assert response.items[0].number == "12345"
+        assert response.items[0].treatment_queue is not None
+        assert response.items[0].treatment_queue.enqueued is False
         assert manager.last_connection is not None
         cursor = manager.last_connection.last_cursor
         assert cursor is not None
@@ -738,6 +744,8 @@ def test_get_plans_search_by_number_prefix_returns_success(
         assert isinstance(response, PlansResponse)
         assert response.total == 1
         assert response.items[0].number == "12345"
+        assert response.items[0].treatment_queue is not None
+        assert response.items[0].treatment_queue.enqueued is False
         assert manager.last_connection is not None
         cursor = manager.last_connection.last_cursor
         assert cursor is not None
@@ -804,10 +812,10 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
         assert cursor_obj is not None
         assert cursor_obj.executed_sql is not None
         sql = cursor_obj.executed_sql
-        assert "situacao_codigo = ANY" in sql
+        assert "planos.situacao_codigo = ANY" in sql
         assert "make_interval" in sql
-        assert "COALESCE(saldo, 0) >= %(saldo_min)s" in sql
-        assert "dt_situacao >= date_trunc('month', CURRENT_DATE)" in sql
+        assert "COALESCE(planos.saldo, 0) >= %(saldo_min)s" in sql
+        assert "planos.dt_situacao >= date_trunc('month', CURRENT_DATE)" in sql
         params = cursor_obj.executed_params
         assert params is not None
         assert list(params["situacoes"]) == ["P_RESCISAO", "RESCINDIDO"]

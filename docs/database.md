@@ -370,7 +370,40 @@ WHERE numero_plano='2011003279' AND tenant_id = app.current_tenant_id();
 
 ---
 
-## 10. Boas práticas & notas
+## 10. Tratamento (snapshot de planos para rescisão)
+
+### 10.1 Índice
+
+* **`app.tratamento_item`**
+  * `uq_trat_item_unique_pending` → `UNIQUE (plano_id)` **WHERE** `status = 'pending'`.
+  * Evita que um plano fique pendente em mais de um lote, mesmo considerando múltiplos tenants.
+
+### 10.2 Funções (`SECURITY DEFINER`)
+
+* `app.tratamento_migrar_planos_global(p_filters jsonb)`
+  * Cria (ou reaproveita) o lote `OPEN` do usuário/tenant logado para a grid `PLANOS_P_RESCISAO`.
+  * Tira um snapshot dos planos `P_RESCISAO` e popula `app.tratamento_item`, respeitando a unicidade global de pendentes.
+* `app.tratamento_rescindir_plano(p_lote_id uuid, p_plano_id uuid, p_dt_efetiva timestamptz)`
+  * Valida que o item pertence ao lote aberto do usuário e realiza a mudança de situação no tenant correto.
+  * Atualiza `app.plano` com `app.situacao_effective_ts` e marca o item do lote como `processed`.
+
+### 10.3 View `app.vw_tratamento_enfileirado`
+
+* **Colunas**: `tenant_id`, `plano_id`, `filas`, `users_enfileirando`, `lotes`.
+* Resume quantos lotes abertos contêm o plano, quantos usuários o migraram e quantas filas existem.
+* Base para bloquear/alertar edições de planos na Gestão da Base e exibir badges na UI.
+
+### 10.4 Notas de comportamento
+
+* O snapshot só existe após o operador clicar em “Migrar planos”; antes disso o painel permanece vazio.
+* Perfil **GESTOR** continua podendo alternar de tenant via `SELECT app.set_tenant(:dest_tenant)` antes de DML.
+* Perfil **RESCISAO** mantém o escopo de leitura do próprio tenant, mas as funções acima permitem migrar/rescindir planos globais de forma auditada.
+* A listagem de tratamento usa paginação por keyset (`saldo DESC, numero_plano`) e lê apenas `app.tratamento_item`.
+* Planos sinalizados na view de enfileiramento devem aparecer com aviso “Em tratamento” na tela de Gestão da Base.
+
+---
+
+## 11. Boas práticas & notas
 
 * **Normalização**: sempre armazene documentos e `numero_plano` **só dígitos**.
 * **Timeouts**: para contagens pesadas de UI, use `SET LOCAL statement_timeout='1500ms'` + cache no backend.

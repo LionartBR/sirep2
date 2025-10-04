@@ -114,20 +114,12 @@ class TreatmentService:
         async with self._connection.cursor() as cur:
             await cur.execute("BEGIN")
         try:
-            updated_plan = await self._repo.update_plan_to_rescinded(
+            success = await self._repo.rescind_item_via_function(
+                lote_id=lote_id,
                 plano_id=plano_id,
                 effective_ts=effective_dt_iso,
             )
-            if updated_plan == 0:
-                raise TreatmentNotFoundError("Plano não encontrado ou inacessível.")
-
-            updated_item = await self._repo.update_item_status(
-                lote_id=lote_id,
-                plano_id=plano_id,
-                status="processed",
-                expected_statuses=("pending",),
-            )
-            if updated_item == 0:
+            if not success:
                 raise TreatmentNotFoundError("Item de tratamento não encontrado.")
 
             await log_event_async(

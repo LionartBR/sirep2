@@ -173,6 +173,10 @@ input:focus {
   border-radius: 999px;
 }
 
+.tabs__item--hidden {
+  display: none;
+}
+
 .card__panel {
   display: flex;
   flex-direction: column;
@@ -619,6 +623,22 @@ input:focus {
   font-weight: 600;
 }
 
+.badge--queue {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fff3cd;
+  color: #7a4c00;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.table__row--queued {
+  background-color: #fffbf0;
+}
+
 .table-section {
   display: flex;
   flex-direction: column;
@@ -869,6 +889,30 @@ input:focus {
 
 .table__row--selected .table__cell {
   background: rgba(17, 94, 214, 0.1);
+}
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  max-width: 320px;
+  background: rgba(17, 24, 39, 0.92);
+  color: #ffffff;
+  padding: 12px 16px;
+  border-radius: 10px;
+  box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.35);
+  font-size: 14px;
+  line-height: 1.4;
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  z-index: 60;
+}
+
+.toast--visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .table-filter--open .table-filter__dropdown {

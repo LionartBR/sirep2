@@ -43,6 +43,15 @@ class PipelineStateResponse(BaseModel):
         return cls.from_orm(state)  # type: ignore[return-value]
 
 
+class PlanQueueStatusResponse(BaseModel):
+    """Metadata about treatment queues referencing a plan."""
+
+    enqueued: bool
+    filas: Optional[int] = None
+    users: Optional[int] = None
+    lotes: Optional[int] = None
+
+
 class PlanSummaryResponse(BaseModel):
     """Represents a single row shown in the plans dashboard."""
 
@@ -53,6 +62,7 @@ class PlanSummaryResponse(BaseModel):
     days_overdue: Optional[int] = None
     balance: Optional[Decimal] = None
     status_date: Optional[date] = None
+    treatment_queue: Optional[PlanQueueStatusResponse] = None
 
 
 class PlansPaging(BaseModel):

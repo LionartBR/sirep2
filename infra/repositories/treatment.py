@@ -8,7 +8,6 @@ from typing import Any, Mapping, Optional, Sequence
 from uuid import UUID
 
 from psycopg import AsyncConnection
-from psycopg.errors import UniqueViolation
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
@@ -75,6 +74,8 @@ class TreatmentRepository:
                   FROM app.tratamento_lote
                  WHERE grid = %s
                    AND status = 'OPEN'
+                   AND user_id = app.current_user_id()
+                   AND tenant_id = app.current_tenant_id()
                  ORDER BY created_at DESC
                  LIMIT 1
                 """,
@@ -99,6 +100,8 @@ class TreatmentRepository:
                 SELECT id, grid, status, source_filter, created_at, closed_at
                   FROM app.tratamento_lote
                  WHERE id = %s
+                   AND user_id = app.current_user_id()
+                   AND tenant_id = app.current_tenant_id()
                 """,
                 (lote_id,),
             )
@@ -145,86 +148,133 @@ class TreatmentRepository:
         filters: Optional[Mapping[str, Any]],
     ) -> TreatmentMigrationResult:
         filters_dict = dict(filters) if filters is not None else None
-        filters_payload = Json(filters_dict) if filters_dict is not None else None
+        payload = Json(filters_dict) if filters_dict is not None else None
+        existing_batch = await self.fetch_open_batch(grid)
+
         async with self._connection.cursor(row_factory=dict_row) as cur:
-            await cur.execute("BEGIN")
+            await cur.execute(
+                "SELECT app.tratamento_migrar_planos_global(%s::jsonb) AS result",
+                (payload,),
+            )
+            result_row = await cur.fetchone()
+
+        lote_id, created_flag, items_seeded = self._parse_migration_result(result_row)
+
+        if lote_id is None:
+            batch_after = await self.fetch_open_batch(grid)
+            if not batch_after:
+                raise RuntimeError("Falha ao localizar lote aberto de tratamento")
+            lote_id = batch_after.id
+        created = (
+            bool(created_flag)
+            if created_flag is not None
+            else not existing_batch or existing_batch.id != lote_id
+        )
+
+        if items_seeded is None:
+            items_seeded = await self._count_items_for_lote(lote_id) if created else 0
+
+        await log_event_async(
+            self._connection,
+            entity="tratamento_lote",
+            entity_id=str(lote_id),
+            event_type="TRATAMENTO_MIGRAR",
+            severity="info",
+            data={
+                "grid": grid,
+                "filters": filters_dict or {},
+                "items": items_seeded,
+                "created": created,
+            },
+        )
+
+        return TreatmentMigrationResult(
+            lote_id=lote_id,
+            items_seeded=items_seeded,
+            created=created,
+        )
+
+    @staticmethod
+    def _coerce_uuid(value: Any) -> Optional[UUID]:
+        if isinstance(value, UUID):
+            return value
+        if isinstance(value, str):
             try:
-                await cur.execute(
-                    """
-                    INSERT INTO app.tratamento_lote (
-                        tenant_id, user_id, grid, status, source_filter
-                    )
-                    VALUES (
-                        app.current_tenant_id(),
-                        app.current_user_id(),
-                        %s,
-                        'OPEN',
-                        %s::jsonb
-                    )
-                    RETURNING id
-                    """,
-                    (grid, filters_payload),
-                )
-                lote_row = await cur.fetchone()
-                if not lote_row:
-                    raise RuntimeError("Falha ao criar lote de tratamento")
-                lote_id = lote_row["id"]
-                await cur.execute(
-                    """
-                    INSERT INTO app.tratamento_item (
-                        tenant_id, lote_id, plano_id, numero_plano, documento,
-                        razao_social, saldo, dt_situacao, situacao_codigo
-                    )
-                    SELECT
-                        app.current_tenant_id(),
-                        %s,
-                        p.id,
-                        p.numero_plano,
-                        e.numero_inscricao,
-                        e.razao_social,
-                        p.saldo_total,
-                        p.dt_situacao_atual::date,
-                        sp.codigo
-                      FROM app.plano AS p
-                      JOIN app.empregador AS e ON e.id = p.empregador_id
-                      JOIN ref.situacao_plano AS sp ON sp.id = p.situacao_plano_id
-                     WHERE p.situacao_plano_id = sp.id
-                       AND sp.codigo = 'P_RESCISAO'
-                    """,
-                    (lote_id,),
-                )
-                items_seeded = cur.rowcount or 0
-                await log_event_async(
-                    self._connection,
-                    entity="tratamento_lote",
-                    entity_id=str(lote_id),
-                    event_type="TRATAMENTO_MIGRAR",
-                    severity="info",
-                    data={
-                        "grid": grid,
-                        "filters": filters_dict or {},
-                        "items": items_seeded,
-                    },
-                )
-                await cur.execute("COMMIT")
-                return TreatmentMigrationResult(
-                    lote_id=lote_id,
-                    items_seeded=items_seeded,
-                    created=True,
-                )
-            except UniqueViolation:
-                await cur.execute("ROLLBACK")
-                existing = await self.fetch_open_batch(grid)
-                if not existing:
-                    raise
-                return TreatmentMigrationResult(
-                    lote_id=existing.id,
-                    items_seeded=0,
-                    created=False,
-                )
-            except Exception:
-                await cur.execute("ROLLBACK")
-                raise
+                return UUID(value)
+            except ValueError:  # pragma: no cover - defensive
+                return None
+        return None
+
+    @staticmethod
+    def _coerce_int(value: Any) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            return None
+
+    def _parse_migration_result(
+        self, row: Optional[Mapping[str, Any]]
+    ) -> tuple[Optional[UUID], Optional[bool], Optional[int]]:
+        if not row:
+            return None, None, None
+
+        candidate: Any
+        if len(row) == 1:
+            candidate = next(iter(row.values()))
+        else:
+            candidate = row
+
+        lote_id: Optional[UUID] = None
+        created_flag: Optional[bool] = None
+        items_seeded: Optional[int] = None
+
+        if isinstance(candidate, Mapping):
+            lote_id = self._coerce_uuid(
+                candidate.get("lote_id")
+                or candidate.get("id")
+                or candidate.get("lote")
+                or candidate.get("batch_id")
+            )
+            items_seeded = self._coerce_int(
+                candidate.get("items_seeded")
+                or candidate.get("items")
+                or candidate.get("inserted")
+                or candidate.get("count")
+            )
+            if "created" in candidate:
+                created_flag = bool(candidate.get("created"))
+        elif isinstance(candidate, (list, tuple)) and candidate:
+            lote_id = self._coerce_uuid(candidate[0])
+            if len(candidate) > 1:
+                items_seeded = self._coerce_int(candidate[1])
+            if len(candidate) > 2:
+                created_flag = bool(candidate[2])
+        else:
+            lote_id = self._coerce_uuid(candidate)
+
+        if lote_id is None:
+            lote_id = self._coerce_uuid(row.get("lote_id"))
+        if items_seeded is None:
+            items_seeded = self._coerce_int(row.get("items_seeded") or row.get("items"))
+        if created_flag is None and "created" in row:
+            created_flag = bool(row.get("created"))
+
+        return lote_id, created_flag, items_seeded
+
+    async def _count_items_for_lote(self, lote_id: UUID) -> int:
+        async with self._connection.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "SELECT COUNT(*) AS total FROM app.tratamento_item WHERE lote_id = %s",
+                (lote_id,),
+            )
+            row = await cur.fetchone()
+        total = row.get("total") if row else 0
+        try:
+            return int(total)
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            return 0
 
     async def list_items_keyset(
         self,
@@ -338,24 +388,36 @@ class TreatmentRepository:
             )
             return cur.rowcount or 0
 
-    async def update_plan_to_rescinded(
-        self, *, plano_id: UUID, effective_ts: str
-    ) -> int:
-        async with self._connection.cursor() as cur:
-            await cur.execute(
-                "SET LOCAL app.situacao_effective_ts = %s", (effective_ts,)
-            )
+    async def rescind_item_via_function(
+        self, *, lote_id: UUID, plano_id: UUID, effective_ts: str
+    ) -> bool:
+        async with self._connection.cursor(row_factory=dict_row) as cur:
             await cur.execute(
                 """
-                UPDATE app.plano
-                   SET situacao_plano_id = (
-                        SELECT id FROM ref.situacao_plano WHERE codigo = 'RESCINDIDO'
-                   )
-                 WHERE id = %s
+                SELECT app.tratamento_rescindir_plano(%s::uuid, %s::uuid, %s::timestamptz)
+                  AS result
                 """,
-                (plano_id,),
+                (lote_id, plano_id, effective_ts),
             )
-            return cur.rowcount or 0
+            row = await cur.fetchone()
+
+        if not row:
+            return True
+
+        value = row.get("result")
+        if value is None and len(row) == 1:
+            value = next(iter(row.values()))
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return value > 0
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"t", "true", "ok", "1"}:
+                return True
+            if lowered in {"f", "false", "0"}:
+                return False
+        return True
 
     async def close_batch(self, lote_id: UUID) -> int:
         async with self._connection.cursor() as cur:
@@ -369,6 +431,40 @@ class TreatmentRepository:
                 (lote_id,),
             )
             return cur.rowcount or 0
+
+    async def fetch_queue_metadata(self, plano_id: UUID) -> dict[str, Any]:
+        async with self._connection.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                """
+                SELECT filas,
+                       users_enfileirando,
+                       lotes
+                  FROM app.vw_tratamento_enfileirado
+                 WHERE plano_id = %s
+                 LIMIT 1
+                """,
+                (plano_id,),
+            )
+            row = await cur.fetchone()
+
+        if not row:
+            return {"enqueued": False, "filas": 0, "users": 0, "lotes": 0}
+
+        def _to_int(value: Any) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):  # pragma: no cover - defensive
+                return 0
+
+        filas = _to_int(row.get("filas"))
+        users = _to_int(row.get("users_enfileirando") or row.get("users"))
+        lotes = _to_int(row.get("lotes"))
+        return {
+            "enqueued": any(v > 0 for v in (filas, users, lotes)),
+            "filas": filas,
+            "users": users,
+            "lotes": lotes,
+        }
 
 
 __all__ = [

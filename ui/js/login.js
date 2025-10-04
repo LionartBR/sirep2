@@ -113,6 +113,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  const fetchProfile = async (username) => {
+    try {
+      const headers = new Headers({ Accept: 'application/json' });
+      const matricula = username?.trim();
+      if (matricula) {
+        headers.set('X-User-Registration', matricula);
+      }
+      const response = await fetch('/api/auth/me', { headers });
+      if (!response.ok) {
+        return null;
+      }
+      const payload = await response.json().catch(() => null);
+      return payload?.perfil ?? null;
+    } catch (error) {
+      console.warn('Não foi possível carregar o perfil do usuário.', error);
+      return null;
+    }
+  };
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     showFeedback('');
@@ -124,8 +143,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setLoadingState(true);
 
+    let profile = null;
     try {
       await authenticate(credentials);
+      profile = await fetchProfile(credentials.username);
     } catch (error) {
       setLoadingState(false);
       showFeedback(error.message || 'Não foi possível autenticar. Tente novamente.');
@@ -143,6 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
       username,
       remember: rememberInput.checked,
       name: displayName,
+      profile,
     });
     form.reset();
     window.location.replace('/app/index.html');

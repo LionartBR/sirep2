@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Iterable
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from api.dependencies import get_connection_manager
 from api.models import (
@@ -26,34 +25,27 @@ from services.treatment import (
     TreatmentNotFoundError,
     TreatmentService,
 )
-from shared.config import get_principal_settings
+from api.security import resolve_request_matricula, role_required
+
+try:  # pragma: no cover - allow monkeypatching in tests without config module
+    from shared.config import get_principal_settings  # type: ignore
+except Exception:  # pragma: no cover - fallback stub when config missing
+
+    def get_principal_settings():
+        class _Principal:
+            matricula: str | None = None
+
+        return _Principal()
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/treatment", tags=["treatment"])
-
-DEFAULT_GRID = "PLANOS_P_RESCISAO"
-
-_REQUEST_PRINCIPAL_HEADER_CANDIDATES: Iterable[str] = (
-    "x-user-registration",
-    "x-user-id",
-    "x-app-user-registration",
-    "x-app-user-id",
+router = APIRouter(
+    prefix="/treatment",
+    tags=["treatment"],
+    dependencies=[Depends(role_required("GESTOR", "RESCISAO"))],
 )
 
-
-def _resolve_request_matricula(request: Request | None) -> str | None:
-    if request is not None:
-        for header in _REQUEST_PRINCIPAL_HEADER_CANDIDATES:
-            value = request.headers.get(header)
-            if value:
-                candidate = value.split(",", 1)[0].strip()
-                if candidate:
-                    return candidate
-
-    principal = get_principal_settings()
-    matricula = (principal.matricula or "").strip() if principal.matricula else ""
-    return matricula or None
+DEFAULT_GRID = "PLANOS_P_RESCISAO"
 
 
 def _to_totals_response(totals: TreatmentTotals) -> TreatmentTotalsResponse:
@@ -92,7 +84,7 @@ async def get_treatment_state(
     request: Request,
     grid: str = Query(DEFAULT_GRID, alias="grid"),
 ) -> TreatmentStateResponse:
-    matricula = _resolve_request_matricula(request)
+    matricula = resolve_request_matricula(request, get_principal_settings)
     if not matricula:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -120,7 +112,7 @@ async def migrate_treatment(
     request: Request,
     payload: TreatmentMigrateRequest,
 ) -> TreatmentMigrationResponse:
-    matricula = _resolve_request_matricula(request)
+    matricula = resolve_request_matricula(request, get_principal_settings)
     if not matricula:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -163,7 +155,7 @@ async def list_treatment_items(
     cursor: str | None = Query(None),
     direction: str = Query("next", regex="^(next|prev)$"),
 ) -> TreatmentItemsResponse:
-    matricula = _resolve_request_matricula(request)
+    matricula = resolve_request_matricula(request, get_principal_settings)
     if not matricula:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -209,7 +201,7 @@ async def rescind_treatment_item(
     request: Request,
     payload: TreatmentRescindRequest,
 ) -> dict[str, bool]:
-    matricula = _resolve_request_matricula(request)
+    matricula = resolve_request_matricula(request, get_principal_settings)
     if not matricula:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -252,7 +244,7 @@ async def skip_treatment_item(
     request: Request,
     payload: TreatmentSkipRequest,
 ) -> dict[str, bool]:
-    matricula = _resolve_request_matricula(request)
+    matricula = resolve_request_matricula(request, get_principal_settings)
     if not matricula:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -290,7 +282,7 @@ async def close_treatment_batch(
     request: Request,
     payload: TreatmentCloseRequest,
 ) -> dict[str, bool]:
-    matricula = _resolve_request_matricula(request)
+    matricula = resolve_request_matricula(request, get_principal_settings)
     if not matricula:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

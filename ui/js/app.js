@@ -85,8 +85,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const PIPELINE_ENDPOINT = '/api/pipeline';
   const PLANS_ENDPOINT = '/api/plans';
   const TREATMENT_ENDPOINT = '/api/treatment';
+  const PROFILE_ENDPOINT = '/api/auth/me';
   const DEFAULT_PLAN_PAGE_SIZE = 10;
   const TREATMENT_GRID = 'PLANOS_P_RESCISAO';
+  let userProfile = typeof Auth?.getProfile === 'function' ? Auth.getProfile() : null;
   let treatmentBatchId = null;
   let treatmentTotals = { pending: 0, processed: 0, skipped: 0 };
   let treatmentStatusFilter = 'pending';
@@ -157,9 +159,155 @@ document.addEventListener('DOMContentLoaded', () => {
   let plansLoaded = false;
   let occurrencesLoaded = false;
   let treatmentLoaded = false;
+  let permissionToastHandle = null;
   let isPlansActionsMenuOpen = false;
   let shouldRefreshPlansAfterRun = false;
   let lastSuccessfulFinishedAt = null;
+
+  const canAccessBase = () => userProfile === 'GESTOR';
+
+  const ensureToastElement = () => {
+    let toast = document.getElementById('appToastMessage');
+    if (toast) {
+      return toast;
+    }
+    toast = document.createElement('div');
+    toast.id = 'appToastMessage';
+    toast.className = 'toast';
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+    document.body.appendChild(toast);
+    return toast;
+  };
+
+  const showToast = (message) => {
+    if (!message) {
+      return;
+    }
+    const toast = ensureToastElement();
+    toast.textContent = message;
+    toast.classList.add('toast--visible');
+    if (permissionToastHandle) {
+      window.clearTimeout(permissionToastHandle);
+    }
+    permissionToastHandle = window.setTimeout(() => {
+      toast.classList.remove('toast--visible');
+    }, 3500);
+  };
+
+  const showPermissionDeniedToast = () => {
+    showToast("You don't have permission to view this area.");
+  };
+
+  const refreshProfileFromStore = () => {
+    if (typeof Auth?.getProfile === 'function') {
+      const storedProfile = Auth.getProfile();
+      if (storedProfile) {
+        userProfile = storedProfile;
+      }
+    }
+  };
+
+  const applyProfilePermissions = () => {
+    const allowBase = canAccessBase();
+    const baseTab = document.getElementById('tab-base');
+    const treatmentTab = document.getElementById('tab-treatment');
+    const basePanel = document.getElementById('panel-base');
+    const treatmentPanel = document.getElementById('panel-treatment');
+
+    if (baseTab) {
+      if (allowBase) {
+        baseTab.classList.remove('tabs__item--hidden');
+        baseTab.removeAttribute('hidden');
+        baseTab.setAttribute('aria-disabled', 'false');
+        if (!baseTab.classList.contains('tabs__item--active')) {
+          baseTab.setAttribute('tabindex', '0');
+        }
+      } else {
+        baseTab.classList.remove('tabs__item--active');
+        baseTab.classList.add('tabs__item--hidden');
+        baseTab.setAttribute('hidden', 'hidden');
+        baseTab.setAttribute('aria-disabled', 'true');
+        baseTab.setAttribute('tabindex', '-1');
+        baseTab.setAttribute('aria-selected', 'false');
+      }
+    }
+
+    if (basePanel) {
+      if (allowBase) {
+        basePanel.classList.remove('card__panel--hidden');
+        basePanel.removeAttribute('hidden');
+      } else {
+        basePanel.classList.add('card__panel--hidden');
+        basePanel.setAttribute('hidden', 'hidden');
+      }
+    }
+
+    if (treatmentPanel) {
+      treatmentPanel.classList.remove('card__panel--hidden');
+      treatmentPanel.removeAttribute('hidden');
+    }
+
+    if (!allowBase && treatmentTab) {
+      treatmentTab.classList.add('tabs__item--active');
+      treatmentTab.setAttribute('aria-selected', 'true');
+      treatmentTab.setAttribute('tabindex', '0');
+    }
+
+    const pipelineButtons = [btnStart, btnPause, btnContinue];
+    pipelineButtons.forEach((button) => {
+      if (!button) {
+        return;
+      }
+      if (!allowBase) {
+        button.disabled = true;
+        button.classList.add('btn--disabled');
+        button.setAttribute('aria-disabled', 'true');
+      } else {
+        button.disabled = false;
+        button.classList.remove('btn--disabled');
+        button.setAttribute('aria-disabled', 'false');
+      }
+    });
+  };
+
+  const requestProfileFromServer = async () => {
+    const matricula = currentUser?.username?.trim();
+    if (!matricula) {
+      return null;
+    }
+    try {
+      const headers = new Headers({ Accept: 'application/json' });
+      headers.set('X-User-Registration', matricula);
+      const response = await fetch(PROFILE_ENDPOINT, { headers });
+      if (!response.ok) {
+        return null;
+      }
+      const payload = await response.json().catch(() => null);
+      return payload?.perfil ?? null;
+    } catch (error) {
+      console.warn('Não foi possível obter o perfil do usuário.', error);
+      return null;
+    }
+  };
+
+  const refreshUserProfile = async () => {
+    const perfil = await requestProfileFromServer();
+    if (!perfil) {
+      return;
+    }
+    let normalizedProfile = perfil;
+    if (typeof Auth?.setProfile === 'function') {
+      const updatedSession = Auth.setProfile(perfil);
+      if (updatedSession?.profile) {
+        normalizedProfile = updatedSession.profile;
+      }
+    }
+    if (normalizedProfile && normalizedProfile !== userProfile) {
+      userProfile = normalizedProfile;
+      applyProfilePermissions();
+    }
+  };
 
   const setStatus = (text) => {
     if (!statusText) {
@@ -418,6 +566,11 @@ document.addEventListener('DOMContentLoaded', () => {
   };
  
   const refreshPipelineMeta = async () => {
+    if (!canAccessBase()) {
+      setText(lblLastUpdate, '', null);
+      setText(lblLastDuration, '', null);
+      return null;
+    }
     if (isFetchingPipelineMeta) {
       return null;
     }
@@ -499,14 +652,15 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const checkboxSelector = planCheckboxSelector;
-    const totalCheckboxes = plansTableBody
-      ? plansTableBody.querySelectorAll(checkboxSelector).length
+    const totalEnabledCheckboxes = plansTableBody
+      ? plansTableBody.querySelectorAll(`${checkboxSelector}:not(:disabled)`).length
       : 0;
-    const checkedCheckboxes = plansTableBody
-      ? plansTableBody.querySelectorAll(`${checkboxSelector}:checked`).length
+    const checkedEnabledCheckboxes = plansTableBody
+      ? plansTableBody.querySelectorAll(`${checkboxSelector}:checked:not(:disabled)`).length
       : 0;
-    const hasSelection = plansSelection.size > 0 || checkedCheckboxes > 0;
-    const allSelected = totalCheckboxes > 0 && checkedCheckboxes === totalCheckboxes;
+    const hasSelection = plansSelection.size > 0 || checkedEnabledCheckboxes > 0;
+    const allSelected =
+      totalEnabledCheckboxes > 0 && checkedEnabledCheckboxes === totalEnabledCheckboxes;
 
     const requiresSelectionItems = plansActionsMenu.querySelectorAll('[data-requires-selection]');
     requiresSelectionItems.forEach((node) => {
@@ -531,7 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (plansSelectAllAction instanceof HTMLElement) {
-      const isDisabled = totalCheckboxes === 0;
+      const isDisabled = totalEnabledCheckboxes === 0;
       plansSelectAllAction.disabled = isDisabled;
       plansSelectAllAction.setAttribute('aria-disabled', String(isDisabled));
       plansSelectAllAction.dataset.mode = allSelected ? 'clear' : 'select';
@@ -634,6 +788,11 @@ document.addEventListener('DOMContentLoaded', () => {
     plansSelection.clear();
     checkboxes.forEach((checkbox) => {
       if (!(checkbox instanceof HTMLInputElement)) {
+        return;
+      }
+      if (checkbox.disabled) {
+        const row = checkbox.closest('tr');
+        applyPlanRowSelectionState(row, false);
         return;
       }
       const row = checkbox.closest('tr');
@@ -852,7 +1011,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const planCell = document.createElement('td');
       planCell.className = 'table__cell';
-      planCell.textContent = item?.number ?? '';
+      const planNumberText = item?.number ?? '';
+      const planNumberSpan = document.createElement('span');
+      planNumberSpan.textContent = planNumberText;
+      planCell.appendChild(planNumberSpan);
+
+      const queueInfo = item?.treatment_queue ?? null;
+      const isQueued = Boolean(queueInfo?.enqueued);
+      if (isQueued) {
+        row.classList.add('table__row--queued');
+        const badge = document.createElement('span');
+        badge.className = 'badge badge--queue';
+        badge.textContent = 'Em tratamento';
+        const badgeDetails = [];
+        if (typeof queueInfo?.filas === 'number' && queueInfo.filas > 0) {
+          badgeDetails.push(`Filas: ${queueInfo.filas}`);
+        }
+        if (typeof queueInfo?.users === 'number' && queueInfo.users > 0) {
+          badgeDetails.push(`Usuários: ${queueInfo.users}`);
+        }
+        if (typeof queueInfo?.lotes === 'number' && queueInfo.lotes > 0) {
+          badgeDetails.push(`Lotes: ${queueInfo.lotes}`);
+        }
+        if (badgeDetails.length) {
+          badge.title = badgeDetails.join(' • ');
+        } else {
+          badge.title = 'Plano atualmente enfileirado para tratamento';
+        }
+        planCell.appendChild(document.createElement('br'));
+        planCell.appendChild(badge);
+      }
       row.appendChild(planCell);
 
       const documentCell = document.createElement('td');
@@ -897,7 +1085,18 @@ document.addEventListener('DOMContentLoaded', () => {
         'aria-label',
         planId ? `Selecionar plano ${planId}` : 'Selecionar plano',
       );
+      if (isQueued) {
+        checkbox.disabled = true;
+        checkbox.setAttribute('aria-disabled', 'true');
+        const disabledHint = queueInfo?.filas
+          ? `Plano em tratamento (${queueInfo.filas} filas ativas)`
+          : 'Plano em tratamento';
+        checkbox.title = disabledHint;
+      }
       checkbox.addEventListener('change', () => {
+        if (checkbox.disabled) {
+          return;
+        }
         const isChecked = checkbox.checked;
         setPlanSelection(planId, isChecked, { checkbox, row });
         updatePlansActionsMenuState();
@@ -1693,6 +1892,14 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const refreshPlans = async ({ showLoading, direction = null } = {}) => {
+    if (!canAccessBase()) {
+      plansLoaded = true;
+      if (plansTableBody) {
+        renderPlansPlaceholder('Área disponível apenas para perfil Gestor.', 'empty');
+      }
+      return;
+    }
+
     if (!plansTableBody || isFetchingPlans) {
       return;
     }
@@ -1788,6 +1995,17 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const toggleButtons = ({ start, pause, cont }) => {
+    if (!canAccessBase()) {
+      [btnStart, btnPause, btnContinue].forEach((btn) => {
+        if (!btn) {
+          return;
+        }
+        btn.disabled = true;
+        btn.classList.add('btn--disabled');
+        btn.setAttribute('aria-disabled', 'true');
+      });
+      return;
+    }
     btnStart.disabled = !start;
     btnPause.disabled = !pause;
     btnContinue.disabled = !cont;
@@ -2258,6 +2476,14 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const refreshOccurrences = async ({ showLoading, direction = null } = {}) => {
+    if (!canAccessBase()) {
+      occurrencesLoaded = true;
+      if (occTableBody) {
+        renderOccurrencesPlaceholder('Área disponível apenas para perfil Gestor.', 'empty');
+      }
+      return;
+    }
+
     if (!occTableBody || isFetchingOccurrences) {
       return;
     }
@@ -3021,11 +3247,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const activate = (target) => {
-      const isBase = target === 'base';
+      let desired = target;
+      if (desired === 'base' && !canAccessBase()) {
+        desired = 'treatment';
+      }
+
+      const isBase = desired === 'base';
       baseTab.classList.toggle('tabs__item--active', isBase);
       treatmentTab.classList.toggle('tabs__item--active', !isBase);
       baseTab.setAttribute('aria-selected', String(isBase));
-      baseTab.setAttribute('tabindex', isBase ? '0' : '-1');
+      baseTab.setAttribute('tabindex', isBase ? '0' : canAccessBase() ? '0' : '-1');
       treatmentTab.setAttribute('aria-selected', String(!isBase));
       treatmentTab.setAttribute('tabindex', isBase ? '-1' : '0');
 
@@ -3041,8 +3272,21 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     };
 
-    baseTab.addEventListener('click', () => activate('base'));
-    treatmentTab.addEventListener('click', () => activate('treatment'));
+    const handleBaseClick = (event) => {
+      event.preventDefault();
+      if (!canAccessBase()) {
+        return;
+      }
+      activate('base');
+    };
+
+    const handleTreatmentClick = (event) => {
+      event.preventDefault();
+      activate('treatment');
+    };
+
+    baseTab.addEventListener('click', handleBaseClick);
+    treatmentTab.addEventListener('click', handleTreatmentClick);
 
     const handleKeyNav = (event) => {
       if (event.key === 'ArrowRight') {
@@ -3051,6 +3295,9 @@ document.addEventListener('DOMContentLoaded', () => {
         activate('treatment');
       } else if (event.key === 'ArrowLeft') {
         event.preventDefault();
+        if (!canAccessBase()) {
+          return;
+        }
         baseTab.focus();
         activate('base');
       }
@@ -3058,11 +3305,14 @@ document.addEventListener('DOMContentLoaded', () => {
     baseTab.addEventListener('keydown', handleKeyNav);
     treatmentTab.addEventListener('keydown', handleKeyNav);
 
-    // Initialize from existing active class
+    applyProfilePermissions();
     const isBaseInitiallyActive = baseTab.classList.contains('tabs__item--active');
-    activate(isBaseInitiallyActive ? 'base' : 'treatment');
+    const initialTarget = canAccessBase() && isBaseInitiallyActive ? 'base' : 'treatment';
+    activate(initialTarget);
   };
 
+  refreshProfileFromStore();
+  applyProfilePermissions();
   setupFilters();
   toggleButtons({ start: true, pause: false, cont: false });
   setStatus(defaultMessages.idle);
@@ -3071,8 +3321,13 @@ document.addEventListener('DOMContentLoaded', () => {
   void fetchTreatmentState({ refreshItems: true });
   // Initialize KPI values with zeros; backend wiring can update these later
   updateKpiCounts({ queueCount: 0, rescindedCount: 0, remainingCount: 0 });
+  void refreshUserProfile();
 
   const schedulePolling = () => {
+    if (!canAccessBase()) {
+      stopPolling();
+      return;
+    }
     stopPolling();
     pollHandle = window.setInterval(async () => {
       const state = await fetchPipelineState();
@@ -3113,6 +3368,9 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const fetchPipelineState = async () => {
+    if (!canAccessBase()) {
+      return null;
+    }
     try {
       const response = await fetch(`${PIPELINE_ENDPOINT}/state`, { headers: { 'Accept': 'application/json' } });
       if (!response.ok) {
@@ -3126,6 +3384,10 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const startPipeline = async () => {
+    if (!canAccessBase()) {
+      showPermissionDeniedToast();
+      return;
+    }
     toggleButtons({ start: false, pause: false, cont: false });
     setStatus('Iniciando...');
 
@@ -3253,6 +3515,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   (async () => {
+    if (!canAccessBase()) {
+      toggleButtons({ start: true, pause: false, cont: false });
+      setStatus(defaultMessages.idle);
+      return;
+    }
     void refreshPipelineMeta();
     const state = await fetchPipelineState();
     if (state) {
@@ -3272,6 +3539,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     // On resume, refetch state and meta
+    if (!canAccessBase()) {
+      return;
+    }
     const state = await fetchPipelineState();
     if (state) {
       applyState(state);
