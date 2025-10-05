@@ -163,6 +163,13 @@ export function registerHelperModule(context) {
     }
   };
 
+  const stripDigits = (value) => {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    return String(value).replace(/\D+/g, '');
+  };
+
   const setElementText = (element, value) => {
     if (!element) {
       return;
@@ -281,5 +288,5 @@ export function registerHelperModule(context) {
   context.pad2 = pad2;
   context.formatDurationText = formatDurationText;
   context.setText = setText;
+  context.stripDigits = stripDigits;
 }
-

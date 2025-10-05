@@ -149,6 +149,42 @@ export function createAppContext() {
   context.currentOccurrencesSearchTerm = '';
   context.activeTableSearchTarget = 'plans';
 
+  context.plansPager = {
+    page: 1,
+    pageSize: context.DEFAULT_PLAN_PAGE_SIZE,
+    nextCursor: null,
+    prevCursor: null,
+    hasMore: false,
+    totalCount: null,
+    totalPages: null,
+    showingFrom: 0,
+    showingTo: 0,
+  };
+
+  context.occPager = {
+    page: 1,
+    pageSize: context.DEFAULT_PLAN_PAGE_SIZE,
+    nextCursor: null,
+    prevCursor: null,
+    hasMore: false,
+    totalCount: null,
+    totalPages: null,
+    showingFrom: 0,
+    showingTo: 0,
+  };
+
+  context.treatmentPager = {
+    page: 1,
+    pageSize: context.DEFAULT_PLAN_PAGE_SIZE,
+    nextCursor: null,
+    prevCursor: null,
+    hasMoreNext: false,
+    hasMorePrev: false,
+    lastCount: 0,
+    currentCursor: null,
+    currentDirection: 'next',
+  };
+
   context.plansFetchController = null;
   context.occFetchController = null;
   context.pipelineMetaController = null;
@@ -178,6 +214,43 @@ export function createAppContext() {
   context.shouldRefreshPlansAfterRun = false;
   context.lastSuccessfulFinishedAt = null;
   context.scheduleOccurrencesCountUpdate = () => {};
+
+  context.hasActiveFilters = () => false;
+  context.resetFiltersState = () => {};
+  context.renderFilterChips = () => {};
+  context.syncFilterInputs = () => {};
+  context.applyFilters = () => {};
+  context.clearAllFilters = () => {};
+  context.attachFilterChipHandler = () => {};
+
+  context.resetPlansPagination = () => {};
+  context.resetOccurrencesPagination = () => {};
+  context.resetTreatmentPagination = () => {};
+
+  context.refreshPlans = async () => undefined;
+  context.refreshOccurrences = async () => undefined;
+  context.refreshTreatment = async () => undefined;
+  context.fetchTreatmentState = async () => null;
+  context.buildTreatmentFilters = () => null;
+  context.updateTreatmentKpis = () => {};
+
+  context.togglePipelineButtons = () => {};
+  context.refreshPipelineMeta = async () => null;
+  context.fetchPipelineState = async () => null;
+  context.schedulePolling = () => {};
+  context.stopPolling = () => {};
+  context.applyPipelineState = () => {};
+  context.resetProgress = () => {};
+
+  context.setupFilters = () => {};
+  context.setupCopyableCells = () => {};
+  context.setupDocumentObserver = () => {};
+  context.setupOccurrencesSearchObserver = () => {};
+  context.setupOccurrencesCounter = () => {};
+  context.setupTableSwitching = () => {};
+  context.setupMainTabsSwitching = () => {};
+  context.initializeDatePickers = () => {};
+  context.setupLogsAccordion = () => {};
 
   return context;
 }
