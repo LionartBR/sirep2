@@ -181,6 +181,18 @@ export function registerPipelineModule(context) {
     }
   };
 
+  const buildPipelineHeaders = (baseHeaders = {}) => {
+    const headers = new Headers(baseHeaders);
+    if (!headers.has('Accept')) {
+      headers.set('Accept', 'application/json');
+    }
+    const matricula = state.currentUser?.username?.trim();
+    if (matricula) {
+      headers.set('X-User-Registration', matricula);
+    }
+    return headers;
+  };
+
   const refreshPipelineMeta = async () => {
     if (!context.canAccessBase?.()) {
       context.setText?.(lblLastUpdate, '', null);
@@ -202,11 +214,7 @@ export function registerPipelineModule(context) {
           : window.location.href;
       const url = new URL(`${PIPELINE_ENDPOINT}/status`, baseUrl);
       url.searchParams.set('job_name', 'gestao_base');
-      const headers = new Headers({ Accept: 'application/json' });
-      const matricula = state.currentUser?.username?.trim();
-      if (matricula) {
-        headers.set('X-User-Registration', matricula);
-      }
+      const headers = buildPipelineHeaders();
       const response = await fetch(url.toString(), {
         headers,
         signal: state.pipelineMetaController.signal,
@@ -258,21 +266,12 @@ export function registerPipelineModule(context) {
     context.setStatus?.(message);
   };
 
-  const buildPipelineHeaders = (baseHeaders = {}) => {
-    const headers = new Headers(baseHeaders);
-    const matricula = state.currentUser?.username?.trim();
-    if (matricula) {
-      headers.set('X-User-Registration', matricula);
-    }
-    return headers;
-  };
-
   const fetchPipelineState = async () => {
     if (!context.canAccessBase?.()) {
       return null;
     }
     try {
-      const headers = buildPipelineHeaders({ Accept: 'application/json' });
+      const headers = buildPipelineHeaders();
       const response = await fetch(`${PIPELINE_ENDPOINT}/state`, {
         headers,
       });
@@ -320,7 +319,6 @@ export function registerPipelineModule(context) {
 
       const headers = buildPipelineHeaders({
         'Content-Type': 'application/json',
-        Accept: 'application/json',
       });
 
       const response = await fetch(`${PIPELINE_ENDPOINT}/start`, {
