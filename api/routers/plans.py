@@ -82,6 +82,9 @@ _FILTER_SITUATION_CODES: tuple[str, ...] = (
 )
 _FILTER_SITUATION_SET = set(_FILTER_SITUATION_CODES)
 
+_OCCURRENCE_SITUATION_CODES: tuple[str, ...] = ("SIT_ESPECIAL", "GRDE_EMITIDA")
+_OCCURRENCE_SITUATION_SET = set(_OCCURRENCE_SITUATION_CODES)
+
 _ALLOWED_OVERDUE_THRESHOLDS: set[int] = {90, 100, 120}
 
 _ALLOWED_SALDO_THRESHOLDS: tuple[int, ...] = (10000, 50000, 150000, 500000, 1_000_000)
@@ -450,8 +453,19 @@ def _build_filters(
         params["name_pattern"] = f"%{normalized_search}%"
         clauses.append(f"{col('razao_social')} ILIKE %(name_pattern)s")
 
-    if situacoes:
-        params["situacoes"] = list(situacoes)
+    normalized_situacoes = list(situacoes) if situacoes else []
+    effective_situacoes: list[str] = []
+
+    if occurrences_only:
+        filtered = [
+            code for code in normalized_situacoes if code in _OCCURRENCE_SITUATION_SET
+        ]
+        effective_situacoes = filtered or list(_OCCURRENCE_SITUATION_CODES)
+    else:
+        effective_situacoes = normalized_situacoes
+
+    if effective_situacoes:
+        params["situacoes"] = effective_situacoes
         clauses.append(f"{col('situacao_codigo')} = ANY(%(situacoes)s::text[])")
 
     if dias_min is not None:
@@ -478,9 +492,6 @@ def _build_filters(
                 if not table_alias
                 else end_clause.replace("dt_situacao", f"{table_alias}.dt_situacao")
             )
-
-    if occurrences_only:
-        clauses.append(f"{col('situacao_codigo')} <> 'P_RESCISAO'")
 
     if clauses:
         return " WHERE " + " AND ".join(clauses), params

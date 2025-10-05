@@ -825,6 +825,104 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
     _run(_exercise())
 
 
+def test_list_plans_occurrences_only_enforces_allowed_statuses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows: list[dict[str, Any]] = []
+
+    manager = _DummyManager(rows)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
+    async def _fake_bind(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    async def _exercise() -> None:
+        request_params = {
+            "page": "1",
+            "page_size": str(plans.KEYSET_DEFAULT_PAGE_SIZE),
+        }
+        response = await plans.list_plans(
+            request=_make_request(
+                headers={"X-User-Registration": "abc123"},
+                query_params=request_params,
+            ),
+            occurrences_only=True,
+            page=1,
+            page_size=plans.KEYSET_DEFAULT_PAGE_SIZE,
+        )
+
+        assert isinstance(response, PlansResponse)
+        assert manager.last_connection is not None
+        cursor = manager.last_connection.last_cursor
+        assert cursor is not None
+        assert cursor.executed_sql is not None
+        assert "planos.situacao_codigo = ANY" in cursor.executed_sql
+        params = cursor.executed_params
+        assert params is not None
+        assert list(params["situacoes"]) == ["SIT_ESPECIAL", "GRDE_EMITIDA"]
+
+        response = await plans.list_plans(
+            request=_make_request(
+                headers={"X-User-Registration": "abc123"},
+                query_params={
+                    "page": "1",
+                    "page_size": str(plans.KEYSET_DEFAULT_PAGE_SIZE),
+                    "situacao": "SIT_ESPECIAL",
+                },
+            ),
+            occurrences_only=True,
+            page=1,
+            page_size=plans.KEYSET_DEFAULT_PAGE_SIZE,
+            situacao=["SIT_ESPECIAL", "RESCINDIDO"],
+        )
+
+        assert isinstance(response, PlansResponse)
+        assert manager.last_connection is not None
+        cursor = manager.last_connection.last_cursor
+        assert cursor is not None
+        params = cursor.executed_params
+        assert params is not None
+        assert list(params["situacoes"]) == ["SIT_ESPECIAL"]
+
+        response = await plans.list_plans(
+            request=_make_request(
+                headers={"X-User-Registration": "abc123"},
+                query_params={
+                    "page": "1",
+                    "page_size": str(plans.KEYSET_DEFAULT_PAGE_SIZE),
+                    "situacao": "RESCINDIDO",
+                },
+            ),
+            occurrences_only=True,
+            page=1,
+            page_size=plans.KEYSET_DEFAULT_PAGE_SIZE,
+            situacao=["RESCINDIDO"],
+        )
+
+        assert isinstance(response, PlansResponse)
+        assert manager.last_connection is not None
+        cursor = manager.last_connection.last_cursor
+        assert cursor is not None
+        params = cursor.executed_params
+        assert params is not None
+        assert list(params["situacoes"]) == ["SIT_ESPECIAL", "GRDE_EMITIDA"]
+
+    _run(_exercise())
+
+
 def test_list_plans_requires_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     def _unexpected_manager() -> _DummyManager:
         raise AssertionError(

@@ -13,6 +13,8 @@ export function registerOccurrencesModule(context) {
   } = context;
 
   const occPager = context.occPager;
+  const OCCURRENCE_ALLOWED_SITUATIONS = ['SIT_ESPECIAL', 'GRDE_EMITIDA'];
+  const occurrenceSituacaoSet = new Set(OCCURRENCE_ALLOWED_SITUATIONS);
 
   const renderOccurrencesPlaceholder = (message, modifier = 'empty') => {
     if (!occTableBody) {
@@ -205,11 +207,14 @@ export function registerOccurrencesModule(context) {
     if (state.currentOccurrencesSearchTerm) {
       url.searchParams.set('q', state.currentOccurrencesSearchTerm);
     }
-    if (filtersState.situacao.length) {
-      filtersState.situacao.forEach((value) => {
-        url.searchParams.append('situacao', value);
-      });
-    }
+    const activeSituations = Array.from(
+      new Set(filtersState.situacao.filter((value) => occurrenceSituacaoSet.has(value))),
+    );
+    const situationsToSend =
+      activeSituations.length > 0 ? activeSituations : OCCURRENCE_ALLOWED_SITUATIONS;
+    situationsToSend.forEach((value) => {
+      url.searchParams.append('situacao', value);
+    });
     if (filtersState.diasMin !== null) {
       url.searchParams.set('dias_min', String(filtersState.diasMin));
     }
