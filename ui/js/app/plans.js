@@ -88,12 +88,13 @@ export function registerPlansModule(context) {
         checkbox.dataset.lockPrevDisabled = checkbox.disabled ? 'true' : 'false';
         if (checkbox.disabled) {
           checkbox.dataset.lockPrevDisabledTitle = checkbox.title || '';
-        } else {
-          delete checkbox.dataset.lockPrevDisabledTitle;
+        } else if (checkbox.dataset.lockPrevDisabledTitle === undefined) {
+          checkbox.dataset.lockPrevDisabledTitle = checkbox.dataset.defaultTitle || checkbox.title || '';
         }
-        checkbox.checked = false;
-        checkbox.disabled = true;
-        checkbox.setAttribute('aria-disabled', 'true');
+        if (checkbox.dataset.lockPrevDisabled !== 'true') {
+          checkbox.disabled = false;
+          checkbox.removeAttribute('aria-disabled');
+        }
         checkbox.title = 'Plano bloqueado';
       } else if (checkbox.dataset.lockPrevDisabled !== undefined) {
         const wasDisabled = checkbox.dataset.lockPrevDisabled === 'true';
@@ -236,6 +237,43 @@ export function registerPlansModule(context) {
       }
     }
 
+    if (plansActionsMenu) {
+      const lockMenuAction = plansActionsMenu.querySelector('[data-action="lock"]');
+      if (lockMenuAction instanceof HTMLElement) {
+        const selectedIds = new Set(plansSelection);
+        if (plansTableBody) {
+          const checkedBoxes = plansTableBody.querySelectorAll(`${planCheckboxSelector}:checked`);
+          checkedBoxes.forEach((checkbox) => {
+            if (!(checkbox instanceof HTMLInputElement)) {
+              return;
+            }
+            const row = checkbox.closest('tr');
+            const planId = checkbox.dataset.planId ?? row?.dataset.planId ?? '';
+            if (planId) {
+              selectedIds.add(planId);
+            }
+          });
+        }
+        let hasLockedSelected = false;
+        selectedIds.forEach((planId) => {
+          if (context.lockedPlans.has(planId)) {
+            hasLockedSelected = true;
+          }
+        });
+        const labelSpan = lockMenuAction.querySelector('span');
+        const mode = hasLockedSelected ? 'unlock' : 'lock';
+        const ariaLabel = hasLockedSelected
+          ? 'Desbloquear selecionados'
+          : 'Bloquear selecionados';
+        if (labelSpan) {
+          labelSpan.textContent = hasLockedSelected ? 'Desbloquear' : 'Bloquear';
+        }
+        lockMenuAction.dataset.mode = mode;
+        lockMenuAction.setAttribute('aria-label', ariaLabel);
+        lockMenuAction.title = ariaLabel;
+      }
+    }
+
     if (!hasSelection && state.isPlansActionsMenuOpen && plansActionsMenu) {
       const activeElement = document.activeElement;
       if (
@@ -265,7 +303,6 @@ export function registerPlansModule(context) {
     normalized.forEach((planId) => {
       if (locked) {
         context.lockedPlans.add(planId);
-        plansSelection.delete(planId);
       } else {
         context.lockedPlans.delete(planId);
       }
@@ -618,14 +655,11 @@ export function registerPlansModule(context) {
     plansTableBody.innerHTML = '';
     plansSelection.clear();
     closePlansActionsMenu();
-    if (state.planRecords instanceof Map) {
-      state.planRecords.clear();
-    } else {
-      state.planRecords = new Map();
-    }
-    if (!(context.lockedPlans instanceof Set)) {
-      context.lockedPlans = new Set();
-    }
+    const previousLockedPlans =
+      context.lockedPlans instanceof Set ? new Set(context.lockedPlans) : new Set();
+    state.planRecords = new Map();
+    const lockedPlans = new Set();
+    context.lockedPlans = lockedPlans;
     const plans = Array.isArray(items) ? items : [];
     if (!plans.length) {
       if (state.currentPlansSearchTerm) {
@@ -843,7 +877,15 @@ export function registerPlansModule(context) {
         ? String(planDetails.displayNumber)
         : planDetails.number;
 
-      const isLocked = planId ? context.lockedPlans.has(planId) : false;
+      let isLocked = false;
+      if (typeof item?.blocked === 'boolean') {
+        isLocked = item.blocked;
+      } else if (planId) {
+        isLocked = previousLockedPlans.has(planId);
+      }
+      if (planId && isLocked) {
+        lockedPlans.add(planId);
+      }
       planDetails.locked = isLocked;
       if (planId) {
         state.planRecords.set(planId, planDetails);
@@ -1081,7 +1123,7 @@ export function registerPlansModule(context) {
       }
     });
 
-    plansActionsMenu.addEventListener('click', (event) => {
+    plansActionsMenu.addEventListener('click', async (event) => {
       const target = event.target instanceof HTMLElement
         ? event.target.closest('.table-actions-menu__item')
         : null;
@@ -1099,13 +1141,34 @@ export function registerPlansModule(context) {
           selectAllPlansOnPage();
         }
       } else if (action === 'lock') {
-        const planIds = Array.from(plansSelection);
-        if (planIds.length > 0) {
-          const lockedCount = planIds.filter((planId) => context.lockedPlans.has(planId)).length;
-          if (lockedCount === planIds.length) {
-            void unlockPlans(planIds);
+        const selected = new Set(plansSelection);
+        if (selected.size === 0 && plansTableBody) {
+          const checkedBoxes = plansTableBody.querySelectorAll(`${planCheckboxSelector}:checked`);
+          checkedBoxes.forEach((checkbox) => {
+            if (!(checkbox instanceof HTMLInputElement)) {
+              return;
+            }
+            const row = checkbox.closest('tr');
+            const planId = checkbox.dataset.planId ?? row?.dataset.planId ?? '';
+            if (planId) {
+              selected.add(planId);
+            }
+          });
+        }
+        if (selected.size > 0) {
+          const ids = Array.from(selected);
+          if (target.dataset.mode === 'unlock') {
+            const lockedSelectedCount = ids.filter((planId) => context.lockedPlans.has(planId)).length;
+            await unlockPlans(ids);
+            if (lockedSelectedCount > 1) {
+              ids.forEach((planId) => {
+                const row = findPlanRow(planId);
+                const checkbox = row?.querySelector(planCheckboxSelector);
+                setPlanSelection(planId, false, { checkbox, row });
+              });
+            }
           } else {
-            void lockPlans(planIds);
+            await lockPlans(ids);
           }
         }
       }

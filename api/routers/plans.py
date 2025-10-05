@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.params import Param
 from psycopg import AsyncConnection
-from psycopg.errors import InvalidAuthorizationSpecification
+from psycopg.errors import InvalidAuthorizationSpecification, UniqueViolation
 
 try:  # pragma: no cover - allow running under test stubs
     from psycopg.errors import QueryCanceled  # type: ignore[attr-defined]
@@ -111,6 +111,12 @@ _DT_SITUATION_RANGE_CLAUSES: dict[str, tuple[str | None, str | None]] = {
     ),
 }
 
+_ACTIVE_BLOCK_PREDICATE = (
+    "bloqueio.ativo = TRUE\n"
+    "       AND bloqueio.unlocked_at IS NULL\n"
+    "       AND (bloqueio.expires_at IS NULL OR bloqueio.expires_at > now())"
+)
+
 
 def _unwrap_query_param(value: Any) -> Any:
     """Return the underlying default when a FastAPI ``Param`` is provided."""
@@ -164,7 +170,7 @@ def _normalize_dt_range(value: str | None) -> str | None:
     return candidate if candidate in _DT_SITUATION_RANGE_CLAUSES else None
 
 
-PLAN_DEFAULT_QUERY = """
+PLAN_DEFAULT_QUERY = f"""
     SELECT
         planos.plano_id,
         planos.numero_plano,
@@ -178,18 +184,20 @@ PLAN_DEFAULT_QUERY = """
         trat.filas,
         trat.users_enfileirando,
         trat.lotes,
-        (bloqueio.plano_id IS NOT NULL) AS bloqueado
+        (bloqueio.id IS NOT NULL) AS bloqueado,
+        bloqueio.created_at AS bloqueado_em,
+        bloqueio.unlocked_at AS desbloqueado_em,
+        bloqueio.motivo AS motivo_bloqueio
       FROM app.vw_planos_busca AS planos
  LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
  LEFT JOIN app.plano_bloqueio AS bloqueio
         ON bloqueio.plano_id = planos.plano_id
-       AND bloqueio.desbloqueado_em IS NULL
-       AND (bloqueio.expires_at IS NULL OR bloqueio.expires_at > CURRENT_TIMESTAMP)
+       AND {_ACTIVE_BLOCK_PREDICATE}
      ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
 
-PLAN_SEARCH_BY_NUMBER_QUERY = """
+PLAN_SEARCH_BY_NUMBER_QUERY = f"""
     SELECT
         planos.plano_id,
         planos.numero_plano,
@@ -203,20 +211,22 @@ PLAN_SEARCH_BY_NUMBER_QUERY = """
         trat.filas,
         trat.users_enfileirando,
         trat.lotes,
-        (bloqueio.plano_id IS NOT NULL) AS bloqueado
+        (bloqueio.id IS NOT NULL) AS bloqueado,
+        bloqueio.created_at AS bloqueado_em,
+        bloqueio.unlocked_at AS desbloqueado_em,
+        bloqueio.motivo AS motivo_bloqueio
       FROM app.vw_planos_busca AS planos
  LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
  LEFT JOIN app.plano_bloqueio AS bloqueio
         ON bloqueio.plano_id = planos.plano_id
-       AND bloqueio.desbloqueado_em IS NULL
-       AND (bloqueio.expires_at IS NULL OR bloqueio.expires_at > CURRENT_TIMESTAMP)
+       AND {_ACTIVE_BLOCK_PREDICATE}
      WHERE planos.numero_plano = %(number)s
         OR planos.numero_plano LIKE %(number_prefix)s
      ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
 
-PLAN_SEARCH_BY_NAME_QUERY = """
+PLAN_SEARCH_BY_NAME_QUERY = f"""
     SELECT
         planos.plano_id,
         planos.numero_plano,
@@ -230,19 +240,21 @@ PLAN_SEARCH_BY_NAME_QUERY = """
         trat.filas,
         trat.users_enfileirando,
         trat.lotes,
-        (bloqueio.plano_id IS NOT NULL) AS bloqueado
+        (bloqueio.id IS NOT NULL) AS bloqueado,
+        bloqueio.created_at AS bloqueado_em,
+        bloqueio.unlocked_at AS desbloqueado_em,
+        bloqueio.motivo AS motivo_bloqueio
       FROM app.vw_planos_busca AS planos
  LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
  LEFT JOIN app.plano_bloqueio AS bloqueio
         ON bloqueio.plano_id = planos.plano_id
-       AND bloqueio.desbloqueado_em IS NULL
-       AND (bloqueio.expires_at IS NULL OR bloqueio.expires_at > CURRENT_TIMESTAMP)
+       AND {_ACTIVE_BLOCK_PREDICATE}
      WHERE planos.razao_social ILIKE %(name_pattern)s
      ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
 
-PLAN_SEARCH_BY_DOCUMENT_QUERY = """
+PLAN_SEARCH_BY_DOCUMENT_QUERY = f"""
     SELECT
         planos.plano_id,
         planos.numero_plano,
@@ -256,13 +268,15 @@ PLAN_SEARCH_BY_DOCUMENT_QUERY = """
         trat.filas,
         trat.users_enfileirando,
         trat.lotes,
-        (bloqueio.plano_id IS NOT NULL) AS bloqueado
+        (bloqueio.id IS NOT NULL) AS bloqueado,
+        bloqueio.created_at AS bloqueado_em,
+        bloqueio.unlocked_at AS desbloqueado_em,
+        bloqueio.motivo AS motivo_bloqueio
       FROM app.vw_planos_busca AS planos
  LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
  LEFT JOIN app.plano_bloqueio AS bloqueio
         ON bloqueio.plano_id = planos.plano_id
-       AND bloqueio.desbloqueado_em IS NULL
-       AND (bloqueio.expires_at IS NULL OR bloqueio.expires_at > CURRENT_TIMESTAMP)
+       AND {_ACTIVE_BLOCK_PREDICATE}
      WHERE planos.documento = %(document)s
        AND planos.tipo_doc IN ('CNPJ', 'CPF', 'CEI')
      ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
@@ -391,6 +405,13 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
 
     blocked_value = row.get("bloqueado")
     blocked = bool(blocked_value) if blocked_value is not None else False
+    blocked_at = _normalize_expires_at(row.get("bloqueado_em"))
+    unlocked_at = _normalize_expires_at(row.get("desbloqueado_em"))
+    block_reason_raw = row.get("motivo_bloqueio")
+    block_reason: str | None = None
+    if block_reason_raw is not None:
+        text = str(block_reason_raw).strip()
+        block_reason = text or None
 
     return PlanSummaryResponse(
         plan_id=plan_id,
@@ -403,6 +424,9 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
         status_date=status_date,
         treatment_queue=treatment_queue,
         blocked=blocked,
+        blocked_at=blocked_at,
+        unlocked_at=unlocked_at,
+        block_reason=block_reason,
     )
 
 
@@ -650,13 +674,15 @@ async def _fetch_keyset_page(
         "SELECT planos.plano_id, planos.numero_plano, planos.documento, planos.razao_social, planos.situacao,"
         " planos.dias_em_atraso, planos.saldo, planos.dt_situacao,"
         " trat.filas, trat.users_enfileirando, trat.lotes,"
-        " (bloqueio.plano_id IS NOT NULL) AS bloqueado"
+        " (bloqueio.id IS NOT NULL) AS bloqueado,"
+        " bloqueio.created_at AS bloqueado_em,"
+        " bloqueio.unlocked_at AS desbloqueado_em,"
+        " bloqueio.motivo AS motivo_bloqueio"
         " FROM app.vw_planos_busca AS planos"
         " LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id"
         " LEFT JOIN app.plano_bloqueio AS bloqueio"
         "        ON bloqueio.plano_id = planos.plano_id"
-        "       AND bloqueio.desbloqueado_em IS NULL"
-        "       AND (bloqueio.expires_at IS NULL OR bloqueio.expires_at > CURRENT_TIMESTAMP)"
+        f"       AND {_ACTIVE_BLOCK_PREDICATE}"
         f"{where_clause}{order_sql}{limit_sql}"
     )
 
@@ -982,6 +1008,13 @@ async def block_plan(
                     (str(payload.plano_id), motivo, expires_at),
                 )
                 row = await cur.fetchone()
+    except UniqueViolation as exc:
+        logger.info("Plano já estava bloqueado (idempotente).", exc_info=exc)
+        return PlanBlockResponse(
+            plano_id=payload.plano_id,
+            blocked=True,
+            message="already blocked",
+        )
     except InvalidAuthorizationSpecification as exc:
         logger.exception("Sessão sem autorização para bloquear plano")
         raise HTTPException(
@@ -995,14 +1028,28 @@ async def block_plan(
             detail="Não foi possível bloquear o plano.",
         ) from exc
 
-    blocked_value = row.get("blocked") if row else None
-    if not blocked_value:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Plano já bloqueado ou inexistente.",
-        )
+    blocked_raw = row.get("blocked") if row else None
+    blocked_flag: bool
+    if isinstance(blocked_raw, bool):
+        blocked_flag = blocked_raw
+    elif blocked_raw is None:
+        blocked_flag = True
+    elif isinstance(blocked_raw, (int, float)):
+        blocked_flag = bool(blocked_raw)
+    elif isinstance(blocked_raw, str):
+        blocked_flag = blocked_raw.strip().lower() in {"t", "true", "1", "ok"}
+    else:
+        blocked_flag = True
+    message: str | None = None
+    if not blocked_flag:
+        blocked_flag = True
+        message = "already blocked"
 
-    return PlanBlockResponse(plano_id=payload.plano_id, blocked=True)
+    return PlanBlockResponse(
+        plano_id=payload.plano_id,
+        blocked=blocked_flag,
+        message=message,
+    )
 
 
 @router.post("/unblock", response_model=PlanUnblockResponse)

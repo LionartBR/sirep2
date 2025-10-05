@@ -63,6 +63,12 @@ export function createAppContext() {
     context.occTableElement?.tHead?.rows?.[0]?.cells?.length ??
     context.occTableElement?.rows?.[0]?.cells?.length ??
     8;
+  context.occActionsMenuContainer = document.querySelector('[data-occ-actions-menu]');
+  context.occActionsTrigger = document.getElementById('occActionsTrigger');
+  context.occActionsMenu = document.getElementById('occActionsMenu');
+  context.occSelectAllAction = context.occActionsMenu?.querySelector('[data-action="select-all"]') ?? null;
+  context.occSelectAllLabel = context.occSelectAllAction?.querySelector('span') ?? null;
+  context.occActionsSeparator = context.occActionsMenu?.querySelector('[data-role="separator"]') ?? null;
 
   // Treatment table references
   context.treatmentPanelEl = document.getElementById('panel-treatment');
@@ -114,6 +120,7 @@ export function createAppContext() {
     dtRange: null,
   };
   context.plansSelection = new Set();
+  context.occSelection = new Set();
   context.FILTER_LABELS = {
     situacao: {
       P_RESCISAO: 'P. Rescisão',

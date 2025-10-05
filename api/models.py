@@ -65,6 +65,9 @@ class PlanSummaryResponse(BaseModel):
     status_date: Optional[date] = None
     treatment_queue: Optional[PlanQueueStatusResponse] = None
     blocked: bool = False
+    blocked_at: Optional[datetime] = None
+    unlocked_at: Optional[datetime] = None
+    block_reason: Optional[str] = None
 
 
 class PlansPaging(BaseModel):
@@ -116,6 +119,7 @@ class PlanBlockResponse(BaseModel):
 
     plano_id: UUID
     blocked: bool
+    message: Optional[str] = None
 
 
 class PlanUnblockRequest(BaseModel):

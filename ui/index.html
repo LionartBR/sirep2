@@ -622,7 +622,46 @@
                         </div>
                       </div>
                     </th>
-                    <th scope="col">AÇÕES</th>
+                    <th scope="col" class="table__col--actions">
+                      <div class="table-actions-menu" data-occ-actions-menu>
+                        <button
+                          id="occActionsTrigger"
+                          class="table-actions-menu__trigger"
+                          type="button"
+                          aria-label="Ações"
+                          aria-haspopup="menu"
+                          aria-expanded="false"
+                        >
+                          <i data-feather="settings" aria-hidden="true"></i>
+                        </button>
+                        <div
+                          id="occActionsMenu"
+                          class="table-actions-menu__dropdown"
+                          role="menu"
+                          aria-label="Ações disponíveis para as ocorrências"
+                          hidden
+                        >
+                          <button
+                            class="table-actions-menu__item"
+                            type="button"
+                            data-action="select-all"
+                          >
+                            <i data-feather="check-square" aria-hidden="true"></i>
+                            <span>Selecionar todos</span>
+                          </button>
+                          <div class="table-actions-menu__separator" data-role="separator"></div>
+                          <button
+                            class="table-actions-menu__item"
+                            type="button"
+                            data-action="lock"
+                            data-requires-selection="true"
+                          >
+                            <i data-feather="lock" aria-hidden="true"></i>
+                            <span>Bloquear</span>
+                          </button>
+                        </div>
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

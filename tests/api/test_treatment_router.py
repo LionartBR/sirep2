@@ -8,12 +8,14 @@ from uuid import UUID, uuid4
 import pytest
 
 from api.models import (
+    PlanBlockRequest,
+    PlanUnblockRequest,
     TreatmentCloseRequest,
     TreatmentMigrateRequest,
     TreatmentRescindRequest,
     TreatmentSkipRequest,
 )
-from api.routers import treatment
+from api.routers import plans, treatment
 from domain.treatment import (
     TreatmentItem,
     TreatmentMigrationResult,
@@ -395,6 +397,127 @@ def test_skip_treatment_item_calls_service(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert response == {"ok": True}
     assert calls == [(payload.lote_id, payload.plano_id)]
+
+
+def test_migration_ignores_blocked_plan_then_reincludes_after_unblock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan_id = uuid4()
+    lote_id = uuid4()
+    state: dict[str, bool] = {"blocked": False}
+
+    class _FakeCursor:
+        def __init__(self, shared_state: dict[str, object]) -> None:
+            self._state = shared_state
+            self._result: dict[str, object] = {}
+
+        async def __aenter__(self) -> "_FakeCursor":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        async def execute(self, sql: str, params: object) -> None:
+            sql_lower = (sql or "").lower()
+            if "plano_bloquear" in sql_lower:
+                if not self._state["blocked"]:
+                    self._state["blocked"] = True
+                    self._result = {"blocked": True}
+                else:
+                    self._result = {"blocked": False}
+            elif "plano_desbloquear" in sql_lower:
+                if self._state["blocked"]:
+                    self._state["blocked"] = False
+                    self._result = {"affected": 1}
+                else:
+                    self._result = {"affected": 0}
+            else:
+                self._result = {"result": None}
+
+        async def fetchone(self) -> dict[str, object] | None:
+            return self._result
+
+        async def fetchall(self) -> list[dict[str, object]]:  # pragma: no cover - unused
+            return [self._result]
+
+    class _FakeConnection:
+        def __init__(self, shared_state: dict[str, object]) -> None:
+            self._state = shared_state
+
+        def cursor(self, *, row_factory=None):
+            return _FakeCursor(self._state)
+
+    class _FakeManager:
+        def __init__(self, shared_state: dict[str, object]) -> None:
+            self._state = shared_state
+
+        async def __aenter__(self) -> _FakeConnection:
+            return _FakeConnection(self._state)
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    manager = _FakeManager(state)
+
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+    monkeypatch.setattr(treatment, "get_connection_manager", lambda: manager)
+    monkeypatch.setattr(plans, "bind_session", _noop_bind)
+    monkeypatch.setattr(treatment, "bind_session", _noop_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(None, "gestor", None, None, None),
+    )
+    monkeypatch.setattr(
+        treatment,
+        "get_principal_settings",
+        lambda: PrincipalSettings(None, "gestor", None, None, None),
+    )
+
+    class _StubService:
+        calls: list[bool] = []
+
+        def __init__(self, connection: object) -> None:
+            self.connection = connection
+
+        async def migrate(
+            self,
+            *,
+            grid: str,
+            filters: dict[str, object] | None,
+        ) -> TreatmentMigrationResult:
+            blocked_state = bool(state["blocked"])
+            _StubService.calls.append(blocked_state)
+            items = 0 if blocked_state else 1
+            return TreatmentMigrationResult(
+                lote_id=lote_id,
+                items_seeded=items,
+                created=True,
+            )
+
+    monkeypatch.setattr(treatment, "TreatmentService", _StubService)
+
+    headers = {"x-user-registration": "gestor"}
+    block_payload = PlanBlockRequest(plano_id=plan_id)
+    unblock_payload = PlanUnblockRequest(plano_id=plan_id)
+    migrate_payload = TreatmentMigrateRequest(
+        grid=treatment.DEFAULT_GRID, filters=None
+    )
+
+    _run(plans.block_plan(_make_request(headers), block_payload))
+
+    blocked_response = _run(
+        treatment.migrate_treatment(_make_request(headers), migrate_payload)
+    )
+    assert blocked_response.items_seeded == 0
+
+    _run(plans.unblock_plan(_make_request(headers), unblock_payload))
+
+    unblocked_response = _run(
+        treatment.migrate_treatment(_make_request(headers), migrate_payload)
+    )
+    assert unblocked_response.items_seeded == 1
+    assert _StubService.calls == [True, False]
 
 
 def test_close_treatment_batch_calls_service(monkeypatch: pytest.MonkeyPatch) -> None:

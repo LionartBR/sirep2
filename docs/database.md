@@ -372,6 +372,12 @@ WHERE numero_plano='2011003279' AND tenant_id = app.current_tenant_id();
 
 ## 10. Tratamento (snapshot de planos para rescisão)
 
+### 10.0 Patches relacionados
+
+* `docs/db_patches/20241007_plan_blocking.sql` — aplica a parcial `uq_trat_item_unique_pending`,
+  reescreve `app.plano_bloquear` para fazer *upsert* do bloqueio ativo e atualiza
+  `app.tratamento_migrar_planos_global` para reativar itens ignorados no mesmo lote.
+
 ### 10.1 Índice
 
 * **`app.tratamento_item`**
@@ -382,7 +388,9 @@ WHERE numero_plano='2011003279' AND tenant_id = app.current_tenant_id();
 
 * `app.tratamento_migrar_planos_global(p_filters jsonb)`
   * Cria (ou reaproveita) o lote `OPEN` do usuário/tenant logado para a grid `PLANOS_P_RESCISAO`.
-  * Tira um snapshot dos planos `P_RESCISAO` e popula `app.tratamento_item`, respeitando a unicidade global de pendentes.
+  * Tira um snapshot dos planos `P_RESCISAO`, ignora bloqueados usando o predicado abaixo
+    e popula/reativa itens `pending` no mesmo lote via `ON CONFLICT`.
+  * Garante que um plano nunca fique `pending` em mais de um lote globalmente.
 * `app.tratamento_rescindir_plano(p_lote_id uuid, p_plano_id uuid, p_dt_efetiva timestamptz)`
   * Valida que o item pertence ao lote aberto do usuário e realiza a mudança de situação no tenant correto.
   * Atualiza `app.plano` com `app.situacao_effective_ts` e marca o item do lote como `processed`.
@@ -396,12 +404,20 @@ WHERE numero_plano='2011003279' AND tenant_id = app.current_tenant_id();
 ### 10.4 Bloqueio de planos
 
 * **Tabela** `app.plano_bloqueio`
-  * Armazena bloqueios ativos por plano (`plano_id`, `motivo`, `created_at`, `expires_at`, `desbloqueado_em`).
-  * Única parcial: garante que apenas um bloqueio ativo exista por plano (`UNIQUE (plano_id) WHERE desbloqueado_em IS NULL`).
+  * Armazena bloqueios ativos por plano (`plano_id`, `motivo`, `created_at`, `expires_at`, `unlocked_at`).
+  * Predicado de bloqueio ativo (usar em TODAS as consultas):
+
+    ```sql
+    b.ativo = TRUE
+    AND b.unlocked_at IS NULL
+    AND (b.expires_at IS NULL OR b.expires_at > now())
+    ```
+
+  * Única parcial: garante que apenas um bloqueio ativo exista por plano (`UNIQUE (plano_id) WHERE ativo`).
 * **Funções**:
-  * `app.plano_bloquear(p_plano_id uuid, p_motivo text, p_expires_at timestamptz)` → retorna `boolean` indicando se o bloqueio foi criado/atualizado.
-  * `app.plano_desbloquear(p_plano_id uuid)` → retorna o número de linhas afetadas (0 quando nenhum bloqueio ativo existia).
-* A função `app.tratamento_migrar_planos_global` ignora automaticamente planos bloqueados; eles não entram no snapshot.
+  * `app.plano_bloquear(p_plano_id uuid, p_motivo text, p_expires_at timestamptz)` → *upsert* do bloqueio ativo (sem `UniqueViolation`); retorna `TRUE` mesmo em re-bloqueios idempotentes.
+  * `app.plano_desbloquear(p_plano_id uuid)` → marca o bloqueio ativo como inativo (`unlocked_at = now()`), retornando o número de linhas alteradas.
+* `app.tratamento_migrar_planos_global` ignora automaticamente planos bloqueados com o predicado acima, previne duplicidade global de pendentes e reativa itens `skipped` no mesmo lote (`status = 'pending'`, `processed_at = NULL`).
 
 ### 10.5 Notas de comportamento
 
@@ -410,6 +426,7 @@ WHERE numero_plano='2011003279' AND tenant_id = app.current_tenant_id();
 * Perfil **RESCISAO** mantém o escopo de leitura do próprio tenant, mas as funções acima permitem migrar/rescindir planos globais de forma auditada.
 * A listagem de tratamento usa paginação por keyset (`saldo DESC, numero_plano`) e lê apenas `app.tratamento_item`.
 * Planos sinalizados na view de enfileiramento devem aparecer com aviso “Em tratamento” na tela de Gestão da Base.
+* Planos bloqueados permanecem fora do snapshot até que `app.plano_desbloquear` defina `unlocked_at`; a UI consome o campo `bloqueado` direto da consulta.
 
 ---
 

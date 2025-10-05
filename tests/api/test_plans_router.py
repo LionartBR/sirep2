@@ -442,6 +442,25 @@ def test_row_to_plan_summary_marks_blocked() -> None:
     assert summary.blocked is True
 
 
+def test_row_to_plan_summary_sets_block_metadata() -> None:
+    blocked_at = datetime(2024, 5, 10, 15, 30, tzinfo=timezone.utc)
+    unlocked_at = datetime(2024, 5, 11, 12, 0, tzinfo=timezone.utc)
+
+    summary = plans._row_to_plan_summary(
+        {
+            "numero_plano": "99",
+            "bloqueado": True,
+            "bloqueado_em": blocked_at,
+            "desbloqueado_em": unlocked_at,
+            "motivo_bloqueio": "  Auditoria  ",
+        }
+    )
+
+    assert summary.blocked_at == blocked_at
+    assert summary.unlocked_at == unlocked_at
+    assert summary.block_reason == "Auditoria"
+
+
 class _DummyCursor:
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self._rows = rows
@@ -455,13 +474,14 @@ class _DummyCursor:
         return False
 
     async def execute(self, sql: str, *args: Any, **kwargs: Any) -> None:
-        self.executed_sql = sql
-        if args:
-            self.executed_params = args[0]
-        else:
-            params = kwargs.get("params")
-            if params is not None:
-                self.executed_params = params
+        if sql.strip().upper() != 'COMMIT':
+            self.executed_sql = sql
+            if args:
+                self.executed_params = args[0]
+            else:
+                params = kwargs.get("params")
+                if params is not None:
+                    self.executed_params = params
 
     async def fetchall(self) -> list[dict[str, Any]]:
         return self._rows
@@ -564,7 +584,7 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
 
-async def _exercise() -> None:
+    async def _exercise() -> None:
         response = await plans.list_plans(
             request=_make_request(),
             q=None,
@@ -663,6 +683,7 @@ def test_block_plan_executes_function(monkeypatch: pytest.MonkeyPatch) -> None:
         response = await plans.block_plan(_make_request(), payload)
         assert response.blocked is True
         assert response.plano_id == payload.plano_id
+        assert response.message is None
         cursor = manager.last_connection.last_cursor
         assert cursor is not None
         assert cursor.executed_sql is not None
@@ -673,10 +694,13 @@ def test_block_plan_executes_function(monkeypatch: pytest.MonkeyPatch) -> None:
     _run(_exercise())
 
 
-def test_block_plan_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_block_plan_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = _DummyManager([{"blocked": False}])
     monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
-    monkeypatch.setattr(plans, "bind_session", lambda *_, **__: None)
+    async def _fake_bind(*_: Any, **__: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
     monkeypatch.setattr(
         plans,
         "get_principal_settings",
@@ -692,9 +716,9 @@ def test_block_plan_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = PlanBlockRequest(plano_id=UUID("00000000-0000-0000-0000-00000000BBBB"))
 
     async def _exercise() -> None:
-        with pytest.raises(HTTPException) as excinfo:
-            await plans.block_plan(_make_request(), payload)
-        assert excinfo.value.status_code == status.HTTP_409_CONFLICT
+        response = await plans.block_plan(_make_request(), payload)
+        assert response.blocked is True
+        assert response.message == "already blocked"
 
     _run(_exercise())
 
@@ -702,7 +726,10 @@ def test_block_plan_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_unblock_plan_executes_function(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = _DummyManager([{"affected": 1}])
     monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
-    monkeypatch.setattr(plans, "bind_session", lambda *_, **__: None)
+    async def _fake_bind(*_: Any, **__: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
     monkeypatch.setattr(
         plans,
         "get_principal_settings",
@@ -732,7 +759,10 @@ def test_unblock_plan_executes_function(monkeypatch: pytest.MonkeyPatch) -> None
 def test_unblock_plan_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = _DummyManager([{"affected": 0}])
     monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
-    monkeypatch.setattr(plans, "bind_session", lambda *_, **__: None)
+    async def _fake_bind(*_: Any, **__: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
     monkeypatch.setattr(
         plans,
         "get_principal_settings",

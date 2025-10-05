@@ -10,16 +10,387 @@ export function registerOccurrencesModule(context) {
     occPagerNextBtn,
     occPagerLabel,
     occPagerRange,
+    occActionsMenuContainer,
+    occActionsTrigger,
+    occActionsMenu,
+    occSelectAllAction,
+    occSelectAllLabel,
+    occActionsSeparator,
     PLANS_ENDPOINT,
     DEFAULT_PLAN_PAGE_SIZE,
   } = context;
 
   const occPager = context.occPager;
+  const occSelection = context.occSelection instanceof Set ? context.occSelection : new Set();
+  context.occSelection = occSelection;
+
+  state.occurrenceRecords = state.occurrenceRecords instanceof Map ? state.occurrenceRecords : new Map();
+  context.occurrenceRecords = state.occurrenceRecords;
+
+  const planRecords = context.planRecords instanceof Map ? context.planRecords : new Map();
+  context.planRecords = planRecords;
+
+  if (!(context.lockedPlans instanceof Set)) {
+    context.lockedPlans = new Set();
+  }
+
+  const occCheckboxSelector = "input[type='checkbox'][data-occ-checkbox]";
+
+  const detailsIconTemplate = (() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    try {
+      return window.feather?.icons?.['external-link']?.toSvg({ 'aria-hidden': 'true' }) ?? null;
+    } catch (error) {
+      console.error('Falha ao gerar ícone de detalhes de ocorrência.', error);
+      return null;
+    }
+  })();
+
+  const lockIconTemplate = (() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    try {
+      return window.feather?.icons?.lock?.toSvg({ 'aria-hidden': 'true' }) ?? null;
+    } catch (error) {
+      console.error('Falha ao gerar ícone de bloqueio de ocorrência.', error);
+      return null;
+    }
+  })();
+
+  const unlockIconTemplate = (() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    try {
+      return window.feather?.icons?.unlock?.toSvg({ 'aria-hidden': 'true' }) ?? null;
+    } catch (error) {
+      console.error('Falha ao gerar ícone de desbloqueio de ocorrência.', error);
+      return null;
+    }
+  })();
+
+  const findOccurrenceRow = (planId) => {
+    if (!occTableBody || !planId) {
+      return null;
+    }
+    const selectorId = typeof CSS !== 'undefined' && CSS.escape
+      ? CSS.escape(planId)
+      : planId.replace(/"/g, '\\"');
+    return occTableBody.querySelector(`[data-plan-id="${selectorId}"]`);
+  };
+
+  const applyOccurrenceLockedState = (row, locked) => {
+    if (!row) {
+      return;
+    }
+    row.classList.toggle('table__row--locked', locked);
+    row.dataset.planLocked = locked ? 'true' : 'false';
+
+    const checkbox = row.querySelector(occCheckboxSelector);
+    if (checkbox instanceof HTMLInputElement) {
+      if (locked) {
+        checkbox.dataset.lockPrevDisabled = checkbox.disabled ? 'true' : 'false';
+        if (checkbox.disabled) {
+          checkbox.dataset.lockPrevDisabledTitle = checkbox.title || '';
+        } else if (checkbox.dataset.lockPrevDisabledTitle === undefined) {
+          checkbox.dataset.lockPrevDisabledTitle = checkbox.dataset.defaultTitle || checkbox.title || '';
+        }
+        if (checkbox.dataset.lockPrevDisabled !== 'true') {
+          checkbox.disabled = false;
+          checkbox.removeAttribute('aria-disabled');
+        }
+        checkbox.title = 'Plano bloqueado';
+      } else if (checkbox.dataset.lockPrevDisabled !== undefined) {
+        const wasDisabled = checkbox.dataset.lockPrevDisabled === 'true';
+        if (wasDisabled) {
+          checkbox.disabled = true;
+          checkbox.setAttribute('aria-disabled', 'true');
+          if (checkbox.dataset.lockPrevDisabledTitle) {
+            checkbox.title = checkbox.dataset.lockPrevDisabledTitle;
+          }
+        } else {
+          checkbox.disabled = false;
+          checkbox.removeAttribute('aria-disabled');
+          if (checkbox.dataset.defaultTitle) {
+            checkbox.title = checkbox.dataset.defaultTitle;
+          }
+        }
+        delete checkbox.dataset.lockPrevDisabled;
+        delete checkbox.dataset.lockPrevDisabledTitle;
+      }
+    }
+
+    const lockButton = row.querySelector('.table__row-action--lock');
+    if (lockButton instanceof HTMLButtonElement) {
+      if (locked) {
+        lockButton.disabled = false;
+        lockButton.removeAttribute('aria-disabled');
+        const labelTarget = lockButton.dataset.planLabel || '';
+        const unlockLabel = labelTarget
+          ? `Desbloquear plano ${labelTarget}`
+          : 'Desbloquear plano';
+        lockButton.setAttribute('aria-label', unlockLabel);
+        lockButton.title = unlockLabel;
+        lockButton.innerHTML =
+          unlockIconTemplate ?? '<span class="table__row-action-fallback" aria-hidden="true">🔓</span>';
+        lockButton.dataset.locked = 'true';
+      } else {
+        lockButton.disabled = false;
+        lockButton.removeAttribute('aria-disabled');
+        const labelTarget = lockButton.dataset.planLabel || '';
+        const lockLabel = labelTarget
+          ? `Bloquear plano ${labelTarget}`
+          : 'Bloquear plano';
+        lockButton.setAttribute('aria-label', lockLabel);
+        lockButton.title = lockLabel;
+        lockButton.dataset.defaultTitle = lockLabel;
+        lockButton.innerHTML =
+          lockIconTemplate ?? '<span class="table__row-action-fallback" aria-hidden="true">🔒</span>';
+        lockButton.dataset.locked = 'false';
+      }
+    }
+  };
+
+  const applyOccurrenceRowSelectionState = (row, checked) => {
+    if (!row) {
+      return;
+    }
+    row.classList.toggle('table__row--selected', Boolean(checked));
+    row.setAttribute('aria-selected', String(Boolean(checked)));
+  };
+
+  const getFirstVisibleOccurrenceAction = () => {
+    if (!occActionsMenu) {
+      return null;
+    }
+    const items = occActionsMenu.querySelectorAll('.table-actions-menu__item');
+    for (const item of items) {
+      if (!(item instanceof HTMLElement)) {
+        continue;
+      }
+      if (!item.hidden && !item.disabled) {
+        return item;
+      }
+    }
+    return null;
+  };
+
+  const updateOccActionsMenuState = () => {
+    if (!occActionsMenu) {
+      return;
+    }
+    const totalEnabledCheckboxes = occTableBody
+      ? occTableBody.querySelectorAll(`${occCheckboxSelector}:not(:disabled)`).length
+      : 0;
+    const checkedEnabledCheckboxes = occTableBody
+      ? occTableBody.querySelectorAll(`${occCheckboxSelector}:checked:not(:disabled)`).length
+      : 0;
+    const hasSelection = occSelection.size > 0 || checkedEnabledCheckboxes > 0;
+    const allSelected =
+      totalEnabledCheckboxes > 0 && checkedEnabledCheckboxes === totalEnabledCheckboxes;
+
+    const requiresSelectionItems = occActionsMenu.querySelectorAll('[data-requires-selection]');
+    requiresSelectionItems.forEach((node) => {
+      if (!(node instanceof HTMLElement)) {
+        return;
+      }
+      if (hasSelection) {
+        node.hidden = false;
+        node.removeAttribute('aria-hidden');
+      } else {
+        node.hidden = true;
+        node.setAttribute('aria-hidden', 'true');
+      }
+    });
+
+    if (occActionsSeparator instanceof HTMLElement) {
+      if (hasSelection) {
+        occActionsSeparator.removeAttribute('hidden');
+      } else {
+        occActionsSeparator.setAttribute('hidden', 'hidden');
+      }
+    }
+
+    if (occSelectAllAction instanceof HTMLElement) {
+      const isDisabled = totalEnabledCheckboxes === 0;
+      occSelectAllAction.disabled = isDisabled;
+      occSelectAllAction.setAttribute('aria-disabled', String(isDisabled));
+      occSelectAllAction.dataset.mode = allSelected ? 'clear' : 'select';
+      if (occSelectAllLabel) {
+        occSelectAllLabel.textContent = allSelected ? 'Desmarcar todos' : 'Selecionar todos';
+      }
+    }
+
+    const lockMenuAction = occActionsMenu.querySelector('[data-action="lock"]');
+    if (lockMenuAction instanceof HTMLElement) {
+      const selectedIds = new Set(occSelection);
+      if (occTableBody) {
+        const checkedBoxes = occTableBody.querySelectorAll(`${occCheckboxSelector}:checked`);
+        checkedBoxes.forEach((checkbox) => {
+          if (!(checkbox instanceof HTMLInputElement)) {
+            return;
+          }
+          const row = checkbox.closest('tr');
+          const planId = checkbox.dataset.planId ?? row?.dataset.planId ?? '';
+          if (planId) {
+            selectedIds.add(planId);
+          }
+        });
+      }
+      let hasLockedSelected = false;
+      if (context.lockedPlans instanceof Set) {
+        selectedIds.forEach((planId) => {
+          if (context.lockedPlans.has(planId)) {
+            hasLockedSelected = true;
+          }
+        });
+      }
+      const labelSpan = lockMenuAction.querySelector('span');
+      const mode = hasLockedSelected ? 'unlock' : 'lock';
+      const ariaLabel = hasLockedSelected
+        ? 'Desbloquear selecionados'
+        : 'Bloquear selecionados';
+      if (labelSpan) {
+        labelSpan.textContent = hasLockedSelected ? 'Desbloquear' : 'Bloquear';
+      }
+      lockMenuAction.dataset.mode = mode;
+      lockMenuAction.setAttribute('aria-label', ariaLabel);
+      lockMenuAction.title = ariaLabel;
+    }
+
+    if (!hasSelection && state.isOccActionsMenuOpen && occActionsMenu) {
+      const activeElement = document.activeElement;
+      if (
+        activeElement instanceof HTMLElement &&
+        occActionsMenu.contains(activeElement) &&
+        activeElement !== occSelectAllAction
+      ) {
+        const firstItem = getFirstVisibleOccurrenceAction();
+        if (firstItem) {
+          firstItem.focus();
+        }
+      }
+    }
+  };
+
+  const setOccurrenceSelection = (planId, checked, { checkbox, row } = {}) => {
+    if (checkbox instanceof HTMLInputElement) {
+      checkbox.checked = Boolean(checked);
+    }
+    if (row instanceof HTMLElement) {
+      applyOccurrenceRowSelectionState(row, checked);
+    }
+    const hasIdentifier = typeof planId === 'string' && planId.trim().length > 0;
+    if (!hasIdentifier) {
+      return;
+    }
+    if (checked) {
+      occSelection.add(planId);
+    } else {
+      occSelection.delete(planId);
+    }
+  };
+
+  const selectAllOccurrencesOnPage = () => {
+    if (!occTableBody) {
+      return;
+    }
+    const checkboxes = occTableBody.querySelectorAll(occCheckboxSelector);
+    if (!checkboxes.length) {
+      return;
+    }
+    occSelection.clear();
+    checkboxes.forEach((checkbox) => {
+      if (!(checkbox instanceof HTMLInputElement)) {
+        return;
+      }
+      const row = checkbox.closest('tr');
+      if (!row) {
+        return;
+      }
+      if (checkbox.disabled) {
+        applyOccurrenceRowSelectionState(row, false);
+        return;
+      }
+      const planId = checkbox.dataset.planId ?? row.dataset.planId ?? '';
+      setOccurrenceSelection(planId, true, { checkbox, row });
+    });
+    updateOccActionsMenuState();
+  };
+
+  const deselectAllOccurrencesOnPage = () => {
+    if (!occTableBody) {
+      return;
+    }
+    const checkboxes = occTableBody.querySelectorAll(occCheckboxSelector);
+    if (!checkboxes.length) {
+      occSelection.clear();
+      updateOccActionsMenuState();
+      return;
+    }
+    checkboxes.forEach((checkbox) => {
+      if (!(checkbox instanceof HTMLInputElement)) {
+        return;
+      }
+      const row = checkbox.closest('tr');
+      const planId = checkbox.dataset.planId ?? row?.dataset.planId ?? '';
+      setOccurrenceSelection(planId, false, { checkbox, row });
+    });
+    occSelection.clear();
+    updateOccActionsMenuState();
+  };
+
+  const closeOccActionsMenu = ({ focusTrigger = false } = {}) => {
+    if (!occActionsMenu || !occActionsMenuContainer || !occActionsTrigger) {
+      return;
+    }
+    occActionsMenuContainer.classList.remove('table-actions-menu--open');
+    occActionsMenu.setAttribute('hidden', 'hidden');
+    occActionsTrigger.setAttribute('aria-expanded', 'false');
+    state.isOccActionsMenuOpen = false;
+    if (focusTrigger) {
+      occActionsTrigger.focus();
+    }
+  };
+
+  const openOccActionsMenu = ({ focusFirst = false } = {}) => {
+    if (!occActionsMenu || !occActionsMenuContainer || !occActionsTrigger) {
+      return;
+    }
+    updateOccActionsMenuState();
+    occActionsMenuContainer.classList.add('table-actions-menu--open');
+    occActionsMenu.removeAttribute('hidden');
+    occActionsTrigger.setAttribute('aria-expanded', 'true');
+    state.isOccActionsMenuOpen = true;
+    if (focusFirst) {
+      const firstItem = getFirstVisibleOccurrenceAction();
+      if (firstItem) {
+        window.requestAnimationFrame(() => {
+          firstItem.focus();
+        });
+      }
+    }
+  };
+
+  const toggleOccActionsMenu = () => {
+    if (state.isOccActionsMenuOpen) {
+      closeOccActionsMenu();
+    } else {
+      openOccActionsMenu();
+    }
+  };
 
   const renderOccurrencesPlaceholder = (message, modifier = 'empty') => {
     if (!occTableBody) {
       return;
     }
+    occSelection.clear();
+    state.occurrenceRecords.clear();
+    closeOccActionsMenu();
+    updateOccActionsMenuState();
     occTableBody.innerHTML = '';
     const row = document.createElement('tr');
     row.className = 'table__row table__row--empty';
@@ -84,6 +455,9 @@ export function registerOccurrencesModule(context) {
     if (!occTableBody) {
       return;
     }
+    occSelection.clear();
+    state.occurrenceRecords.clear();
+    closeOccActionsMenu();
     occTableBody.innerHTML = '';
     const rows = Array.isArray(items) ? items : [];
     if (!rows.length) {
@@ -97,14 +471,47 @@ export function registerOccurrencesModule(context) {
     }
 
     state.occHasResults = true;
+    const lockedPlansSet =
+      context.lockedPlans instanceof Set ? context.lockedPlans : new Set();
+    if (!(context.lockedPlans instanceof Set)) {
+      context.lockedPlans = lockedPlansSet;
+    }
+
     rows.forEach((item) => {
       const row = document.createElement('tr');
       row.className = 'table__row';
+      row.setAttribute('aria-selected', 'false');
+
+      const planNumberRaw = item?.number ?? '';
+      const planId =
+        typeof planNumberRaw === 'string'
+          ? planNumberRaw.trim()
+          : typeof planNumberRaw === 'number'
+            ? String(planNumberRaw)
+            : '';
+
+      const existingRecord = planId ? planRecords.get(planId) ?? {} : {};
+      const planUuidRaw = item?.plan_id ?? item?.plan_uuid ?? item?.id ?? null;
+      const existingUuid =
+        typeof existingRecord.uuid === 'string' && existingRecord.uuid.trim().length > 0
+          ? existingRecord.uuid.trim()
+          : '';
+      const planUuid = planUuidRaw ? String(planUuidRaw).trim() : existingUuid;
+
+      if (planId) {
+        row.dataset.planId = planId;
+      }
+      if (planUuid) {
+        row.dataset.planUuid = planUuid;
+      } else if (row.dataset.planUuid) {
+        delete row.dataset.planUuid;
+      }
 
       const planCell = document.createElement('td');
       planCell.className = 'table__cell';
+      const planNumberText = item?.number ?? '';
       const occPlanSpan = document.createElement('span');
-      occPlanSpan.textContent = item?.number ?? '';
+      occPlanSpan.textContent = planNumberText;
       occPlanSpan.dataset.copySource = 'occ-plan-number';
       planCell.appendChild(occPlanSpan);
       row.appendChild(planCell);
@@ -143,16 +550,171 @@ export function registerOccurrencesModule(context) {
       row.appendChild(statusDateCell);
 
       const actionsCell = document.createElement('td');
-      actionsCell.className = 'table__cell';
-      actionsCell.textContent = '—';
+      actionsCell.className = 'table__cell table__cell--select';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.dataset.occCheckbox = 'true';
+      if (planId) {
+        checkbox.dataset.planId = planId;
+      }
+      if (planUuid) {
+        checkbox.dataset.planUuid = planUuid;
+      } else if (checkbox.dataset.planUuid) {
+        delete checkbox.dataset.planUuid;
+      }
+      const checkboxLabel = planId ? `Selecionar plano ${planId}` : 'Selecionar plano';
+      checkbox.setAttribute('aria-label', checkboxLabel);
+      checkbox.title = checkboxLabel;
+      checkbox.dataset.defaultTitle = checkboxLabel;
+      checkbox.addEventListener('change', () => {
+        if (checkbox.disabled) {
+          return;
+        }
+        const isChecked = checkbox.checked;
+        setOccurrenceSelection(planId, isChecked, { checkbox, row });
+        updateOccActionsMenuState();
+      });
+
+      const lockButton = document.createElement('button');
+      lockButton.type = 'button';
+      lockButton.className = 'table__row-action table__row-action--lock';
+      if (planId) {
+        lockButton.dataset.planId = planId;
+      }
+      if (planUuid) {
+        lockButton.dataset.planUuid = planUuid;
+      } else if (lockButton.dataset.planUuid) {
+        delete lockButton.dataset.planUuid;
+      }
+      const lockLabelTarget =
+        (planId && planId.trim()) ||
+        (typeof planNumberText === 'string' && planNumberText.trim()) ||
+        (typeof planNumberRaw === 'number' ? String(planNumberRaw) : '');
+      const lockLabel = lockLabelTarget
+        ? `Bloquear plano ${lockLabelTarget}`
+        : 'Bloquear plano';
+      lockButton.dataset.planLabel = lockLabelTarget;
+      lockButton.setAttribute('aria-label', lockLabel);
+      lockButton.title = lockLabel;
+      lockButton.dataset.defaultTitle = lockLabel;
+      lockButton.innerHTML =
+        lockIconTemplate ?? '<span class="table__row-action-fallback" aria-hidden="true">🔒</span>';
+      if (!planId) {
+        lockButton.disabled = true;
+        lockButton.setAttribute('aria-disabled', 'true');
+      }
+      lockButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!planId) {
+          return;
+        }
+        const currentlyLocked = context.lockedPlans instanceof Set && context.lockedPlans.has(planId);
+        if (currentlyLocked) {
+          void context.unlockPlans?.([planId]);
+        } else {
+          void context.lockPlans?.([planId]);
+        }
+      });
+
+      const detailsButton = document.createElement('button');
+      detailsButton.type = 'button';
+      detailsButton.className = 'table__row-action table__row-action--details';
+      if (planId) {
+        detailsButton.dataset.planId = planId;
+      }
+      const detailsLabelTarget =
+        (planId && planId.trim()) ||
+        (typeof planNumberText === 'string' && planNumberText.trim()) ||
+        (typeof planNumberRaw === 'number' ? String(planNumberRaw) : '');
+      const detailsLabel = detailsLabelTarget
+        ? `Ver detalhes do plano ${detailsLabelTarget}`
+        : 'Ver detalhes do plano';
+      detailsButton.setAttribute('aria-label', detailsLabel);
+      detailsButton.title = detailsLabel;
+      detailsButton.innerHTML =
+        detailsIconTemplate ?? '<span class="table__row-action-fallback" aria-hidden="true">↗</span>';
+
+      const queueInfo = item?.treatment_queue ?? null;
+      const occurrenceDetails = {
+        uuid: planUuid,
+        planKey: planId,
+        number: planId,
+        displayNumber: planNumberText,
+        document: item?.document ?? '',
+        companyName: item?.company_name ?? '',
+        status: item?.status ?? '',
+        daysOverdue: item?.days_overdue ?? null,
+        balance: item?.balance ?? null,
+        statusDate: item?.status_date ?? null,
+        treatmentQueue: queueInfo,
+        lockReason: item?.block_reason ?? null,
+        blockedAt: item?.blocked_at ?? null,
+        unlockedAt: item?.unlocked_at ?? null,
+      };
+      if (!occurrenceDetails.number) {
+        occurrenceDetails.number = typeof planNumberRaw === 'number'
+          ? String(planNumberRaw)
+          : (planNumberRaw || '').toString().trim();
+      }
+      occurrenceDetails.displayNumber = occurrenceDetails.displayNumber
+        ? String(occurrenceDetails.displayNumber)
+        : occurrenceDetails.number;
+
+      let isLocked = false;
+      if (typeof item?.blocked === 'boolean') {
+        isLocked = item.blocked;
+      } else if (planId) {
+        isLocked = lockedPlansSet.has(planId);
+      }
+      occurrenceDetails.locked = isLocked;
+
+      let detailRecord = occurrenceDetails;
+      if (planId) {
+        const mergedRecord = { ...existingRecord, ...occurrenceDetails };
+        if (!mergedRecord.uuid && existingUuid) {
+          mergedRecord.uuid = existingUuid;
+        }
+        mergedRecord.locked = isLocked;
+        state.occurrenceRecords.set(planId, mergedRecord);
+        planRecords.set(planId, mergedRecord);
+        detailRecord = mergedRecord;
+      }
+
+      detailsButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof context.requestPlanDetails === 'function') {
+          context.requestPlanDetails(detailRecord);
+        }
+      });
+
+      const actionsWrapper = document.createElement('div');
+      actionsWrapper.className = 'table__row-actions';
+      actionsWrapper.appendChild(checkbox);
+      actionsWrapper.appendChild(lockButton);
+      actionsWrapper.appendChild(detailsButton);
+      actionsCell.appendChild(actionsWrapper);
       row.appendChild(actionsCell);
 
       occTableBody.appendChild(row);
+
+      if (planId) {
+        if (isLocked) {
+          lockedPlansSet.add(planId);
+        } else {
+          lockedPlansSet.delete(planId);
+        }
+      }
+
+      applyOccurrenceLockedState(row, isLocked);
     });
 
     if (typeof context.renderFilterChips === 'function') {
       context.renderFilterChips();
     }
+    updateOccActionsMenuState();
   };
 
   const resetOccurrencesPagination = () => {
@@ -352,6 +914,179 @@ export function registerOccurrencesModule(context) {
     }
   };
 
+  updateOccActionsMenuState();
+
+  if (occActionsTrigger && occActionsMenu && occActionsMenuContainer) {
+    occActionsTrigger.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleOccActionsMenu();
+    });
+
+    occActionsTrigger.addEventListener('keydown', (event) => {
+      if (event.key === ' ' || event.key === 'Enter') {
+        event.preventDefault();
+        if (state.isOccActionsMenuOpen) {
+          closeOccActionsMenu();
+        } else {
+          openOccActionsMenu({ focusFirst: true });
+        }
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        openOccActionsMenu({ focusFirst: true });
+      } else if (event.key === 'Escape' && state.isOccActionsMenuOpen) {
+        event.preventDefault();
+        closeOccActionsMenu();
+      }
+    });
+
+    occActionsMenu.addEventListener('click', async (event) => {
+      const target = event.target instanceof HTMLElement
+        ? event.target.closest('.table-actions-menu__item')
+        : null;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const action = target.dataset.action || '';
+      if (action === 'select-all') {
+        const shouldClear = target.dataset.mode === 'clear';
+        if (shouldClear) {
+          deselectAllOccurrencesOnPage();
+        } else {
+          selectAllOccurrencesOnPage();
+        }
+      } else if (action === 'lock') {
+        const selected = new Set(occSelection);
+        if (selected.size === 0 && occTableBody) {
+          const checkedBoxes = occTableBody.querySelectorAll(`${occCheckboxSelector}:checked`);
+          checkedBoxes.forEach((checkbox) => {
+            if (!(checkbox instanceof HTMLInputElement)) {
+              return;
+            }
+            const row = checkbox.closest('tr');
+            const planId = checkbox.dataset.planId ?? row?.dataset.planId ?? '';
+            if (planId) {
+              selected.add(planId);
+            }
+          });
+        }
+        if (selected.size > 0) {
+          const ids = Array.from(selected);
+          if (target.dataset.mode === 'unlock') {
+            let lockedSelectedCount = 0;
+            if (context.lockedPlans instanceof Set) {
+              ids.forEach((planId) => {
+                if (context.lockedPlans.has(planId)) {
+                  lockedSelectedCount += 1;
+                }
+              });
+            }
+            if (typeof context.unlockPlans === 'function') {
+              await context.unlockPlans(ids);
+            }
+            if (lockedSelectedCount > 1) {
+              ids.forEach((planId) => {
+                const row = findOccurrenceRow(planId);
+                const checkbox = row?.querySelector(occCheckboxSelector);
+                setOccurrenceSelection(planId, false, { checkbox, row });
+              });
+            }
+          } else if (typeof context.lockPlans === 'function') {
+            await context.lockPlans(ids);
+          }
+        }
+      }
+      updateOccActionsMenuState();
+      closeOccActionsMenu();
+    });
+
+    occActionsMenu.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeOccActionsMenu({ focusTrigger: true });
+      }
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!state.isOccActionsMenuOpen) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (occActionsMenuContainer.contains(target)) {
+        return;
+      }
+      closeOccActionsMenu();
+    });
+
+    document.addEventListener('focusin', (event) => {
+      if (!state.isOccActionsMenuOpen) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (occActionsMenuContainer.contains(target)) {
+        return;
+      }
+      closeOccActionsMenu();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && state.isOccActionsMenuOpen) {
+        event.preventDefault();
+        closeOccActionsMenu({ focusTrigger: true });
+      }
+    });
+  }
+
+  document.addEventListener('sirep:lock-plans', (event) => {
+    const detail = event?.detail;
+    const planIds = Array.isArray(detail?.planIds) ? detail.planIds : [];
+    if (!planIds.length) {
+      return;
+    }
+    planIds.forEach((planId) => {
+      const row = findOccurrenceRow(planId);
+      applyOccurrenceLockedState(row, true);
+      const occRecord = state.occurrenceRecords.get(planId);
+      if (occRecord) {
+        occRecord.locked = true;
+      }
+      const sharedRecord = planRecords.get(planId);
+      if (sharedRecord) {
+        sharedRecord.locked = true;
+      }
+    });
+    updateOccActionsMenuState();
+  });
+
+  document.addEventListener('sirep:unlock-plans', (event) => {
+    const detail = event?.detail;
+    const planIds = Array.isArray(detail?.planIds) ? detail.planIds : [];
+    if (!planIds.length) {
+      return;
+    }
+    planIds.forEach((planId) => {
+      const row = findOccurrenceRow(planId);
+      applyOccurrenceLockedState(row, false);
+      const occRecord = state.occurrenceRecords.get(planId);
+      if (occRecord) {
+        occRecord.locked = false;
+      }
+      const sharedRecord = planRecords.get(planId);
+      if (sharedRecord) {
+        sharedRecord.locked = false;
+      }
+    });
+    updateOccActionsMenuState();
+  });
+
   const setupOccurrencesCounter = () => {
     const countElement = document.getElementById('occurrencesCount');
     const occurrencesPanel = document.getElementById('occurrencesTablePanel');
@@ -439,5 +1174,10 @@ export function registerOccurrencesModule(context) {
   context.resetOccurrencesPagination = resetOccurrencesPagination;
   context.updateOccPagerUI = updateOccPagerUI;
   context.refreshOccurrences = refreshOccurrences;
+  context.updateOccActionsMenuState = updateOccActionsMenuState;
+  context.openOccActionsMenu = openOccActionsMenu;
+  context.closeOccActionsMenu = closeOccActionsMenu;
+  context.selectAllOccurrencesOnPage = selectAllOccurrencesOnPage;
+  context.deselectAllOccurrencesOnPage = deselectAllOccurrencesOnPage;
   context.setupOccurrencesCounter = setupOccurrencesCounter;
 }
