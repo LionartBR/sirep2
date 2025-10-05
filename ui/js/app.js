@@ -1,4 +1,8 @@
 /* global flatpickr */
+import { createAppContext } from './app/context.js';
+import { registerHelperModule } from './app/helpers.js';
+import { registerProfileModule } from './app/profile.js';
+
 document.addEventListener('DOMContentLoaded', () => {
   if (!window.Auth || !Auth.isAuthenticated()) {
     window.location.replace('/app/login.html');
@@ -9,577 +13,130 @@ document.addEventListener('DOMContentLoaded', () => {
     window.feather.replace();
   }
 
-  const currentUser = Auth.getUser();
-  const userNameLabel = document.getElementById('currentUserName');
-  if (userNameLabel) {
-    const displayName = currentUser?.name || currentUser?.username || 'Operador';
-    userNameLabel.textContent = displayName;
-  }
+  const context = createAppContext();
 
-  const signOutLink = document.querySelector('.topbar__signout');
-  if (signOutLink) {
-    signOutLink.addEventListener('click', (event) => {
-      event.preventDefault();
-      Auth.logout();
-      window.location.replace('/app/login.html');
-    });
-  }
-
-  const statusText = document.getElementById('statusText');
-  const btnStart = document.getElementById('btnStart');
-  const btnPause = document.getElementById('btnPause');
-  const btnContinue = document.getElementById('btnContinue');
-  const btnCloseTreatment = document.getElementById('btnCloseTreatment');
-  const progressContainer = document.querySelector('.progress');
-  const progressBar = progressContainer?.querySelector('.progress__bar');
-  const runningPlanNumberEl = document.getElementById('currentPlanNumber');
-  const runningPlanDocumentEl = document.getElementById('currentPlanDocument');
-  const runningPlanCompanyEl = document.getElementById('currentPlanCompanyName');
-  const runningPlanStatusEl = document.getElementById('currentPlanStatus');
-  const runningPlanStageEl = document.getElementById('currentPlanStage');
-  // Pipeline meta labels
-  const lblLastUpdate = document.getElementById('lbl-last-update');
-  const lblLastDuration = document.getElementById('lbl-last-duration');
-  const dateFromInput = document.getElementById('date-from');
-  const dateToInput = document.getElementById('date-to');
-  const openDateFromButton = document.getElementById('open-date-from');
-  const openDateToButton = document.getElementById('open-date-to');
-  const plansTablePanel = document.getElementById('plansTablePanel');
-  const plansTableElement = plansTablePanel?.querySelector('table') ?? null;
-  const plansTableBody = plansTableElement?.tBodies?.[0] ?? null;
-  const plansColumnCount =
-    plansTableElement?.tHead?.rows?.[0]?.cells?.length ??
-    plansTableElement?.rows?.[0]?.cells?.length ??
-    8;
-  const plansActionsMenuContainer = document.querySelector('[data-plans-actions-menu]');
-  const plansActionsTrigger = document.getElementById('plansActionsTrigger');
-  const plansActionsMenu = document.getElementById('plansActionsMenu');
-  const plansSelectAllAction = plansActionsMenu?.querySelector('[data-action="select-all"]') ?? null;
-  const plansSelectAllLabel = plansSelectAllAction?.querySelector('span') ?? null;
-  const plansActionsSeparator = plansActionsMenu?.querySelector('[data-role="separator"]') ?? null;
-  const plansFiltersChipsContainer = document.getElementById('plansFiltersChips');
-  const occFiltersChipsContainer = document.getElementById('occFiltersChips');
-
-  // Occurrences table elements
-  const occTablePanel = document.getElementById('occurrencesTablePanel');
-  const occTableElement = occTablePanel?.querySelector('table') ?? null;
-  const occTableBody = occTableElement?.tBodies?.[0] ?? null;
-  const occColumnCount =
-    occTableElement?.tHead?.rows?.[0]?.cells?.length ??
-    occTableElement?.rows?.[0]?.cells?.length ??
-    8;
-
-  // Treatment table elements (Tratamento)
-  const treatmentPanelEl = document.getElementById('panel-treatment');
-  const treatmentTableElement = treatmentPanelEl?.querySelector('table.data-table') ?? null;
-  const treatmentTableBody = treatmentTableElement?.tBodies?.[0] ?? null;
-  const treatmentColumnCount =
-    treatmentTableElement?.tHead?.rows?.[0]?.cells?.length ??
-    treatmentTableElement?.rows?.[0]?.cells?.length ??
-    6;
-  const treatmentPagerRange = document.getElementById('treatmentPagerRange');
-  const treatmentPagerLabel = document.getElementById('treatmentPagerLabel');
-  const treatmentPagerPrevBtn = document.getElementById('treatmentPagerPrev');
-  const treatmentPagerNextBtn = document.getElementById('treatmentPagerNext');
-
-  const PIPELINE_ENDPOINT = '/api/pipeline';
-  const PLANS_ENDPOINT = '/api/plans';
-  const TREATMENT_ENDPOINT = '/api/treatment';
-  const PROFILE_ENDPOINT = '/api/auth/me';
-  const DEFAULT_PLAN_PAGE_SIZE = 10;
-  const TREATMENT_GRID = 'PLANOS_P_RESCISAO';
-  let userProfile = typeof Auth?.getProfile === 'function' ? Auth.getProfile() : null;
-  let treatmentBatchId = null;
-  let treatmentTotals = { pending: 0, processed: 0, skipped: 0 };
-  let treatmentStatusFilter = 'pending';
-  const tableSearchState = {
-    plans: '',
-    occurrences: '',
-  };
-  const filtersState = {
-    situacao: [],
-    diasMin: null,
-    saldoMin: null,
-    dtRange: null,
-  };
-  const plansSelection = new Set();
-  const FILTER_LABELS = {
-    situacao: {
-      P_RESCISAO: 'P. Rescisão',
-      SIT_ESPECIAL: 'Sit. Especial',
-      RESCINDIDO: 'Rescindido',
-      LIQUIDADO: 'Liquidado',
-      GRDE_EMITIDA: 'GRDE Emitida',
-    },
-    diasMin: {
-      90: '90+ dias',
-      100: '100+ dias',
-      120: '120+ dias',
-    },
-    saldoMin: {
-      10000: 'R$ 10 mil+',
-      50000: 'R$ 50 mil+',
-      150000: 'R$ 150 mil+',
-      500000: 'R$ 500 mil+',
-      1000000: 'R$ 1 mi+',
-    },
-    dtRange: {
-      LAST_3_MONTHS: 'Até 3 meses',
-      LAST_2_MONTHS: 'Até 2 meses',
-      LAST_MONTH: 'Até 1 mês',
-      THIS_MONTH: 'Mês atual',
-    },
-  };
-  let plansHasResults = false;
-  let occHasResults = false;
-  let filterWrappers = [];
-  let currentPlansSearchTerm = '';
-  let currentOccurrencesSearchTerm = '';
-  let activeTableSearchTarget = 'plans';
-  let plansFetchController = null;
-  let occFetchController = null;
-  const currencyFormatter = new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 2,
-  });
-
-  const PROGRESS_TOTAL_DURATION_MS = 15 * 60 * 1000;
-  const PROGRESS_MAX_RATIO_BEFORE_COMPLETION = 0.99;
-  let progressStartTimestamp = null;
-  let progressIntervalHandle = null;
-
-  let pollHandle = null;
-  let pipelineMetaController = null;
-  let isFetchingPipelineMeta = false;
-  let isFetchingPlans = false;
-  let isFetchingOccurrences = false;
-  let isFetchingTreatment = false;
-  let isFetchingTreatmentState = false;
-  let plansLoaded = false;
-  let occurrencesLoaded = false;
-  let treatmentLoaded = false;
-  let permissionToastHandle = null;
-  let isPlansActionsMenuOpen = false;
-  let shouldRefreshPlansAfterRun = false;
-  let lastSuccessfulFinishedAt = null;
-
-  const canAccessBase = () => userProfile === 'GESTOR';
-
-  const ensureToastElement = () => {
-    let toast = document.getElementById('appToastMessage');
-    if (toast) {
-      return toast;
+  context.formatDocument = (value) => {
+    if (window.SirepUtils?.formatDocument) {
+      return window.SirepUtils.formatDocument(value);
     }
-    toast = document.createElement('div');
-    toast.id = 'appToastMessage';
-    toast.className = 'toast';
-    toast.setAttribute('role', 'status');
-    toast.setAttribute('aria-live', 'polite');
-    document.body.appendChild(toast);
-    return toast;
+    return String(value ?? '');
   };
 
-  const showToast = (message) => {
-    if (!message) {
-      return;
-    }
-    const toast = ensureToastElement();
-    toast.textContent = message;
-    toast.classList.add('toast--visible');
-    if (permissionToastHandle) {
-      window.clearTimeout(permissionToastHandle);
-    }
-    permissionToastHandle = window.setTimeout(() => {
-      toast.classList.remove('toast--visible');
-    }, 3500);
-  };
+  registerHelperModule(context);
+  registerProfileModule(context);
 
-  const showPermissionDeniedToast = () => {
-    showToast("You don't have permission to view this area.");
-  };
+  context.updateUserName();
+  context.setupSignOut();
 
-  const refreshProfileFromStore = () => {
-    if (typeof Auth?.getProfile === 'function') {
-      const storedProfile = Auth.getProfile();
-      if (storedProfile) {
-        userProfile = storedProfile;
-      }
-    }
-  };
+  const state = context;
 
-  const applyProfilePermissions = () => {
-    const allowBase = canAccessBase();
-    const baseTab = document.getElementById('tab-base');
-    const treatmentTab = document.getElementById('tab-treatment');
-    const basePanel = document.getElementById('panel-base');
-    const treatmentPanel = document.getElementById('panel-treatment');
+  const {
+    currentUser,
+    statusText,
+    btnStart,
+    btnPause,
+    btnContinue,
+    btnCloseTreatment,
+    progressContainer,
+    progressBar,
+    runningPlanNumberEl,
+    runningPlanDocumentEl,
+    runningPlanCompanyEl,
+    runningPlanStatusEl,
+    runningPlanStageEl,
+    lblLastUpdate,
+    lblLastDuration,
+    dateFromInput,
+    dateToInput,
+    openDateFromButton,
+    openDateToButton,
+    plansTablePanel,
+    plansTableElement,
+    plansTableBody,
+    plansColumnCount,
+    plansActionsMenuContainer,
+    plansActionsTrigger,
+    plansActionsMenu,
+    plansSelectAllAction,
+    plansSelectAllLabel,
+    plansActionsSeparator,
+    plansFiltersChipsContainer,
+    occFiltersChipsContainer,
+    occTablePanel,
+    occTableElement,
+    occTableBody,
+    occColumnCount,
+    treatmentPanelEl,
+    treatmentTableElement,
+    treatmentTableBody,
+    treatmentColumnCount,
+    treatmentPagerRange,
+    treatmentPagerLabel,
+    treatmentPagerPrevBtn,
+    treatmentPagerNextBtn,
+    plansPagerPrevBtn,
+    plansPagerNextBtn,
+    plansPagerLabel,
+    plansPagerRange,
+    occPagerPrevBtn,
+    occPagerNextBtn,
+    occPagerLabel,
+    occPagerRange,
+    kpiQueueEl,
+    kpiRescindedEl,
+    kpiFailuresEl,
+    PIPELINE_ENDPOINT,
+    PLANS_ENDPOINT,
+    TREATMENT_ENDPOINT,
+    PROFILE_ENDPOINT,
+    DEFAULT_PLAN_PAGE_SIZE,
+    TREATMENT_GRID,
+    FILTER_LABELS,
+    plansSelection,
+    filtersState,
+    tableSearchState,
+    currencyFormatter,
+    PROGRESS_TOTAL_DURATION_MS,
+    PROGRESS_MAX_RATIO_BEFORE_COMPLETION,
+  } = context;
 
-    if (baseTab) {
-      if (allowBase) {
-        baseTab.classList.remove('tabs__item--hidden');
-        baseTab.removeAttribute('hidden');
-        baseTab.setAttribute('aria-disabled', 'false');
-        if (!baseTab.classList.contains('tabs__item--active')) {
-          baseTab.setAttribute('tabindex', '0');
-        }
-      } else {
-        baseTab.classList.remove('tabs__item--active');
-        baseTab.classList.add('tabs__item--hidden');
-        baseTab.setAttribute('hidden', 'hidden');
-        baseTab.setAttribute('aria-disabled', 'true');
-        baseTab.setAttribute('tabindex', '-1');
-        baseTab.setAttribute('aria-selected', 'false');
-      }
-    }
+  const {
+    setStatus,
+    formatStatusLabel,
+    formatDaysValue,
+    formatCurrencyValue,
+    formatDateLabel,
+    formatDurationLabel,
+    formatDateTimeLabel,
+    formatDateTime,
+    setElementText,
+    resolveRunningPlanFromState,
+    updateRunningPlanInfo,
+    pad2,
+    formatDurationText,
+    setText,
+    showPermissionDeniedToast,
+    refreshProfileFromStore,
+    applyProfilePermissions,
+    refreshUserProfile,
+    canAccessBase,
+  } = context;
 
-    if (basePanel) {
-      if (allowBase) {
-        basePanel.classList.remove('card__panel--hidden');
-        basePanel.removeAttribute('hidden');
-      } else {
-        basePanel.classList.add('card__panel--hidden');
-        basePanel.setAttribute('hidden', 'hidden');
-      }
-    }
-
-    if (treatmentPanel) {
-      treatmentPanel.classList.remove('card__panel--hidden');
-      treatmentPanel.removeAttribute('hidden');
-    }
-
-    if (!allowBase && treatmentTab) {
-      treatmentTab.classList.add('tabs__item--active');
-      treatmentTab.setAttribute('aria-selected', 'true');
-      treatmentTab.setAttribute('tabindex', '0');
-    }
-
-    const pipelineButtons = [btnStart, btnPause, btnContinue];
-    pipelineButtons.forEach((button) => {
-      if (!button) {
-        return;
-      }
-      if (!allowBase) {
-        button.disabled = true;
-        button.classList.add('btn--disabled');
-        button.setAttribute('aria-disabled', 'true');
-      } else {
-        button.disabled = false;
-        button.classList.remove('btn--disabled');
-        button.setAttribute('aria-disabled', 'false');
-      }
-    });
-  };
-
-  const requestProfileFromServer = async () => {
-    const matricula = currentUser?.username?.trim();
-    if (!matricula) {
-      return null;
-    }
-    try {
-      const headers = new Headers({ Accept: 'application/json' });
-      headers.set('X-User-Registration', matricula);
-      const response = await fetch(PROFILE_ENDPOINT, { headers });
-      if (!response.ok) {
-        return null;
-      }
-      const payload = await response.json().catch(() => null);
-      return payload?.perfil ?? null;
-    } catch (error) {
-      console.warn('Não foi possível obter o perfil do usuário.', error);
-      return null;
-    }
-  };
-
-  const refreshUserProfile = async () => {
-    const perfil = await requestProfileFromServer();
-    if (!perfil) {
-      return;
-    }
-    let normalizedProfile = perfil;
-    if (typeof Auth?.setProfile === 'function') {
-      const updatedSession = Auth.setProfile(perfil);
-      if (updatedSession?.profile) {
-        normalizedProfile = updatedSession.profile;
-      }
-    }
-    if (normalizedProfile && normalizedProfile !== userProfile) {
-      userProfile = normalizedProfile;
-      applyProfilePermissions();
-    }
-  };
-
-  const setStatus = (text) => {
-    if (!statusText) {
-      return;
-    }
-    const value = text && String(text).trim() ? String(text).trim() : '—';
-    statusText.textContent = value;
-  };
-
-  const formatStatusLabel = (value) => {
-    if (!value) {
-      return '—';
-    }
-    const text = String(value).trim();
-    if (!text) {
-      return '—';
-    }
-    return text.replace(/_/g, ' ');
-  };
-
-  const formatDaysValue = (value) => {
-    if (value === null || value === undefined) {
-      return '—';
-    }
-    const number = Number(value);
-    if (!Number.isFinite(number)) {
-      return '—';
-    }
-    return String(Math.max(0, Math.trunc(number)));
-  };
-
-  const formatCurrencyValue = (value) => {
-    if (value === null || value === undefined) {
-      return '—';
-    }
-    const number = typeof value === 'number' ? value : Number(value);
-    if (!Number.isFinite(number)) {
-      return '—';
-    }
-    try {
-      return currencyFormatter.format(number);
-    } catch (error) {
-      console.warn('Falha ao formatar valor monetário.', error);
-      return number.toFixed(2);
-    }
-  };
-
-  const formatDateLabel = (value) => {
-    if (!value) {
-      return '—';
-    }
-    if (value instanceof Date && !Number.isNaN(value.getTime())) {
-      return value.toLocaleDateString('pt-BR');
-    }
-    const text = String(value).trim();
-    if (!text) {
-      return '—';
-    }
-    const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (isoMatch) {
-      const [, year, month, day] = isoMatch;
-      return `${day}/${month}/${year}`;
-    }
-    const parsed = new Date(text);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toLocaleDateString('pt-BR');
-    }
-    return text;
-  };
-
-  const formatDurationLabel = (value) => {
-    if (value === null || value === undefined) {
-      return null;
-    }
-    const text = String(value).trim();
-    if (!text) {
-      return null;
-    }
-    const parts = text.split(':');
-    if (parts.length !== 3) {
-      return text;
-    }
-    const [hoursPart, minutesPart, secondsPart] = parts;
-    const normalizeHoursMinutes = (segment) => {
-      const trimmed = segment.trim();
-      if (!trimmed) {
-        return '00';
-      }
-      const numeric = Number.parseInt(trimmed, 10);
-      if (Number.isNaN(numeric)) {
-        return trimmed.padStart(2, '0');
-      }
-      const normalized = String(Math.max(0, numeric));
-      return normalized.length < 2 ? normalized.padStart(2, '0') : normalized;
-    };
-    const normalizeSeconds = (segment) => {
-      const trimmed = segment.trim();
-      if (!trimmed) {
-        return '00';
-      }
-      const digits = trimmed.replace(/\D/g, '');
-      if (digits.length >= 2) {
-        return digits.slice(0, 2);
-      }
-      if (digits.length === 1) {
-        return digits.padStart(2, '0');
-      }
-      const numeric = Number.parseInt(trimmed, 10);
-      if (Number.isNaN(numeric)) {
-        return trimmed.padStart(2, '0');
-      }
-      const normalized = String(Math.max(0, numeric));
-      return normalized.length < 2 ? normalized.padStart(2, '0') : normalized;
-    };
-    const hours = normalizeHoursMinutes(hoursPart);
-    const minutes = normalizeHoursMinutes(minutesPart);
-    const seconds = normalizeSeconds(secondsPart);
-    return `${hours}:${minutes}:${seconds}`;
-  };
-
-  const formatDateTimeLabel = (value) => {
-    if (!value) {
-      return '—';
-    }
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return '—';
-    }
-    return date.toLocaleString('pt-BR', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    });
-  };
-
-  const formatDateTime = (value) => {
-    if (!value) {
-      return '—';
-    }
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return '—';
-    }
-    try {
-      return new Intl.DateTimeFormat('pt-BR', {
-        dateStyle: 'short',
-        timeStyle: 'medium',
-        timeZone: 'America/Sao_Paulo',
-      }).format(date);
-    } catch (error) {
-      return date.toLocaleString('pt-BR');
-    }
-  };
-
-  const setElementText = (element, value) => {
-    if (!element) {
-      return;
-    }
-
-    if (value === null || value === undefined) {
-      element.textContent = '—';
-      return;
-    }
-
-    const text = String(value).trim();
-    element.textContent = text || '—';
-  };
-
-  const resolveRunningPlanFromState = (state) => {
-    if (!state || typeof state !== 'object') {
-      return null;
-    }
-
-    const candidate =
-      state.current_plan ??
-      state.currentPlan ??
-      state.plan_in_execution ??
-      state.planInExecution ??
-      state.running_plan ??
-      state.runningPlan ??
-      state.plan ??
-      null;
-
-    if (!candidate || typeof candidate !== 'object') {
-      return null;
-    }
-
-    return candidate;
-  };
-
-  const updateRunningPlanInfo = (plan) => {
-    const resolvedPlan = plan && typeof plan === 'object' ? plan : null;
-
-    const planNumber =
-      resolvedPlan?.number ??
-      resolvedPlan?.plan_number ??
-      resolvedPlan?.planNumber ??
-      resolvedPlan?.numero ??
-      resolvedPlan?.numero_plano ??
-      null;
-    setElementText(runningPlanNumberEl, planNumber);
-
-    const rawDocument =
-      resolvedPlan?.document ??
-      resolvedPlan?.documento ??
-      resolvedPlan?.document_number ??
-      resolvedPlan?.documentNumber ??
-      resolvedPlan?.numero_inscricao ??
-      null;
-    const formattedDocument = rawDocument ? formatDocument(rawDocument) : null;
-    setElementText(runningPlanDocumentEl, formattedDocument);
-
-    const companyName =
-      resolvedPlan?.company_name ??
-      resolvedPlan?.razao_social ??
-      resolvedPlan?.companyName ??
-      resolvedPlan?.razaoSocial ??
-      null;
-    setElementText(runningPlanCompanyEl, companyName);
-
-    const statusValue =
-      resolvedPlan?.status ??
-      resolvedPlan?.status_label ??
-      resolvedPlan?.situacao ??
-      null;
-    setElementText(runningPlanStatusEl, formatStatusLabel(statusValue));
-
-    const stageValue =
-      resolvedPlan?.stage ??
-      resolvedPlan?.stage_label ??
-      resolvedPlan?.stageLabel ??
-      resolvedPlan?.etapa ??
-      null;
-    setElementText(runningPlanStageEl, stageValue);
-  };
-
-  const pad2 = (n) => String(Math.trunc(Math.max(0, n))).padStart(2, '0');
-  const formatDurationText = (ms) => {
-    if (!Number.isFinite(ms) || ms < 0) {
-      return '—';
-    }
-    const totalSeconds = Math.trunc(ms / 1000);
-    const hours = Math.trunc(totalSeconds / 3600);
-    const minutes = Math.trunc((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    return `${hours}h ${pad2(minutes)}m ${pad2(seconds)}s`;
-  };
-
-  const setText = (el, prefix, value) => {
-    if (!el) return;
-    const text = value ? value : '—';
-    if (prefix && String(prefix).trim()) {
-      el.textContent = `${prefix} ${text}`;
-    } else {
-      el.textContent = text;
-    }
-  };
- 
   const refreshPipelineMeta = async () => {
     if (!canAccessBase()) {
       setText(lblLastUpdate, '', null);
       setText(lblLastDuration, '', null);
       return null;
     }
-    if (isFetchingPipelineMeta) {
+    if (state.isFetchingPipelineMeta) {
       return null;
     }
-    isFetchingPipelineMeta = true;
+    state.isFetchingPipelineMeta = true;
     try {
-      if (pipelineMetaController) {
-        pipelineMetaController.abort();
+      if (state.pipelineMetaController) {
+        state.pipelineMetaController.abort();
       }
-      pipelineMetaController = new AbortController();
+      state.pipelineMetaController = new AbortController();
       const baseUrl =
         window.location.origin && window.location.origin !== 'null'
           ? window.location.origin
@@ -593,7 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const response = await fetch(url.toString(), {
         headers,
-        signal: pipelineMetaController.signal,
+        signal: state.pipelineMetaController.signal,
       });
       if (!response.ok) {
         throw new Error('Não foi possível consultar o status da pipeline.');
@@ -611,8 +168,8 @@ document.addEventListener('DOMContentLoaded', () => {
       setText(lblLastDuration, '', null);
       return null;
     } finally {
-      pipelineMetaController = null;
-      isFetchingPipelineMeta = false;
+      state.pipelineMetaController = null;
+      state.isFetchingPipelineMeta = false;
     }
   };
 
@@ -694,7 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    if (!hasSelection && isPlansActionsMenuOpen && plansActionsMenu) {
+    if (!hasSelection && state.isPlansActionsMenuOpen && plansActionsMenu) {
       const activeElement = document.activeElement;
       if (
         activeElement instanceof HTMLElement &&
@@ -717,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
     plansActionsMenuContainer.classList.remove('table-actions-menu--open');
     plansActionsMenu.setAttribute('hidden', 'hidden');
     plansActionsTrigger.setAttribute('aria-expanded', 'false');
-    isPlansActionsMenuOpen = false;
+    state.isPlansActionsMenuOpen = false;
     if (focusTrigger) {
       plansActionsTrigger.focus();
     }
@@ -732,7 +289,7 @@ document.addEventListener('DOMContentLoaded', () => {
     plansActionsMenuContainer.classList.add('table-actions-menu--open');
     plansActionsMenu.removeAttribute('hidden');
     plansActionsTrigger.setAttribute('aria-expanded', 'true');
-    isPlansActionsMenuOpen = true;
+    state.isPlansActionsMenuOpen = true;
     if (focusFirst) {
       const firstItem = getFirstVisiblePlansAction();
       if (firstItem) {
@@ -744,7 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const togglePlansActionsMenu = () => {
-    if (isPlansActionsMenuOpen) {
+    if (state.isPlansActionsMenuOpen) {
       closePlansActionsMenu();
     } else {
       openPlansActionsMenu();
@@ -834,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
     plansActionsTrigger.addEventListener('keydown', (event) => {
       if (event.key === ' ' || event.key === 'Enter') {
         event.preventDefault();
-        if (isPlansActionsMenuOpen) {
+        if (state.isPlansActionsMenuOpen) {
           closePlansActionsMenu();
         } else {
           openPlansActionsMenu({ focusFirst: true });
@@ -842,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (event.key === 'ArrowDown') {
         event.preventDefault();
         openPlansActionsMenu({ focusFirst: true });
-      } else if (event.key === 'Escape' && isPlansActionsMenuOpen) {
+      } else if (event.key === 'Escape' && state.isPlansActionsMenuOpen) {
         event.preventDefault();
         closePlansActionsMenu();
       }
@@ -878,7 +435,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.addEventListener('click', (event) => {
-      if (!isPlansActionsMenuOpen) {
+      if (!state.isPlansActionsMenuOpen) {
         return;
       }
       const target = event.target;
@@ -892,7 +449,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.addEventListener('focusin', (event) => {
-      if (!isPlansActionsMenuOpen) {
+      if (!state.isPlansActionsMenuOpen) {
         return;
       }
       const target = event.target;
@@ -906,7 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && isPlansActionsMenuOpen) {
+      if (event.key === 'Escape' && state.isPlansActionsMenuOpen) {
         event.preventDefault();
         closePlansActionsMenu({ focusTrigger: true });
       }
@@ -970,7 +527,7 @@ document.addEventListener('DOMContentLoaded', () => {
     row.appendChild(cell);
     plansTableBody.appendChild(row);
     if (isEmptyState) {
-      plansHasResults = false;
+      state.plansHasResults = false;
       renderFilterChips();
     }
   };
@@ -984,7 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
     closePlansActionsMenu();
     const plans = Array.isArray(items) ? items : [];
     if (!plans.length) {
-      if (currentPlansSearchTerm) {
+      if (state.currentPlansSearchTerm) {
         renderPlansPlaceholder('nenhum plano encontrado para a busca.', 'empty');
       } else {
         renderPlansPlaceholder('nada a exibir por aqui.');
@@ -992,7 +549,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    plansHasResults = true;
+    state.plansHasResults = true;
     plans.forEach((item) => {
       const row = document.createElement('tr');
       row.className = 'table__row';
@@ -1122,7 +679,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    occHasResults = true;
+    state.occHasResults = true;
     rows.forEach((item) => {
       const row = document.createElement('tr');
       row.className = 'table__row';
@@ -1278,7 +835,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pending = Number(totals?.pending) || 0;
     const processed = Number(totals?.processed) || 0;
     const skipped = Number(totals?.skipped) || 0;
-    treatmentTotals = {
+    state.treatmentTotals = {
       pending: pending < 0 ? 0 : pending,
       processed: processed < 0 ? 0 : processed,
       skipped: skipped < 0 ? 0 : skipped,
@@ -1289,12 +846,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const getTreatmentTotalForStatus = (status) => {
     const normalized = typeof status === 'string' ? status.trim().toLowerCase() : 'pending';
     if (normalized === 'processed') {
-      return Math.max(0, Number(treatmentTotals.processed) || 0);
+      return Math.max(0, Number(state.treatmentTotals.processed) || 0);
     }
     if (normalized === 'skipped') {
-      return Math.max(0, Number(treatmentTotals.skipped) || 0);
+      return Math.max(0, Number(state.treatmentTotals.skipped) || 0);
     }
-    return Math.max(0, Number(treatmentTotals.pending) || 0);
+    return Math.max(0, Number(state.treatmentTotals.pending) || 0);
   };
 
   const buildTreatmentFilters = () => {
@@ -1316,13 +873,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateTreatmentKpis() {
     if (kpiQueueEl) {
-      kpiQueueEl.textContent = formatIntCount(treatmentTotals.pending ?? 0);
+      kpiQueueEl.textContent = formatIntCount(state.treatmentTotals.pending ?? 0);
     }
     if (kpiRescindedEl) {
-      kpiRescindedEl.textContent = formatIntCount(treatmentTotals.processed ?? 0);
+      kpiRescindedEl.textContent = formatIntCount(state.treatmentTotals.processed ?? 0);
     }
     if (kpiFailuresEl) {
-      kpiFailuresEl.textContent = formatIntCount(treatmentTotals.skipped ?? 0);
+      kpiFailuresEl.textContent = formatIntCount(state.treatmentTotals.skipped ?? 0);
     }
   }
 
@@ -1378,7 +935,7 @@ document.addEventListener('DOMContentLoaded', () => {
     row.appendChild(cell);
     occTableBody.appendChild(row);
     if (isEmptyState) {
-      occHasResults = false;
+      state.occHasResults = false;
       renderFilterChips();
     }
   };
@@ -1450,11 +1007,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isPlanContainer) {
         shouldShow =
           hasChips &&
-          ((plansHasResults && !isPlanEmptyContainer) || (!plansHasResults && isPlanEmptyContainer));
+          ((state.plansHasResults && !isPlanEmptyContainer) || (!state.plansHasResults && isPlanEmptyContainer));
       } else if (isOccContainer) {
         shouldShow =
           hasChips &&
-          ((occHasResults && !isOccEmptyContainer) || (!occHasResults && isOccEmptyContainer));
+          ((state.occHasResults && !isOccEmptyContainer) || (!state.occHasResults && isOccEmptyContainer));
       }
 
       if (!shouldShow) {
@@ -1514,7 +1071,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const closeAllFilterDropdowns = () => {
-    filterWrappers.forEach((wrapper) => {
+    state.filterWrappers.forEach((wrapper) => {
       wrapper.classList.remove('table-filter--open');
       const trigger = wrapper.querySelector('.table-filter__trigger');
       if (trigger) {
@@ -1560,12 +1117,12 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const setupFilters = () => {
-    filterWrappers = Array.from(document.querySelectorAll('[data-filter-group]'));
-    if (!filterWrappers.length) {
+    state.filterWrappers = Array.from(document.querySelectorAll('[data-filter-group]'));
+    if (!state.filterWrappers.length) {
       return;
     }
 
-    filterWrappers.forEach((wrapper) => {
+    state.filterWrappers.forEach((wrapper) => {
       const trigger = wrapper.querySelector('.table-filter__trigger');
       const dropdown = wrapper.querySelector('.table-filter__dropdown');
       if (!trigger || !dropdown) {
@@ -1575,7 +1132,7 @@ document.addEventListener('DOMContentLoaded', () => {
       trigger.addEventListener('click', (event) => {
         event.stopPropagation();
         const isOpen = wrapper.classList.toggle('table-filter--open');
-        filterWrappers.forEach((other) => {
+        state.filterWrappers.forEach((other) => {
           if (other !== wrapper) {
             other.classList.remove('table-filter--open');
             const otherTrigger = other.querySelector('.table-filter__trigger');
@@ -1718,11 +1275,6 @@ document.addEventListener('DOMContentLoaded', () => {
     showingTo: 0,
   };
 
-  const plansPagerPrevBtn = document.getElementById('plansPagerPrev');
-  const plansPagerNextBtn = document.getElementById('plansPagerNext');
-  const plansPagerLabel = document.getElementById('plansPagerLabel');
-  const plansPagerRange = document.getElementById('plansPagerRange');
-
   const treatmentPager = {
     page: 1,
     pageSize: DEFAULT_PLAN_PAGE_SIZE,
@@ -1734,17 +1286,6 @@ document.addEventListener('DOMContentLoaded', () => {
     currentCursor: null,
     currentDirection: 'next',
   };
-
-  // Occurrences pager UI elements
-  const occPagerPrevBtn = document.getElementById('occPagerPrev');
-  const occPagerNextBtn = document.getElementById('occPagerNext');
-  const occPagerLabel = document.getElementById('occPagerLabel');
-  const occPagerRange = document.getElementById('occPagerRange');
-  // KPI elements (Treatment)
-  const kpiQueueEl = document.getElementById('kpiQueueCount');
-  const kpiRescindedEl = document.getElementById('kpiRescindedCount');
-  const kpiFailuresEl = document.getElementById('kpiFailuresCount');
-
   // Independent keyset pager for occurrences
   const occPager = {
     page: 1,
@@ -1789,7 +1330,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const updateTreatmentPagerUI = () => {
     const pageSize = Number(treatmentPager.pageSize) || DEFAULT_PLAN_PAGE_SIZE;
-    const totalForStatus = getTreatmentTotalForStatus(treatmentStatusFilter);
+    const totalForStatus = getTreatmentTotalForStatus(state.treatmentStatusFilter);
     const totalValue = Number.isFinite(totalForStatus) ? totalForStatus : 0;
     const totalPages = totalValue > 0 ? Math.ceil(totalValue / pageSize) : 1;
     let currentPage = Math.max(1, Number(treatmentPager.page) || 1);
@@ -1871,8 +1412,8 @@ document.addEventListener('DOMContentLoaded', () => {
       url.searchParams.set('cursor', plansPager.prevCursor);
       url.searchParams.set('direction', 'prev');
     }
-    if (currentPlansSearchTerm) {
-      url.searchParams.set('q', currentPlansSearchTerm);
+    if (state.currentPlansSearchTerm) {
+      url.searchParams.set('q', state.currentPlansSearchTerm);
     }
     if (filtersState.situacao.length) {
       filtersState.situacao.forEach((value) => {
@@ -1893,27 +1434,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const refreshPlans = async ({ showLoading, direction = null } = {}) => {
     if (!canAccessBase()) {
-      plansLoaded = true;
+      state.plansLoaded = true;
       if (plansTableBody) {
         renderPlansPlaceholder('Área disponível apenas para perfil Gestor.', 'empty');
       }
       return;
     }
 
-    if (!plansTableBody || isFetchingPlans) {
+    if (!plansTableBody || state.isFetchingPlans) {
       return;
     }
-    const shouldShowLoading = showLoading ?? !plansLoaded;
+    const shouldShowLoading = showLoading ?? !state.plansLoaded;
     if (shouldShowLoading) {
       renderPlansPlaceholder('carregando planos...', 'loading');
     }
 
-    isFetchingPlans = true;
+    state.isFetchingPlans = true;
     try {
-      if (plansFetchController) {
-        plansFetchController.abort();
+      if (state.plansFetchController) {
+        state.plansFetchController.abort();
       }
-      plansFetchController = new AbortController();
+      state.plansFetchController = new AbortController();
       const requestHeaders = new Headers({ Accept: 'application/json' });
       const matricula = currentUser?.username?.trim();
       if (matricula) {
@@ -1921,7 +1462,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const response = await fetch(buildPlansRequestUrl({ direction }), {
         headers: requestHeaders,
-        signal: plansFetchController.signal,
+        signal: state.plansFetchController.signal,
       });
       if (!response.ok) {
         throw new Error('Não foi possível carregar os planos.');
@@ -1979,18 +1520,18 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       updatePlansPagerUI();
       // Occurrences pager updated via refreshOccurrences()
-      plansLoaded = true;
+      state.plansLoaded = true;
     } catch (error) {
       if (error?.name === 'AbortError') {
         return;
       }
       console.error('Erro ao carregar planos.', error);
-      if (!plansLoaded) {
+      if (!state.plansLoaded) {
         renderPlansPlaceholder('Não foi possível carregar os planos.', 'error');
       }
     } finally {
-      plansFetchController = null;
-      isFetchingPlans = false;
+      state.plansFetchController = null;
+      state.isFetchingPlans = false;
     }
   };
 
@@ -2019,9 +1560,9 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const stopPolling = () => {
-    if (pollHandle !== null) {
-      window.clearInterval(pollHandle);
-      pollHandle = null;
+    if (state.pollHandle !== null) {
+      window.clearInterval(state.pollHandle);
+      state.pollHandle = null;
     }
   };
 
@@ -2035,9 +1576,9 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const stopProgressTimer = () => {
-    if (progressIntervalHandle !== null) {
-      window.clearInterval(progressIntervalHandle);
-      progressIntervalHandle = null;
+    if (state.progressIntervalHandle !== null) {
+      window.clearInterval(state.progressIntervalHandle);
+      state.progressIntervalHandle = null;
     }
   };
 
@@ -2051,11 +1592,11 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const tickProgress = () => {
-    if (!progressBar || progressStartTimestamp === null) {
+    if (!progressBar || state.progressStartTimestamp === null) {
       return;
     }
 
-    const elapsed = Math.max(0, Date.now() - progressStartTimestamp);
+    const elapsed = Math.max(0, Date.now() - state.progressStartTimestamp);
     const ratio = Math.min(
       elapsed / PROGRESS_TOTAL_DURATION_MS,
       PROGRESS_MAX_RATIO_BEFORE_COMPLETION,
@@ -2073,12 +1614,12 @@ document.addEventListener('DOMContentLoaded', () => {
         ? startTimestamp
         : Date.now();
 
-    progressStartTimestamp = normalizedTimestamp;
+    state.progressStartTimestamp = normalizedTimestamp;
     progressBar.classList.remove('progress__bar--complete');
     setProgressVisibility(true);
     tickProgress();
     stopProgressTimer();
-    progressIntervalHandle = window.setInterval(tickProgress, 1000);
+    state.progressIntervalHandle = window.setInterval(tickProgress, 1000);
   };
 
   const completeProgressTracking = () => {
@@ -2094,7 +1635,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const resetProgress = () => {
     stopProgressTimer();
-    progressStartTimestamp = null;
+    state.progressStartTimestamp = null;
 
     if (progressBar) {
       progressBar.classList.remove('progress__bar--complete');
@@ -2135,14 +1676,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (status === 'running') {
       const effectiveStart =
-        startedTimestamp ?? progressStartTimestamp ?? Date.now();
+        startedTimestamp ?? state.progressStartTimestamp ?? Date.now();
       beginProgressTracking(effectiveStart);
       return;
     }
 
     if (status === 'succeeded') {
-      if (startedTimestamp && progressStartTimestamp === null) {
-        progressStartTimestamp = startedTimestamp;
+      if (startedTimestamp && state.progressStartTimestamp === null) {
+        state.progressStartTimestamp = startedTimestamp;
       }
       completeProgressTracking();
       return;
@@ -2160,13 +1701,6 @@ document.addEventListener('DOMContentLoaded', () => {
     running: 'Executando',
     succeeded: 'Concluída',
     failed: 'Falha',
-  };
-
-  const formatDocument = (value) => {
-    if (window.SirepUtils?.formatDocument) {
-      return window.SirepUtils.formatDocument(value);
-    }
-    return String(value ?? '');
   };
 
   const stripDigits = (value) => {
@@ -2195,7 +1729,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!target) {
       return;
     }
-    activeTableSearchTarget = target;
+    state.activeTableSearchTarget = target;
     if (tableSearchForm) {
       tableSearchForm.dataset.activeTable = target;
     }
@@ -2206,7 +1740,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  let scheduleOccurrencesCountUpdate = () => {};
+  state.scheduleOccurrencesCountUpdate = () => {};
 
   const resolveTableSearchIntent = (term) => {
     const normalized = (term || '').trim();
@@ -2303,15 +1837,15 @@ document.addEventListener('DOMContentLoaded', () => {
       placeholderRow.hidden = visibleRows > 0;
     }
 
-    scheduleOccurrencesCountUpdate();
+    state.scheduleOccurrencesCountUpdate();
   };
 
   const handleOccurrencesSearch = (term, { forceRefresh = false } = {}) => {
     const normalized = (term || '').trim();
-    if (!forceRefresh && normalized === currentOccurrencesSearchTerm) {
+    if (!forceRefresh && normalized === state.currentOccurrencesSearchTerm) {
       return;
     }
-    currentOccurrencesSearchTerm = normalized;
+    state.currentOccurrencesSearchTerm = normalized;
     tableSearchState.occurrences = normalized;
     // Reset pager when the search changes
     occPager.page = 1;
@@ -2322,10 +1856,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const handlePlansSearch = (term, { forceRefresh = false } = {}) => {
     const normalized = (term || '').trim();
-    if (!forceRefresh && normalized === currentPlansSearchTerm) {
+    if (!forceRefresh && normalized === state.currentPlansSearchTerm) {
       return;
     }
-    currentPlansSearchTerm = normalized;
+    state.currentPlansSearchTerm = normalized;
     tableSearchState.plans = normalized;
     // Reset pager when the search changes
     plansPager.page = 1;
@@ -2342,7 +1876,7 @@ document.addEventListener('DOMContentLoaded', () => {
         searchDebounceHandle = null;
       }
       const value = tableSearchInput?.value ?? '';
-      if (activeTableSearchTarget === 'occurrences') {
+      if (state.activeTableSearchTarget === 'occurrences') {
         handleOccurrencesSearch(value);
       } else {
         // On submit, start from first page
@@ -2357,26 +1891,26 @@ document.addEventListener('DOMContentLoaded', () => {
   if (tableSearchInput) {
     tableSearchInput.addEventListener('input', (event) => {
       const value = event.target?.value ?? '';
-      tableSearchState[activeTableSearchTarget] = value;
+      tableSearchState[state.activeTableSearchTarget] = value;
       if (searchDebounceHandle !== null) {
         window.clearTimeout(searchDebounceHandle);
       }
       searchDebounceHandle = window.setTimeout(() => {
         searchDebounceHandle = null;
-        if (activeTableSearchTarget === 'occurrences') {
+        if (state.activeTableSearchTarget === 'occurrences') {
           handleOccurrencesSearch(value);
           return;
         }
         if (value.trim()) {
           handlePlansSearch(value);
-        } else if (currentPlansSearchTerm) {
+        } else if (state.currentPlansSearchTerm) {
           // Clear search resets pager and reloads first page
           plansPager.page = 1;
           plansPager.nextCursor = null;
           plansPager.prevCursor = null;
           handlePlansSearch('', { forceRefresh: true });
         }
-        if (!value.trim() && currentOccurrencesSearchTerm) {
+        if (!value.trim() && state.currentOccurrencesSearchTerm) {
           handleOccurrencesSearch('', { forceRefresh: true });
         }
       }, SEARCH_DEBOUNCE_MS);
@@ -2455,8 +1989,8 @@ document.addEventListener('DOMContentLoaded', () => {
       url.searchParams.set('cursor', occPager.prevCursor);
       url.searchParams.set('direction', 'prev');
     }
-    if (currentOccurrencesSearchTerm) {
-      url.searchParams.set('q', currentOccurrencesSearchTerm);
+    if (state.currentOccurrencesSearchTerm) {
+      url.searchParams.set('q', state.currentOccurrencesSearchTerm);
     }
     if (filtersState.situacao.length) {
       filtersState.situacao.forEach((value) => {
@@ -2477,27 +2011,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const refreshOccurrences = async ({ showLoading, direction = null } = {}) => {
     if (!canAccessBase()) {
-      occurrencesLoaded = true;
+      state.occurrencesLoaded = true;
       if (occTableBody) {
         renderOccurrencesPlaceholder('Área disponível apenas para perfil Gestor.', 'empty');
       }
       return;
     }
 
-    if (!occTableBody || isFetchingOccurrences) {
+    if (!occTableBody || state.isFetchingOccurrences) {
       return;
     }
-    const shouldShowLoading = showLoading ?? !occurrencesLoaded;
+    const shouldShowLoading = showLoading ?? !state.occurrencesLoaded;
     if (shouldShowLoading) {
       renderOccurrencesPlaceholder('carregando ocorrências...', 'loading');
     }
 
-    isFetchingOccurrences = true;
+    state.isFetchingOccurrences = true;
     try {
-      if (occFetchController) {
-        occFetchController.abort();
+      if (state.occFetchController) {
+        state.occFetchController.abort();
       }
-      occFetchController = new AbortController();
+      state.occFetchController = new AbortController();
       const requestHeaders = new Headers({ Accept: 'application/json' });
       const matricula = currentUser?.username?.trim();
       if (matricula) {
@@ -2505,7 +2039,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const response = await fetch(buildOccurrencesRequestUrl({ direction }), {
         headers: requestHeaders,
-        signal: occFetchController.signal,
+        signal: state.occFetchController.signal,
       });
       if (!response.ok) {
         throw new Error('Não foi possível carregar as ocorrências.');
@@ -2549,26 +2083,26 @@ document.addEventListener('DOMContentLoaded', () => {
         countElement.classList.toggle('section-switch__count--alert', total > 0);
       }
 
-      occurrencesLoaded = true;
+      state.occurrencesLoaded = true;
     } catch (error) {
       if (error?.name === 'AbortError') {
         return;
       }
       console.error('Erro ao carregar ocorrências.', error);
-      if (!occurrencesLoaded) {
+      if (!state.occurrencesLoaded) {
         renderOccurrencesPlaceholder('Não foi possível carregar as ocorrências.', 'error');
       }
     } finally {
-      occFetchController = null;
-      isFetchingOccurrences = false;
+      state.occFetchController = null;
+      state.isFetchingOccurrences = false;
     }
   };
 
   const fetchTreatmentState = async ({ refreshItems = true } = {}) => {
-    if (isFetchingTreatmentState) {
+    if (state.isFetchingTreatmentState) {
       return null;
     }
-    isFetchingTreatmentState = true;
+    state.isFetchingTreatmentState = true;
     const baseUrl =
       window.location.origin && window.location.origin !== 'null'
         ? window.location.origin
@@ -2599,28 +2133,28 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (!hasOpen || !loteId) {
-        treatmentBatchId = null;
+        state.treatmentBatchId = null;
         resetTreatmentPagination();
         updateTreatmentPagerUI();
         renderTreatmentPlaceholder();
-        treatmentLoaded = true;
+        state.treatmentLoaded = true;
         return payload;
       }
 
-      const batchChanged = treatmentBatchId !== loteId;
-      treatmentBatchId = loteId;
+      const batchChanged = state.treatmentBatchId !== loteId;
+      state.treatmentBatchId = loteId;
       if (batchChanged) {
         resetTreatmentPagination();
       }
       if (refreshItems || batchChanged) {
-        await refreshTreatment({ reset: batchChanged, showLoading: !treatmentLoaded });
+        await refreshTreatment({ reset: batchChanged, showLoading: !state.treatmentLoaded });
       } else {
         updateTreatmentPagerUI();
       }
       return payload;
     } catch (error) {
       console.error('Erro ao carregar o estado do tratamento.', error);
-      treatmentBatchId = null;
+      state.treatmentBatchId = null;
       setTreatmentTotals({ pending: 0, processed: 0, skipped: 0 });
       resetTreatmentPagination();
       updateTreatmentPagerUI();
@@ -2628,12 +2162,12 @@ document.addEventListener('DOMContentLoaded', () => {
         btnCloseTreatment.disabled = true;
         btnCloseTreatment.setAttribute('aria-disabled', 'true');
       }
-      if (!treatmentLoaded) {
+      if (!state.treatmentLoaded) {
         renderTreatmentPlaceholder('Não foi possível carregar os planos.', 'error');
       }
       return null;
     } finally {
-      isFetchingTreatmentState = false;
+      state.isFetchingTreatmentState = false;
     }
   };
 
@@ -2643,10 +2177,10 @@ document.addEventListener('DOMContentLoaded', () => {
     reset = false,
     showLoading,
   } = {}) => {
-    if (!treatmentTableBody || isFetchingTreatment) {
+    if (!treatmentTableBody || state.isFetchingTreatment) {
       return;
     }
-    if (!treatmentBatchId) {
+    if (!state.treatmentBatchId) {
       resetTreatmentPagination();
       updateTreatmentPagerUI();
       renderTreatmentPlaceholder();
@@ -2675,20 +2209,20 @@ document.addEventListener('DOMContentLoaded', () => {
       requestCursor = treatmentPager.currentCursor;
     }
 
-    const shouldShowLoading = showLoading ?? !treatmentLoaded;
+    const shouldShowLoading = showLoading ?? !state.treatmentLoaded;
     if (shouldShowLoading) {
       renderTreatmentPlaceholder('carregando planos...', 'loading');
     }
 
-    isFetchingTreatment = true;
+    state.isFetchingTreatment = true;
     try {
       const baseUrl =
         window.location.origin && window.location.origin !== 'null'
           ? window.location.origin
           : window.location.href;
       const url = new URL(`${TREATMENT_ENDPOINT}/items`, baseUrl);
-      url.searchParams.set('lote_id', String(treatmentBatchId));
-      url.searchParams.set('status', treatmentStatusFilter);
+      url.searchParams.set('lote_id', String(state.treatmentBatchId));
+      url.searchParams.set('status', state.treatmentStatusFilter);
       url.searchParams.set('page_size', String(treatmentPager.pageSize || DEFAULT_PLAN_PAGE_SIZE));
       url.searchParams.set('direction', normalizedDirection);
       if (requestCursor) {
@@ -2748,7 +2282,7 @@ document.addEventListener('DOMContentLoaded', () => {
         treatmentPager.currentDirection = normalizedDirection;
       }
 
-      const totalForStatus = getTreatmentTotalForStatus(treatmentStatusFilter);
+      const totalForStatus = getTreatmentTotalForStatus(state.treatmentStatusFilter);
       const totalPages = totalForStatus > 0 ? Math.ceil(totalForStatus / treatmentPager.pageSize) : 1;
       if (treatmentPager.page > totalPages) {
         treatmentPager.page = totalPages;
@@ -2772,19 +2306,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       updateTreatmentPagerUI();
-      treatmentLoaded = true;
+      state.treatmentLoaded = true;
     } catch (error) {
       console.error('Erro ao carregar planos de tratamento.', error);
-      if (!treatmentLoaded) {
+      if (!state.treatmentLoaded) {
         renderTreatmentPlaceholder('Não foi possível carregar os planos.', 'error');
       }
     } finally {
-      isFetchingTreatment = false;
+      state.isFetchingTreatment = false;
     }
   };
 
   async function handleRescind(item, button) {
-    if (!treatmentBatchId || !item?.plano_id) {
+    if (!state.treatmentBatchId || !item?.plano_id) {
       return;
     }
     const targetButton = button ?? null;
@@ -2804,7 +2338,7 @@ document.addEventListener('DOMContentLoaded', () => {
         headers.set('X-User-Registration', matricula);
       }
       const payload = {
-        lote_id: treatmentBatchId,
+        lote_id: state.treatmentBatchId,
         plano_id: item.plano_id,
         data_rescisao: new Date().toISOString(),
       };
@@ -2828,7 +2362,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function handleSkip(item, button) {
-    if (!treatmentBatchId || !item?.plano_id) {
+    if (!state.treatmentBatchId || !item?.plano_id) {
       return;
     }
     const targetButton = button ?? null;
@@ -2848,7 +2382,7 @@ document.addEventListener('DOMContentLoaded', () => {
         headers.set('X-User-Registration', matricula);
       }
       const payload = {
-        lote_id: treatmentBatchId,
+        lote_id: state.treatmentBatchId,
         plano_id: item.plano_id,
       };
       const response = await fetch(url.toString(), {
@@ -3057,7 +2591,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const target = documentCell.querySelector('.table__copy-trigger') ?? documentCell;
     const current = target.textContent ?? '';
-    const formatted = formatDocument(current);
+    const formatted = context.formatDocument(current);
     if (formatted && current.trim() !== formatted) {
       target.textContent = formatted;
     }
@@ -3102,7 +2636,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const occurrencesPanel = document.getElementById('occurrencesTablePanel');
 
     if (!countElement || !occurrencesPanel) {
-      scheduleOccurrencesCountUpdate = () => {};
+      state.scheduleOccurrencesCountUpdate = () => {};
       return;
     }
 
@@ -3134,7 +2668,7 @@ document.addEventListener('DOMContentLoaded', () => {
       pendingHandle = null;
     };
 
-    scheduleOccurrencesCountUpdate = () => {
+    state.scheduleOccurrencesCountUpdate = () => {
       if (pendingHandle !== null) {
         return;
       }
@@ -3189,7 +2723,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       setActiveSearchTarget(target);
       syncSearchInputValue(target);
-      if (target === 'occurrences' && !occurrencesLoaded) {
+      if (target === 'occurrences' && !state.occurrencesLoaded) {
         void refreshOccurrences({ showLoading: true });
       }
     };
@@ -3268,7 +2802,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         treatmentPanel.removeAttribute('hidden');
         basePanel.setAttribute('hidden', 'hidden');
-        void fetchTreatmentState({ refreshItems: !treatmentLoaded });
+        void fetchTreatmentState({ refreshItems: !state.treatmentLoaded });
       }
     };
 
@@ -3329,7 +2863,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     stopPolling();
-    pollHandle = window.setInterval(async () => {
+    state.pollHandle = window.setInterval(async () => {
       const state = await fetchPipelineState();
       if (state) {
         applyState(state);
@@ -3350,15 +2884,15 @@ document.addEventListener('DOMContentLoaded', () => {
     switch (state.status) {
       case 'running':
         toggleButtons({ start: false, pause: true, cont: false });
-        shouldRefreshPlansAfterRun = true;
+        state.shouldRefreshPlansAfterRun = true;
         break;
       case 'succeeded':
       case 'failed':
       case 'idle':
       default:
         toggleButtons({ start: true, pause: false, cont: false });
-        if (shouldRefreshPlansAfterRun) {
-          shouldRefreshPlansAfterRun = false;
+        if (state.shouldRefreshPlansAfterRun) {
+          state.shouldRefreshPlansAfterRun = false;
           void refreshPlans({ showLoading: false });
           void refreshOccurrences({ showLoading: false });
         }
@@ -3476,7 +3010,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (btnCloseTreatment) {
     btnCloseTreatment.addEventListener('click', async () => {
-      if (!treatmentBatchId) {
+      if (!state.treatmentBatchId) {
         return;
       }
       btnCloseTreatment.disabled = true;
@@ -3493,7 +3027,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (matricula) {
           headers.set('X-User-Registration', matricula);
         }
-        const payload = { lote_id: treatmentBatchId };
+        const payload = { lote_id: state.treatmentBatchId };
         const response = await fetch(url.toString(), {
           method: 'POST',
           headers,
@@ -3506,7 +3040,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetchTreatmentState({ refreshItems: true });
       } catch (error) {
         console.error('Erro ao encerrar lote de tratamento.', error);
-        if (treatmentBatchId) {
+        if (state.treatmentBatchId) {
           btnCloseTreatment.disabled = false;
           btnCloseTreatment.setAttribute('aria-disabled', 'false');
         }

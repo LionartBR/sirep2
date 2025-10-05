@@ -20,7 +20,7 @@ from domain.treatment import (
     TreatmentState,
     TreatmentTotals,
 )
-from services.treatment import ItemsPage, TreatmentNotFoundError
+from services.treatment import ItemsPage, TreatmentCloseResult, TreatmentNotFoundError
 from shared.config import PrincipalSettings
 
 
@@ -413,8 +413,13 @@ def test_close_treatment_batch_calls_service(monkeypatch: pytest.MonkeyPatch) ->
         def __init__(self, connection: object) -> None:
             self.connection = connection
 
-        async def close(self, *, lote_id: UUID) -> None:
+        async def close(self, *, lote_id: UUID) -> TreatmentCloseResult:
             calls.append(lote_id)
+            return TreatmentCloseResult(
+                lote_id=lote_id,
+                pending_to_skipped=3,
+                closed=True,
+            )
 
     monkeypatch.setattr(treatment, "TreatmentService", _StubService)
 
@@ -423,5 +428,10 @@ def test_close_treatment_batch_calls_service(monkeypatch: pytest.MonkeyPatch) ->
 
     response = _run(treatment.close_treatment_batch(request, payload))
 
-    assert response == {"ok": True}
+    assert response == {
+        "ok": True,
+        "lote_id": str(payload.lote_id),
+        "pending_to_skipped": 3,
+        "closed": True,
+    }
     assert calls == [payload.lote_id]

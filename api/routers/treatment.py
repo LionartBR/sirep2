@@ -281,7 +281,7 @@ async def skip_treatment_item(
 async def close_treatment_batch(
     request: Request,
     payload: TreatmentCloseRequest,
-) -> dict[str, bool]:
+) -> dict[str, object]:
     matricula = resolve_request_matricula(request, get_principal_settings)
     if not matricula:
         raise HTTPException(
@@ -294,12 +294,7 @@ async def close_treatment_batch(
         async with connection_manager as connection:
             await bind_session(connection, matricula)
             service = TreatmentService(connection)
-            await service.close(lote_id=payload.lote_id)
-    except TreatmentNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc) or "Lote não encontrado.",
-        ) from exc
+            result = await service.close(lote_id=payload.lote_id)
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Erro ao encerrar lote de tratamento")
         raise HTTPException(
@@ -307,7 +302,12 @@ async def close_treatment_batch(
             detail="Não foi possível encerrar o lote.",
         ) from exc
 
-    return {"ok": True}
+    return {
+        "ok": True,
+        "lote_id": str(result.lote_id),
+        "pending_to_skipped": result.pending_to_skipped,
+        "closed": result.closed,
+    }
 
 
 __all__ = ["router"]

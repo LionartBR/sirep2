@@ -60,6 +60,12 @@ def decode_cursor(token: str | None) -> KeysetPayload | None:
     return KeysetPayload(saldo=saldo_val, numero=numero_val, provided=provided)
 
 
+@dataclass(slots=True)
+class CloseBatchOutcome:
+    pending_to_skipped: int
+    closed_rows: int
+
+
 class TreatmentRepository:
     """Async persistence helpers for treatment batches and items."""
 
@@ -419,16 +425,56 @@ class TreatmentRepository:
                 return False
         return True
 
-    async def close_batch(self, lote_id: UUID) -> int:
+    async def close_batch(self, lote_id: UUID) -> CloseBatchOutcome:
         async with self._connection.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE app.tratamento_item
+                   SET status = 'skipped',
+                       processed_at = now()
+                 WHERE lote_id = %s
+                   AND tenant_id = app.current_tenant_id()
+                   AND status = 'pending'
+                """,
+                (lote_id,),
+            )
+            pending_to_skipped = cur.rowcount or 0
+
             await cur.execute(
                 """
                 UPDATE app.tratamento_lote
                    SET status = 'CLOSED',
                        closed_at = now()
                  WHERE id = %s
+                   AND tenant_id = app.current_tenant_id()
+                   AND user_id = app.current_user_id()
+                   AND status = 'OPEN'
                 """,
                 (lote_id,),
+            )
+            closed_rows = cur.rowcount or 0
+
+        return CloseBatchOutcome(
+            pending_to_skipped=pending_to_skipped,
+            closed_rows=closed_rows,
+        )
+
+    async def repair_closed_pending_items(self) -> int:
+        async with self._connection.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE app.tratamento_item AS item
+                   SET status = 'skipped',
+                       processed_at = now()
+                 WHERE item.status = 'pending'
+                   AND item.lote_id IN (
+                       SELECT lote.id
+                         FROM app.tratamento_lote AS lote
+                        WHERE lote.status = 'CLOSED'
+                          AND lote.tenant_id = app.current_tenant_id()
+                          AND lote.user_id = app.current_user_id()
+                   )
+                """
             )
             return cur.rowcount or 0
 
@@ -469,6 +515,7 @@ class TreatmentRepository:
 
 __all__ = [
     "KeysetPayload",
+    "CloseBatchOutcome",
     "TreatmentRepository",
     "decode_cursor",
     "encode_cursor",

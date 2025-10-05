@@ -420,6 +420,17 @@
               </table>
             </div>
 
+            <div class="table-legend" role="note" aria-label="Legenda de status dos planos">
+              <span class="table-legend__item">
+                <span class="table-legend__swatch table-legend__swatch--queue" aria-hidden="true"></span>
+                <span class="table-legend__label">Em tratamento</span>
+              </span>
+              <span class="table-legend__item">
+                <span class="table-legend__swatch table-legend__swatch--stale" aria-hidden="true"></span>
+                <span class="table-legend__label">Sem atualização</span>
+              </span>
+            </div>
+
             <div class="table-footer">
               <div class="pager-info">
                 <span id="plansPagerRange" class="pager__label" aria-live="polite">exibindo 0–0 de ~0 planos</span>
@@ -857,6 +868,6 @@
     <script src="https://unpkg.com/feather-icons"></script>
     <script src="/app/js/utils.js"></script>
     <script src="/app/js/auth.js"></script>
-    <script src="/app/js/app.js"></script>
+    <script type="module" src="/app/js/app.js"></script>
   </body>
 </html>

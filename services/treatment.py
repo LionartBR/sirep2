@@ -13,7 +13,11 @@ from domain.treatment import (
     TreatmentTotals,
 )
 from infra.audit import log_event_async
-from infra.repositories.treatment import TreatmentRepository, encode_cursor
+from infra.repositories.treatment import (
+    CloseBatchOutcome,
+    TreatmentRepository,
+    encode_cursor,
+)
 
 _GRID_PLANOS_P_RESCISAO = "PLANOS_P_RESCISAO"
 _DEFAULT_PAGE_SIZE = 10
@@ -41,6 +45,15 @@ class ItemsPage:
     prev_cursor: Optional[str]
     has_more: bool
     page_size: int
+
+
+@dataclass(slots=True)
+class TreatmentCloseResult:
+    """Outcome returned after attempting to close a treatment batch."""
+
+    lote_id: UUID
+    pending_to_skipped: int
+    closed: bool
 
 
 class TreatmentService:
@@ -172,13 +185,12 @@ class TreatmentService:
                 await cur.execute("ROLLBACK")
             raise
 
-    async def close(self, *, lote_id: UUID) -> None:
+    async def close(self, *, lote_id: UUID) -> TreatmentCloseResult:
         async with self._connection.cursor() as cur:
             await cur.execute("BEGIN")
         try:
-            updated_batch = await self._repo.close_batch(lote_id)
-            if updated_batch == 0:
-                raise TreatmentNotFoundError("Lote de tratamento não encontrado.")
+            outcome: CloseBatchOutcome = await self._repo.close_batch(lote_id)
+            closed = outcome.closed_rows > 0
 
             await log_event_async(
                 self._connection,
@@ -186,7 +198,11 @@ class TreatmentService:
                 entity_id=str(lote_id),
                 event_type="TRATAMENTO_CLOSE",
                 severity="info",
-                data={"lote_id": str(lote_id)},
+                data={
+                    "lote_id": str(lote_id),
+                    "pending_to_skipped": outcome.pending_to_skipped,
+                    "closed": closed,
+                },
             )
             async with self._connection.cursor() as cur:
                 await cur.execute("COMMIT")
@@ -195,9 +211,38 @@ class TreatmentService:
                 await cur.execute("ROLLBACK")
             raise
 
+        return TreatmentCloseResult(
+            lote_id=lote_id,
+            pending_to_skipped=outcome.pending_to_skipped,
+            closed=closed,
+        )
+
+    async def repair_closed_pending_items(self) -> int:
+        async with self._connection.cursor() as cur:
+            await cur.execute("BEGIN")
+        try:
+            fixed = await self._repo.repair_closed_pending_items()
+            await log_event_async(
+                self._connection,
+                entity="tratamento_lote",
+                entity_id="*",
+                event_type="TRATAMENTO_REPAIR_PENDING",
+                severity="info",
+                data={"fixed": fixed},
+            )
+            async with self._connection.cursor() as cur:
+                await cur.execute("COMMIT")
+        except Exception:
+            async with self._connection.cursor() as cur:
+                await cur.execute("ROLLBACK")
+            raise
+
+        return fixed
+
 
 __all__ = [
     "ItemsPage",
+    "TreatmentCloseResult",
     "TreatmentConflictError",
     "TreatmentNotFoundError",
     "TreatmentService",
