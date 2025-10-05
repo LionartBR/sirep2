@@ -537,6 +537,13 @@ export function registerTreatmentModule(context) {
   const btnMigratePlans = document.getElementById('btnMigratePlans');
   if (btnMigratePlans) {
     btnMigratePlans.addEventListener('click', async () => {
+      const lockedPlans = context.lockedPlans instanceof Set ? context.lockedPlans : null;
+      if (lockedPlans && lockedPlans.size > 0) {
+        if (typeof context.showToast === 'function') {
+          context.showToast('Não é possível migrar enquanto houver planos bloqueados.');
+        }
+        return;
+      }
       try {
         const baseUrl =
           window.location.origin && window.location.origin !== 'null'

@@ -224,6 +224,17 @@ export function createAppContext() {
   context.applyFilters = () => {};
   context.clearAllFilters = () => {};
   context.attachFilterChipHandler = () => {};
+  context.onViewPlanDetails = () => {};
+  context.requestPlanDetails = () => {};
+  context.onLockPlans = async () => false;
+  context.onUnlockPlans = async () => false;
+  context.lockPlans = async () => undefined;
+  context.unlockPlans = async () => undefined;
+  context.lockedPlans = new Set();
+  context.planRecords = new Map();
+  context.isPlanLocked = () => false;
+  context.setPlanLocked = () => {};
+  context.setPlansLocked = () => {};
 
   context.resetPlansPagination = () => {};
   context.resetOccurrencesPagination = () => {};

@@ -7,8 +7,10 @@ from typing import Any
 from types import ModuleType
 import importlib
 import sys
+from uuid import UUID
 
 import pytest
+from fastapi import HTTPException, status
 
 
 def _ensure_psycopg_stub() -> None:
@@ -372,7 +374,12 @@ except (
     _ensure_pydantic_stub()
 
 
-from api.models import PlansFilters, PlansResponse  # noqa: E402
+from api.models import (  # noqa: E402
+    PlanBlockRequest,
+    PlanUnblockRequest,
+    PlansFilters,
+    PlansResponse,
+)
 from api.routers import plans  # noqa: E402
 from shared.config import PrincipalSettings  # noqa: E402
 
@@ -395,19 +402,44 @@ from shared.config import PrincipalSettings  # noqa: E402
     ],
 )
 def test_row_to_plan_summary_formats_status(raw: str, expected: str) -> None:
-    summary = plans._row_to_plan_summary({"numero_plano": "42", "situacao": raw})
+    summary = plans._row_to_plan_summary(
+        {
+            "plano_id": "00000000-0000-0000-0000-000000000001",
+            "numero_plano": "42",
+            "situacao": raw,
+            "bloqueado": False,
+        }
+    )
 
+    assert summary.plan_id == "00000000-0000-0000-0000-000000000001"
     assert summary.status == expected
     assert summary.treatment_queue is not None
     assert summary.treatment_queue.enqueued is False
+    assert summary.blocked is False
 
 
 def test_row_to_plan_summary_handles_missing_status() -> None:
     summary = plans._row_to_plan_summary({"numero_plano": "42"})
 
+    assert summary.plan_id is None
     assert summary.status is None
     assert summary.treatment_queue is not None
     assert summary.treatment_queue.enqueued is False
+    assert summary.blocked is False
+
+
+def test_row_to_plan_summary_marks_blocked() -> None:
+    summary = plans._row_to_plan_summary(
+        {
+            "plano_id": "00000000-0000-0000-0000-000000000002",
+            "numero_plano": "84",
+            "situacao": "Passivel de Rescisao",
+            "bloqueado": True,
+        }
+    )
+
+    assert summary.plan_id == "00000000-0000-0000-0000-000000000002"
+    assert summary.blocked is True
 
 
 class _DummyCursor:
@@ -433,6 +465,11 @@ class _DummyCursor:
 
     async def fetchall(self) -> list[dict[str, Any]]:
         return self._rows
+
+    async def fetchone(self) -> dict[str, Any] | None:
+        if not self._rows:
+            return None
+        return self._rows[0]
 
 
 class _DummyConnection:
@@ -493,6 +530,7 @@ def _run(coro: asyncio.Future[Any]) -> Any:
 def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     rows = [
         {
+            "plano_id": "00000000-0000-0000-0000-000000000123",
             "numero_plano": "12345",
             "numero_inscricao": "12.345.678/0001-90",
             "razao_social": "Empresa Teste",
@@ -501,6 +539,7 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
             "saldo_total": Decimal("1500.50"),
             "dt_situacao": datetime(2024, 5, 1, tzinfo=timezone.utc),
             "total_count": 120,
+            "bloqueado": False,
         }
     ]
 
@@ -525,7 +564,7 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
 
-    async def _exercise() -> None:
+async def _exercise() -> None:
         response = await plans.list_plans(
             request=_make_request(),
             q=None,
@@ -542,6 +581,8 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
         assert response.items[0].days_overdue == 12
         assert response.items[0].balance == Decimal("1500.50")
         assert response.items[0].status_date == date(2024, 5, 1)
+        assert response.items[0].plan_id == "00000000-0000-0000-0000-000000000123"
+        assert response.items[0].blocked is False
         assert response.filters is None
         assert len(bind_calls) == 1
         connection, matricula = bind_calls[0]
@@ -592,6 +633,124 @@ def test_list_plans_search_by_number_builds_like(
         assert cursor.executed_params is not None
         assert cursor.executed_params["number"] == "12345"
         assert cursor.executed_params["number_prefix"] == "12345%"
+
+    _run(_exercise())
+
+
+def test_block_plan_executes_function(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _DummyManager([{"blocked": True}])
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
+    async def _fake_bind(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="GESTOR",
+        ),
+    )
+
+    payload = PlanBlockRequest(plano_id=UUID("00000000-0000-0000-0000-00000000AAAA"))
+
+    async def _exercise() -> None:
+        response = await plans.block_plan(_make_request(), payload)
+        assert response.blocked is True
+        assert response.plano_id == payload.plano_id
+        cursor = manager.last_connection.last_cursor
+        assert cursor is not None
+        assert cursor.executed_sql is not None
+        assert "plano_bloquear" in cursor.executed_sql
+        assert cursor.executed_params is not None
+        assert cursor.executed_params[0] == str(payload.plano_id)
+
+    _run(_exercise())
+
+
+def test_block_plan_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _DummyManager([{"blocked": False}])
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+    monkeypatch.setattr(plans, "bind_session", lambda *_, **__: None)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="GESTOR",
+        ),
+    )
+
+    payload = PlanBlockRequest(plano_id=UUID("00000000-0000-0000-0000-00000000BBBB"))
+
+    async def _exercise() -> None:
+        with pytest.raises(HTTPException) as excinfo:
+            await plans.block_plan(_make_request(), payload)
+        assert excinfo.value.status_code == status.HTTP_409_CONFLICT
+
+    _run(_exercise())
+
+
+def test_unblock_plan_executes_function(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _DummyManager([{"affected": 1}])
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+    monkeypatch.setattr(plans, "bind_session", lambda *_, **__: None)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="GESTOR",
+        ),
+    )
+
+    payload = PlanUnblockRequest(plano_id=UUID("00000000-0000-0000-0000-00000000CCCC"))
+
+    async def _exercise() -> None:
+        response = await plans.unblock_plan(_make_request(), payload)
+        assert response.blocked is False
+        cursor = manager.last_connection.last_cursor
+        assert cursor is not None
+        assert "plano_desbloquear" in (cursor.executed_sql or "")
+        assert cursor.executed_params is not None
+        assert cursor.executed_params[0] == str(payload.plano_id)
+
+    _run(_exercise())
+
+
+def test_unblock_plan_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _DummyManager([{"affected": 0}])
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+    monkeypatch.setattr(plans, "bind_session", lambda *_, **__: None)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="GESTOR",
+        ),
+    )
+
+    payload = PlanUnblockRequest(plano_id=UUID("00000000-0000-0000-0000-00000000DDDD"))
+
+    async def _exercise() -> None:
+        with pytest.raises(HTTPException) as excinfo:
+            await plans.unblock_plan(_make_request(), payload)
+        assert excinfo.value.status_code == status.HTTP_404_NOT_FOUND
 
     _run(_exercise())
 

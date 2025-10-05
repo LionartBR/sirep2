@@ -393,7 +393,17 @@ WHERE numero_plano='2011003279' AND tenant_id = app.current_tenant_id();
 * Resume quantos lotes abertos contêm o plano, quantos usuários o migraram e quantas filas existem.
 * Base para bloquear/alertar edições de planos na Gestão da Base e exibir badges na UI.
 
-### 10.4 Notas de comportamento
+### 10.4 Bloqueio de planos
+
+* **Tabela** `app.plano_bloqueio`
+  * Armazena bloqueios ativos por plano (`plano_id`, `motivo`, `created_at`, `expires_at`, `desbloqueado_em`).
+  * Única parcial: garante que apenas um bloqueio ativo exista por plano (`UNIQUE (plano_id) WHERE desbloqueado_em IS NULL`).
+* **Funções**:
+  * `app.plano_bloquear(p_plano_id uuid, p_motivo text, p_expires_at timestamptz)` → retorna `boolean` indicando se o bloqueio foi criado/atualizado.
+  * `app.plano_desbloquear(p_plano_id uuid)` → retorna o número de linhas afetadas (0 quando nenhum bloqueio ativo existia).
+* A função `app.tratamento_migrar_planos_global` ignora automaticamente planos bloqueados; eles não entram no snapshot.
+
+### 10.5 Notas de comportamento
 
 * O snapshot só existe após o operador clicar em “Migrar planos”; antes disso o painel permanece vazio.
 * Perfil **GESTOR** continua podendo alternar de tenant via `SELECT app.set_tenant(:dest_tenant)` antes de DML.

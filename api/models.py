@@ -55,6 +55,7 @@ class PlanQueueStatusResponse(BaseModel):
 class PlanSummaryResponse(BaseModel):
     """Represents a single row shown in the plans dashboard."""
 
+    plan_id: Optional[str] = None
     number: str
     document: Optional[str] = None
     company_name: Optional[str] = None
@@ -63,6 +64,7 @@ class PlanSummaryResponse(BaseModel):
     balance: Optional[Decimal] = None
     status_date: Optional[date] = None
     treatment_queue: Optional[PlanQueueStatusResponse] = None
+    blocked: bool = False
 
 
 class PlansPaging(BaseModel):
@@ -99,6 +101,34 @@ class PlansResponse(BaseModel):
     total: int
     paging: PlansPaging | None = None
     filters: PlansFilters | None = None
+
+
+class PlanBlockRequest(BaseModel):
+    """Payload to block an individual plan."""
+
+    plano_id: UUID
+    motivo: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+
+class PlanBlockResponse(BaseModel):
+    """Response returned after attempting to block a plan."""
+
+    plano_id: UUID
+    blocked: bool
+
+
+class PlanUnblockRequest(BaseModel):
+    """Payload to unblock an individual plan."""
+
+    plano_id: UUID
+
+
+class PlanUnblockResponse(BaseModel):
+    """Response returned after attempting to unblock a plan."""
+
+    plano_id: UUID
+    blocked: bool
 
 
 class TreatmentTotalsResponse(BaseModel):
