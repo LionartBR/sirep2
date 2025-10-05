@@ -318,6 +318,7 @@ export function registerPlansModule(context) {
       const planNumberText = item?.number ?? '';
       const planNumberSpan = document.createElement('span');
       planNumberSpan.textContent = planNumberText;
+      planNumberSpan.dataset.copySource = 'plan-number';
       planCell.appendChild(planNumberSpan);
 
       const queueInfo = item?.treatment_queue ?? null;
@@ -349,7 +350,10 @@ export function registerPlansModule(context) {
 
       const documentCell = document.createElement('td');
       documentCell.className = 'table__cell';
-      documentCell.textContent = item?.document ?? '';
+      const documentSpan = document.createElement('span');
+      documentSpan.textContent = context.formatDocument?.(item?.document ?? '') ?? '';
+      documentSpan.dataset.copySource = 'plan-document';
+      documentCell.appendChild(documentSpan);
       row.appendChild(documentCell);
 
       const companyCell = document.createElement('td');

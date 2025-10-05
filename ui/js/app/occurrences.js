@@ -1,4 +1,6 @@
 export function registerOccurrencesModule(context) {
+  const OCCURRENCE_ALLOWED_STATUSES = ['SIT_ESPECIAL', 'GRDE_EMITIDA'];
+
   const state = context;
   const {
     occTableBody,
@@ -85,7 +87,12 @@ export function registerOccurrencesModule(context) {
     occTableBody.innerHTML = '';
     const rows = Array.isArray(items) ? items : [];
     if (!rows.length) {
-      renderOccurrencesPlaceholder('nenhuma ocorrência por aqui.');
+      const hasActiveFilters =
+        typeof context.hasActiveFilters === 'function' && context.hasActiveFilters();
+      const emptyMessage = hasActiveFilters
+        ? 'nenhuma ocorrência encontrada para os filtros aplicados.'
+        : 'nenhuma ocorrência por aqui.';
+      renderOccurrencesPlaceholder(emptyMessage);
       return;
     }
 
@@ -96,12 +103,18 @@ export function registerOccurrencesModule(context) {
 
       const planCell = document.createElement('td');
       planCell.className = 'table__cell';
-      planCell.textContent = item?.number ?? '';
+      const occPlanSpan = document.createElement('span');
+      occPlanSpan.textContent = item?.number ?? '';
+      occPlanSpan.dataset.copySource = 'occ-plan-number';
+      planCell.appendChild(occPlanSpan);
       row.appendChild(planCell);
 
       const documentCell = document.createElement('td');
       documentCell.className = 'table__cell';
-      documentCell.textContent = item?.document ?? '';
+      const occDocumentSpan = document.createElement('span');
+      occDocumentSpan.textContent = context.formatDocument?.(item?.document ?? '') ?? '';
+      occDocumentSpan.dataset.copySource = 'occ-document';
+      documentCell.appendChild(occDocumentSpan);
       row.appendChild(documentCell);
 
       const companyCell = document.createElement('td');
@@ -201,11 +214,21 @@ export function registerOccurrencesModule(context) {
     if (state.currentOccurrencesSearchTerm) {
       url.searchParams.set('q', state.currentOccurrencesSearchTerm);
     }
-    if (filtersState.situacao.length) {
-      filtersState.situacao.forEach((value) => {
-        url.searchParams.append('situacao', value);
-      });
+    const selectedSituations = Array.isArray(filtersState.situacao)
+      ? filtersState.situacao
+      : [];
+    const normalizedSituations = selectedSituations.filter((value) =>
+      OCCURRENCE_ALLOWED_STATUSES.includes(value),
+    );
+    if (selectedSituations.length > 0 && normalizedSituations.length === 0) {
+      return null;
     }
+    const effectiveSituations = normalizedSituations.length
+      ? normalizedSituations
+      : OCCURRENCE_ALLOWED_STATUSES;
+    new Set(effectiveSituations).forEach((value) => {
+      url.searchParams.append('situacao', value);
+    });
     if (filtersState.diasMin !== null) {
       url.searchParams.set('dias_min', String(filtersState.diasMin));
     }
@@ -222,8 +245,33 @@ export function registerOccurrencesModule(context) {
     if (!occTableBody || state.isFetchingOccurrences) {
       return;
     }
+    const requestUrl = buildOccurrencesRequestUrl({ direction });
+    if (requestUrl === null) {
+      state.occurrencesLoaded = true;
+      state.occHasResults = false;
+      occPager.page = 1;
+      occPager.pageSize = DEFAULT_PLAN_PAGE_SIZE;
+      occPager.hasMore = false;
+      occPager.nextCursor = null;
+      occPager.prevCursor = null;
+      occPager.showingFrom = 0;
+      occPager.showingTo = 0;
+      occPager.totalCount = 0;
+      occPager.totalPages = 1;
+      updateOccPagerUI();
+      renderOccurrencesPlaceholder('nenhuma ocorrência encontrada para os filtros aplicados.');
+      state.occurrencesBadgeTotal = 0;
+      if (typeof state.scheduleOccurrencesCountUpdate === 'function') {
+        state.scheduleOccurrencesCountUpdate();
+      }
+      return;
+    }
     if (!context.canAccessBase?.()) {
       state.occurrencesLoaded = true;
+      state.occurrencesBadgeTotal = 0;
+      if (typeof state.scheduleOccurrencesCountUpdate === 'function') {
+        state.scheduleOccurrencesCountUpdate();
+      }
       renderOccurrencesPlaceholder('Área disponível apenas para perfil Gestor.', 'empty');
       return;
     }
@@ -244,7 +292,7 @@ export function registerOccurrencesModule(context) {
       if (matricula) {
         requestHeaders.set('X-User-Registration', matricula);
       }
-      const response = await fetch(buildOccurrencesRequestUrl({ direction }), {
+      const response = await fetch(requestUrl, {
         headers: requestHeaders,
         signal: state.occFetchController.signal,
       });
@@ -282,6 +330,13 @@ export function registerOccurrencesModule(context) {
       }
       updateOccPagerUI();
 
+      const badgeTotal =
+        typeof occPager.totalCount === 'number' ? occPager.totalCount : items.length;
+      state.occurrencesBadgeTotal = badgeTotal;
+      if (typeof state.scheduleOccurrencesCountUpdate === 'function') {
+        state.scheduleOccurrencesCountUpdate();
+      }
+
       state.occurrencesLoaded = true;
     } catch (error) {
       if (error?.name === 'AbortError') {
@@ -307,7 +362,11 @@ export function registerOccurrencesModule(context) {
     }
 
     const updateCount = () => {
-      const total = typeof occPager.totalCount === 'number' ? occPager.totalCount : 0;
+      const pagerTotal =
+        typeof occPager.totalCount === 'number' ? occPager.totalCount : null;
+      const fallbackTotal =
+        typeof state.occurrencesBadgeTotal === 'number' ? state.occurrencesBadgeTotal : 0;
+      const total = pagerTotal ?? fallbackTotal;
       countElement.textContent = `(${total})`;
       countElement.classList.toggle('section-switch__count--alert', total > 0);
     };

@@ -50,6 +50,8 @@ except Exception:  # pragma: no cover - default stub when config is absent
             matricula: str | None = None
 
         return _Principal()
+
+
 from shared.text import normalize_document
 
 logger = logging.getLogger(__name__)

@@ -37,6 +37,7 @@ except Exception:  # pragma: no cover - fallback stub when config missing
 
         return _Principal()
 
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(

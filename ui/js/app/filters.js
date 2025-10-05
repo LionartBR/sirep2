@@ -92,6 +92,8 @@ export function registerFiltersModule(context) {
         `;
         container.appendChild(button);
       });
+
+      attachFilterChipHandler(container);
     });
   };
 
@@ -182,7 +184,7 @@ export function registerFiltersModule(context) {
   };
 
   const attachFilterChipHandler = (container) => {
-    if (!container) {
+    if (!container || container.dataset.chipsHandlerAttached === 'true') {
       return;
     }
     container.addEventListener('click', (event) => {
@@ -218,6 +220,7 @@ export function registerFiltersModule(context) {
 
       applyFilters();
     });
+    container.dataset.chipsHandlerAttached = 'true';
   };
 
   const setupFilters = () => {
@@ -234,18 +237,16 @@ export function registerFiltersModule(context) {
       }
 
       trigger.addEventListener('click', (event) => {
+        event.preventDefault();
         event.stopPropagation();
-        const isOpen = wrapper.classList.toggle('table-filter--open');
-        context.filterWrappers.forEach((other) => {
-          if (other !== wrapper) {
-            other.classList.remove('table-filter--open');
-            const otherTrigger = other.querySelector('.table-filter__trigger');
-            if (otherTrigger) {
-              otherTrigger.setAttribute('aria-expanded', 'false');
-            }
-          }
-        });
-        trigger.setAttribute('aria-expanded', String(isOpen));
+        const willOpen = !wrapper.classList.contains('table-filter--open');
+        closeAllFilterDropdowns();
+        if (willOpen) {
+          wrapper.classList.add('table-filter--open');
+          trigger.setAttribute('aria-expanded', 'true');
+        } else {
+          trigger.setAttribute('aria-expanded', 'false');
+        }
       });
 
       dropdown.addEventListener('click', (event) => {

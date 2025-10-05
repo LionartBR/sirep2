@@ -148,6 +148,8 @@ export function createAppContext() {
   context.currentPlansSearchTerm = '';
   context.currentOccurrencesSearchTerm = '';
   context.activeTableSearchTarget = 'plans';
+  context.occurrencesBadgeTotal = 0;
+  context.copyableCellsInitialized = false;
 
   context.plansPager = {
     page: 1,

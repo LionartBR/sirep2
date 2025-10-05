@@ -63,7 +63,8 @@ export function registerUiModule(context) {
     }
 
     const existingButton = cell.querySelector('.table__copy-trigger');
-    const target = existingButton ?? cell;
+    const sourceElement = cell.querySelector('[data-copy-source]');
+    const target = existingButton ?? sourceElement ?? cell;
     const currentText = target.textContent?.trim() ?? '';
     if (!currentText) {
       return;
@@ -86,8 +87,12 @@ export function registerUiModule(context) {
       button.textContent = currentText;
 
       cell.classList.add('table__cell--copyable');
-      cell.textContent = '';
-      cell.appendChild(button);
+      if (sourceElement) {
+        sourceElement.replaceWith(button);
+      } else {
+        cell.textContent = '';
+        cell.appendChild(button);
+      }
       return;
     }
 
@@ -102,18 +107,26 @@ export function registerUiModule(context) {
   };
 
   const setupCopyableCells = () => {
+    if (state.copyableCellsInitialized) {
+      return;
+    }
     const tables = document.querySelectorAll('.data-table');
     if (!tables.length) {
       return;
     }
+    state.copyableCellsInitialized = true;
 
     const processRow = (row) => {
-      if (!row) {
+      if (!row || row.classList.contains('table__row--empty')) {
         return;
       }
+      const planCell = row.cells?.[0];
       const documentCell = row.cells?.[1];
+      if (planCell) {
+        enhanceCopyableCell(planCell, { label: 'Copiar número do plano' });
+      }
       if (documentCell) {
-        enhanceCopyableCell(documentCell, { label: 'Documento' });
+        enhanceCopyableCell(documentCell, { label: 'Copiar documento' });
       }
     };
 
@@ -125,6 +138,16 @@ export function registerUiModule(context) {
 
       Array.from(tbody.rows ?? []).forEach(processRow);
 
+      const observer = new MutationObserver(() => {
+        Array.from(tbody.rows ?? []).forEach(processRow);
+      });
+
+      observer.observe(tbody, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+
       tbody.addEventListener('click', async (event) => {
         const button = event.target instanceof HTMLElement
           ? event.target.closest('.table__copy-trigger')
@@ -132,6 +155,7 @@ export function registerUiModule(context) {
         if (!button) {
           return;
         }
+        event.preventDefault();
         const value = button.dataset.copyValue ?? '';
         const success = await copyToClipboard(value);
         if (success) {
@@ -151,7 +175,10 @@ export function registerUiModule(context) {
       return;
     }
 
-    const target = documentCell.querySelector('.table__copy-trigger') ?? documentCell;
+    const target =
+      documentCell.querySelector('.table__copy-trigger') ??
+      documentCell.querySelector('[data-copy-source]') ??
+      documentCell;
     const current = target.textContent ?? '';
     const formatted = context.formatDocument?.(current);
     if (formatted && current.trim() !== formatted) {
