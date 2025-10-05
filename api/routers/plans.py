@@ -72,6 +72,8 @@ _STATUS_LABELS = {
 }
 
 _FILTER_SITUATION_CODES: tuple[str, ...] = (
+    "EM_DIA",
+    "EM_ATRASO",
     "P_RESCISAO",
     "SIT_ESPECIAL",
     "RESCINDIDO",

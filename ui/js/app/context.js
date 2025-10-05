@@ -116,10 +116,12 @@ export function createAppContext() {
   context.plansSelection = new Set();
   context.FILTER_LABELS = {
     situacao: {
-      P_RESCISAO: 'P. Rescisão',
-      SIT_ESPECIAL: 'Sit. Especial',
-      RESCINDIDO: 'Rescindido',
-      LIQUIDADO: 'Liquidado',
+      EM_DIA: 'EM DIA',
+      EM_ATRASO: 'EM ATRASO',
+      P_RESCISAO: 'P. RESCISAO',
+      SIT_ESPECIAL: 'SIT. ESPECIAL',
+      RESCINDIDO: 'RESCINDIDO',
+      LIQUIDADO: 'LIQUIDADO',
       GRDE_EMITIDA: 'GRDE Emitida',
     },
     diasMin: {
