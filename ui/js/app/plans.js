@@ -356,26 +356,6 @@ export function registerPlansModule(context) {
 
       if (isQueued) {
         row.classList.add('table__row--queued');
-        const badge = document.createElement('span');
-        badge.className = 'badge badge--queue';
-        badge.textContent = 'Em tratamento';
-        const badgeDetails = [];
-        if (typeof queueInfo?.filas === 'number' && queueInfo.filas > 0) {
-          badgeDetails.push(`Filas: ${queueInfo.filas}`);
-        }
-        if (typeof queueInfo?.users === 'number' && queueInfo.users > 0) {
-          badgeDetails.push(`Usuários: ${queueInfo.users}`);
-        }
-        if (typeof queueInfo?.lotes === 'number' && queueInfo.lotes > 0) {
-          badgeDetails.push(`Lotes: ${queueInfo.lotes}`);
-        }
-        if (badgeDetails.length) {
-          badge.title = badgeDetails.join(' • ');
-        } else {
-          badge.title = 'Plano atualmente enfileirado para tratamento';
-        }
-        planCell.appendChild(document.createElement('br'));
-        planCell.appendChild(badge);
       }
 
       const actionsCell = document.createElement('td');
