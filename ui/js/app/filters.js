@@ -222,6 +222,14 @@ export function registerFiltersModule(context) {
 
   const setupFilters = () => {
     context.filterWrappers = Array.from(document.querySelectorAll('[data-filter-group]'));
+
+    if (context.plansFiltersChipsContainer) {
+      attachFilterChipHandler(context.plansFiltersChipsContainer);
+    }
+    if (context.occFiltersChipsContainer) {
+      attachFilterChipHandler(context.occFiltersChipsContainer);
+    }
+
     if (!context.filterWrappers.length) {
       return;
     }
