@@ -112,7 +112,7 @@
                   TABELA DE PLANOS
                 </button>
                 <button
-                  class="section-switch"
+                  class="section-switch section-switch--notify"
                   id="occurrencesTableTab"
                   type="button"
                   role="tab"
@@ -121,8 +121,16 @@
                   data-table-target="occurrences"
                   tabindex="-1"
                 >
-                  OCORRÊNCIAS
-                  <span class="section-switch__count" id="occurrencesCount">(0)</span>
+                  <span class="section-switch__label">OCORRÊNCIAS</span>
+                  <span
+                    class="section-switch__badge"
+                    id="occurrencesCount"
+                    aria-live="polite"
+                    data-count="0"
+                    hidden
+                  >
+                    0
+                  </span>
                 </button>
               </div>
 

@@ -79,15 +79,52 @@
   color: inherit;
 }
 
-.section-switch__count {
-  margin-left: 8px;
-  font-size: 13px;
-  color: inherit;
+:root {
+  --badge-bg: #f44336;
+  --badge-fg: #ffffff;
+  --badge-size: clamp(14px, 1.4vw, 18px);
 }
 
-.section-switch__count--alert {
-  color: #c53030;
-  font-weight: 600;
+.section-switch--notify {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-right: calc(16px + (var(--badge-size) * 0.6));
+}
+
+.section-switch__label {
+  display: inline-block;
+}
+
+.section-switch__badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  transform: translate(-20%, 5%);
+  display: grid;
+  place-items: center;
+  min-width: var(--badge-size);
+  height: var(--badge-size);
+  padding-inline: 4px;
+  border-radius: 999px;
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+  font-size: clamp(11px, 0.7rem, 12px);
+  font-weight: 700;
+  font-family: inherit;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  border: 2px solid #ffffff;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.section-switch__badge[data-count="0"],
+.section-switch__badge[hidden] {
+  display: none;
 }
 
 .table-search {

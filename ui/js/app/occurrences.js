@@ -285,6 +285,9 @@ export function registerOccurrencesModule(context) {
         occPager.totalPages = occPager.totalCount ? 1 : null;
       }
       updateOccPagerUI();
+      if (typeof state.scheduleOccurrencesCountUpdate === 'function') {
+        state.scheduleOccurrencesCountUpdate();
+      }
 
       state.occurrencesLoaded = true;
     } catch (error) {
@@ -310,10 +313,24 @@ export function registerOccurrencesModule(context) {
       return;
     }
 
+    const clampCountText = (value) => {
+      if (value <= 0) {
+        return '0';
+      }
+      if (value > 99) {
+        return '99+';
+      }
+      return String(value);
+    };
+
     const updateCount = () => {
       const total = typeof occPager.totalCount === 'number' ? occPager.totalCount : 0;
-      countElement.textContent = `(${total})`;
-      countElement.classList.toggle('section-switch__count--alert', total > 0);
+      countElement.dataset.count = String(total);
+      const shouldHide = total <= 0;
+      countElement.hidden = shouldHide;
+      if (!shouldHide) {
+        countElement.textContent = clampCountText(total);
+      }
     };
 
     let pendingHandle = null;
