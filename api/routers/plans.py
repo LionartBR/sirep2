@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.params import Param
 from psycopg import AsyncConnection
 from psycopg.errors import InvalidAuthorizationSpecification, UniqueViolation
+from shared.text import normalize_document
 
 try:  # pragma: no cover - allow running under test stubs
     from psycopg.errors import QueryCanceled as QueryCanceledError
@@ -64,8 +65,6 @@ def get_principal_settings() -> Any:
 
     return _Principal()
 
-
-from shared.text import normalize_document
 
 logger = logging.getLogger(__name__)
 

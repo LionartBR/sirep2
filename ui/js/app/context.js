@@ -1,5 +1,7 @@
 export function createAppContext() {
-  const auth = window.Auth ?? globalThis.Auth ?? null;
+  const winAuth = typeof window === 'object' ? window.Auth : undefined;
+  const globalAuth = typeof globalThis === 'object' ? globalThis.Auth : undefined;
+  const auth = winAuth ?? globalAuth ?? null;
   const currentUser = typeof auth?.getUser === 'function' ? auth.getUser() : null;
 
   const context = {

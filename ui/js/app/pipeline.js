@@ -258,13 +258,23 @@ export function registerPipelineModule(context) {
     context.setStatus?.(message);
   };
 
+  const buildPipelineHeaders = (baseHeaders = {}) => {
+    const headers = new Headers(baseHeaders);
+    const matricula = state.currentUser?.username?.trim();
+    if (matricula) {
+      headers.set('X-User-Registration', matricula);
+    }
+    return headers;
+  };
+
   const fetchPipelineState = async () => {
     if (!context.canAccessBase?.()) {
       return null;
     }
     try {
+      const headers = buildPipelineHeaders({ Accept: 'application/json' });
       const response = await fetch(`${PIPELINE_ENDPOINT}/state`, {
-        headers: { Accept: 'application/json' },
+        headers,
       });
       if (!response.ok) {
         throw new Error('Não foi possível consultar o estado da pipeline.');
@@ -308,12 +318,14 @@ export function registerPipelineModule(context) {
         payload.matricula = state.currentUser.username;
       }
 
+      const headers = buildPipelineHeaders({
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      });
+
       const response = await fetch(`${PIPELINE_ENDPOINT}/start`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
+        headers,
         body: JSON.stringify(payload),
       });
 

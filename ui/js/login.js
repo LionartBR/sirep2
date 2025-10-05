@@ -1,5 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const auth = window.Auth ?? globalThis.Auth ?? null;
+  const winAuth = typeof window === 'object' ? window.Auth : undefined;
+  const globalAuth = typeof globalThis === 'object' ? globalThis.Auth : undefined;
+  const auth = winAuth ?? globalAuth ?? null;
   if (!auth) {
     console.error('Módulo de autenticação indisponível.');
     return;

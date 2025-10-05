@@ -11,7 +11,9 @@ import { registerPipelineModule } from './app/pipeline.js';
 import { registerUiModule } from './app/ui.js';
 
 document.addEventListener('DOMContentLoaded', () => {
-  const auth = window.Auth ?? globalThis.Auth ?? null;
+  const winAuth = typeof window === 'object' ? window.Auth : undefined;
+  const globalAuth = typeof globalThis === 'object' ? globalThis.Auth : undefined;
+  const auth = winAuth ?? globalAuth ?? null;
   if (!auth || typeof auth.isAuthenticated !== 'function' || !auth.isAuthenticated()) {
     window.location.replace('/app/login.html');
     return;

@@ -12,7 +12,7 @@ def _ensure(name: str) -> types.ModuleType:
     module = sys.modules.get(name)
     if module is None:
         module = types.ModuleType(name)
-        module.__path__ = []  # type: ignore[attr-defined]
+        module.__path__ = []
         sys.modules[name] = module
     return module
 
