@@ -101,21 +101,27 @@ export function registerUiModule(context) {
     }
   };
 
+  const applyCopyBehaviorToRow = (row) => {
+    if (!row || row.classList.contains('table__row--empty')) {
+      return;
+    }
+
+    const planCell = row.cells?.[0];
+    if (planCell) {
+      enhanceCopyableCell(planCell, { label: 'Plano' });
+    }
+
+    const documentCell = row.cells?.[1];
+    if (documentCell) {
+      enhanceCopyableCell(documentCell, { label: 'Documento' });
+    }
+  };
+
   const setupCopyableCells = () => {
     const tables = document.querySelectorAll('.data-table');
     if (!tables.length) {
       return;
     }
-
-    const processRow = (row) => {
-      if (!row) {
-        return;
-      }
-      const documentCell = row.cells?.[1];
-      if (documentCell) {
-        enhanceCopyableCell(documentCell, { label: 'Documento' });
-      }
-    };
 
     tables.forEach((table) => {
       const tbody = table.tBodies?.[0];
@@ -123,7 +129,7 @@ export function registerUiModule(context) {
         return;
       }
 
-      Array.from(tbody.rows ?? []).forEach(processRow);
+      Array.from(tbody.rows ?? []).forEach(applyCopyBehaviorToRow);
 
       tbody.addEventListener('click', async (event) => {
         const button = event.target instanceof HTMLElement
@@ -468,6 +474,7 @@ export function registerUiModule(context) {
   };
 
   context.setupCopyableCells = setupCopyableCells;
+  context.applyCopyBehaviorToRow = applyCopyBehaviorToRow;
   context.setupDocumentObserver = setupDocumentObserver;
   context.setupOccurrencesSearchObserver = setupOccurrencesSearchObserver;
   context.setupTableSwitching = setupTableSwitching;

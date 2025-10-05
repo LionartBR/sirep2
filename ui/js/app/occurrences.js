@@ -134,6 +134,10 @@ export function registerOccurrencesModule(context) {
       actionsCell.textContent = '—';
       row.appendChild(actionsCell);
 
+      if (typeof context.applyCopyBehaviorToRow === 'function') {
+        context.applyCopyBehaviorToRow(row);
+      }
+
       occTableBody.appendChild(row);
     });
 

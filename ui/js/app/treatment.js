@@ -127,6 +127,10 @@ export function registerTreatmentModule(context) {
       actionsCell.appendChild(actionsWrapper);
       row.appendChild(actionsCell);
 
+      if (typeof context.applyCopyBehaviorToRow === 'function') {
+        context.applyCopyBehaviorToRow(row);
+      }
+
       treatmentTableBody.appendChild(row);
     });
   };

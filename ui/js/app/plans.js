@@ -313,38 +313,11 @@ export function registerPlansModule(context) {
         row.dataset.planId = planId;
       }
 
-      const planCell = document.createElement('td');
-      planCell.className = 'table__cell';
-      const planNumberText = item?.number ?? '';
-      const planNumberSpan = document.createElement('span');
-      planNumberSpan.textContent = planNumberText;
-      planCell.appendChild(planNumberSpan);
-
       const queueInfo = item?.treatment_queue ?? null;
       const isQueued = Boolean(queueInfo?.enqueued);
-      if (isQueued) {
-        row.classList.add('table__row--queued');
-        const badge = document.createElement('span');
-        badge.className = 'badge badge--queue';
-        badge.textContent = 'Em tratamento';
-        const badgeDetails = [];
-        if (typeof queueInfo?.filas === 'number' && queueInfo.filas > 0) {
-          badgeDetails.push(`Filas: ${queueInfo.filas}`);
-        }
-        if (typeof queueInfo?.users === 'number' && queueInfo.users > 0) {
-          badgeDetails.push(`Usuários: ${queueInfo.users}`);
-        }
-        if (typeof queueInfo?.lotes === 'number' && queueInfo.lotes > 0) {
-          badgeDetails.push(`Lotes: ${queueInfo.lotes}`);
-        }
-        if (badgeDetails.length) {
-          badge.title = badgeDetails.join(' • ');
-        } else {
-          badge.title = 'Plano atualmente enfileirado para tratamento';
-        }
-        planCell.appendChild(document.createElement('br'));
-        planCell.appendChild(badge);
-      }
+      const planCell = document.createElement('td');
+      planCell.className = 'table__cell';
+      planCell.textContent = item?.number ?? '';
       row.appendChild(planCell);
 
       const documentCell = document.createElement('td');
@@ -376,6 +349,34 @@ export function registerPlansModule(context) {
       statusDateCell.className = 'table__cell';
       statusDateCell.textContent = context.formatDateLabel(item?.status_date);
       row.appendChild(statusDateCell);
+
+      if (typeof context.applyCopyBehaviorToRow === 'function') {
+        context.applyCopyBehaviorToRow(row);
+      }
+
+      if (isQueued) {
+        row.classList.add('table__row--queued');
+        const badge = document.createElement('span');
+        badge.className = 'badge badge--queue';
+        badge.textContent = 'Em tratamento';
+        const badgeDetails = [];
+        if (typeof queueInfo?.filas === 'number' && queueInfo.filas > 0) {
+          badgeDetails.push(`Filas: ${queueInfo.filas}`);
+        }
+        if (typeof queueInfo?.users === 'number' && queueInfo.users > 0) {
+          badgeDetails.push(`Usuários: ${queueInfo.users}`);
+        }
+        if (typeof queueInfo?.lotes === 'number' && queueInfo.lotes > 0) {
+          badgeDetails.push(`Lotes: ${queueInfo.lotes}`);
+        }
+        if (badgeDetails.length) {
+          badge.title = badgeDetails.join(' • ');
+        } else {
+          badge.title = 'Plano atualmente enfileirado para tratamento';
+        }
+        planCell.appendChild(document.createElement('br'));
+        planCell.appendChild(badge);
+      }
 
       const actionsCell = document.createElement('td');
       actionsCell.className = 'table__cell table__cell--select';
