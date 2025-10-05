@@ -148,7 +148,7 @@ def test_migrate_treatment_returns_payload(monkeypatch: pytest.MonkeyPatch) -> N
         lambda: PrincipalSettings(None, "mat-001", None, None, None),
     )
 
-    result = TreatmentMigrationResult(lote_id=uuid4(), items_seeded=12, created=True)
+    result = TreatmentMigrationResult(lote_id=uuid4(), affected=12, created=True)
 
     class _StubService:
         payloads: list[tuple[str, dict[str, object] | None]] = []
@@ -165,16 +165,16 @@ def test_migrate_treatment_returns_payload(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(treatment, "TreatmentService", _StubService)
 
     payload = TreatmentMigrateRequest(
-        grid=treatment.DEFAULT_GRID, filters={"saldo_min": 1000}
+        grid=treatment.DEFAULT_GRID, filters={"saldo_key": "50_150k"}
     )
     request = _make_request({"x-user-registration": "mat-001"})
 
     response = _run(treatment.migrate_treatment(request, payload))
 
     assert UUID(str(response.lote_id)) == result.lote_id
-    assert response.items_seeded == 12
+    assert response.affected == 12
     assert response.created is True
-    assert _StubService.payloads == [(treatment.DEFAULT_GRID, {"saldo_min": 1000})]
+    assert _StubService.payloads == [(treatment.DEFAULT_GRID, {"saldo_key": "50_150k"})]
 
 
 def test_migrate_treatment_rejects_unsupported_grid(
@@ -437,7 +437,9 @@ def test_migration_ignores_blocked_plan_then_reincludes_after_unblock(
         async def fetchone(self) -> dict[str, object] | None:
             return self._result
 
-        async def fetchall(self) -> list[dict[str, object]]:  # pragma: no cover - unused
+        async def fetchall(
+            self,
+        ) -> list[dict[str, object]]:  # pragma: no cover - unused
             return [self._result]
 
     class _FakeConnection:
@@ -491,7 +493,7 @@ def test_migration_ignores_blocked_plan_then_reincludes_after_unblock(
             items = 0 if blocked_state else 1
             return TreatmentMigrationResult(
                 lote_id=lote_id,
-                items_seeded=items,
+                affected=items,
                 created=True,
             )
 
@@ -500,23 +502,21 @@ def test_migration_ignores_blocked_plan_then_reincludes_after_unblock(
     headers = {"x-user-registration": "gestor"}
     block_payload = PlanBlockRequest(plano_id=plan_id)
     unblock_payload = PlanUnblockRequest(plano_id=plan_id)
-    migrate_payload = TreatmentMigrateRequest(
-        grid=treatment.DEFAULT_GRID, filters=None
-    )
+    migrate_payload = TreatmentMigrateRequest(grid=treatment.DEFAULT_GRID, filters=None)
 
     _run(plans.block_plan(_make_request(headers), block_payload))
 
     blocked_response = _run(
         treatment.migrate_treatment(_make_request(headers), migrate_payload)
     )
-    assert blocked_response.items_seeded == 0
+    assert blocked_response.affected == 0
 
     _run(plans.unblock_plan(_make_request(headers), unblock_payload))
 
     unblocked_response = _run(
         treatment.migrate_treatment(_make_request(headers), migrate_payload)
     )
-    assert unblocked_response.items_seeded == 1
+    assert unblocked_response.affected == 1
     assert _StubService.calls == [True, False]
 
 

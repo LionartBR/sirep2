@@ -79,6 +79,8 @@ _STATUS_LABELS = {
 }
 
 _FILTER_SITUATION_CODES: tuple[str, ...] = (
+    "EM_DIA",
+    "EM_ATRASO",
     "P_RESCISAO",
     "SIT_ESPECIAL",
     "RESCINDIDO",
@@ -110,6 +112,16 @@ _DT_SITUATION_RANGE_CLAUSES: dict[str, tuple[str | None, str | None]] = {
         None,
     ),
 }
+
+SALDO_RANGES: dict[str, tuple[int | None, int | None]] = {
+    "10_50k": (10_000, 50_000),
+    "50_150k": (50_000, 150_000),
+    "150_500k": (150_000, 500_000),
+    "500_1000k": (500_000, 1_000_000),
+    "gte_1000k": (1_000_000, None),
+}
+
+SALDO_FILTER_KEYS: tuple[str, ...] = tuple(SALDO_RANGES.keys())
 
 _ACTIVE_BLOCK_PREDICATE = (
     "bloqueio.ativo = TRUE\n"
@@ -163,6 +175,15 @@ def _normalize_saldo_min(value: int | None) -> int | None:
     return candidate if candidate in _ALLOWED_SALDO_SET else None
 
 
+def _normalize_saldo_key(value: str | None) -> str | None:
+    if not value:
+        return None
+    candidate = str(value).strip().lower()
+    if not candidate:
+        return None
+    return candidate if candidate in SALDO_RANGES else None
+
+
 def _normalize_dt_range(value: str | None) -> str | None:
     if not value:
         return None
@@ -180,6 +201,7 @@ PLAN_DEFAULT_QUERY = f"""
         planos.dias_em_atraso,
         planos.saldo,
         planos.dt_situacao,
+        (pending.plano_id IS NOT NULL) AS em_tratamento,
         COUNT(*) OVER () AS total_count,
         trat.filas,
         trat.users_enfileirando,
@@ -189,8 +211,9 @@ PLAN_DEFAULT_QUERY = f"""
         bloqueio.unlocked_at AS desbloqueado_em,
         bloqueio.motivo AS motivo_bloqueio
       FROM app.vw_planos_busca AS planos
- LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
- LEFT JOIN app.plano_bloqueio AS bloqueio
+LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
+LEFT JOIN app.planos_em_tratamento() AS pending ON pending.plano_id = planos.plano_id
+LEFT JOIN app.plano_bloqueio AS bloqueio
         ON bloqueio.plano_id = planos.plano_id
        AND {_ACTIVE_BLOCK_PREDICATE}
      ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
@@ -207,6 +230,7 @@ PLAN_SEARCH_BY_NUMBER_QUERY = f"""
         planos.dias_em_atraso,
         planos.saldo,
         planos.dt_situacao,
+        (pending.plano_id IS NOT NULL) AS em_tratamento,
         COUNT(*) OVER () AS total_count,
         trat.filas,
         trat.users_enfileirando,
@@ -216,8 +240,9 @@ PLAN_SEARCH_BY_NUMBER_QUERY = f"""
         bloqueio.unlocked_at AS desbloqueado_em,
         bloqueio.motivo AS motivo_bloqueio
       FROM app.vw_planos_busca AS planos
- LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
- LEFT JOIN app.plano_bloqueio AS bloqueio
+LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
+LEFT JOIN app.planos_em_tratamento() AS pending ON pending.plano_id = planos.plano_id
+LEFT JOIN app.plano_bloqueio AS bloqueio
         ON bloqueio.plano_id = planos.plano_id
        AND {_ACTIVE_BLOCK_PREDICATE}
      WHERE planos.numero_plano = %(number)s
@@ -236,6 +261,7 @@ PLAN_SEARCH_BY_NAME_QUERY = f"""
         planos.dias_em_atraso,
         planos.saldo,
         planos.dt_situacao,
+        (pending.plano_id IS NOT NULL) AS em_tratamento,
         COUNT(*) OVER () AS total_count,
         trat.filas,
         trat.users_enfileirando,
@@ -245,8 +271,9 @@ PLAN_SEARCH_BY_NAME_QUERY = f"""
         bloqueio.unlocked_at AS desbloqueado_em,
         bloqueio.motivo AS motivo_bloqueio
       FROM app.vw_planos_busca AS planos
- LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
- LEFT JOIN app.plano_bloqueio AS bloqueio
+LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
+LEFT JOIN app.planos_em_tratamento() AS pending ON pending.plano_id = planos.plano_id
+LEFT JOIN app.plano_bloqueio AS bloqueio
         ON bloqueio.plano_id = planos.plano_id
        AND {_ACTIVE_BLOCK_PREDICATE}
      WHERE planos.razao_social ILIKE %(name_pattern)s
@@ -264,6 +291,7 @@ PLAN_SEARCH_BY_DOCUMENT_QUERY = f"""
         planos.dias_em_atraso,
         planos.saldo,
         planos.dt_situacao,
+        (pending.plano_id IS NOT NULL) AS em_tratamento,
         COUNT(*) OVER () AS total_count,
         trat.filas,
         trat.users_enfileirando,
@@ -273,8 +301,9 @@ PLAN_SEARCH_BY_DOCUMENT_QUERY = f"""
         bloqueio.unlocked_at AS desbloqueado_em,
         bloqueio.motivo AS motivo_bloqueio
       FROM app.vw_planos_busca AS planos
- LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
- LEFT JOIN app.plano_bloqueio AS bloqueio
+LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
+LEFT JOIN app.planos_em_tratamento() AS pending ON pending.plano_id = planos.plano_id
+LEFT JOIN app.plano_bloqueio AS bloqueio
         ON bloqueio.plano_id = planos.plano_id
        AND {_ACTIVE_BLOCK_PREDICATE}
      WHERE planos.documento = %(document)s
@@ -403,6 +432,8 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
         lotes=lotes,
     )
 
+    in_treatment_flag = bool(row.get("em_tratamento") or row.get("in_treatment"))
+
     blocked_value = row.get("bloqueado")
     blocked = bool(blocked_value) if blocked_value is not None else False
     blocked_at = _normalize_expires_at(row.get("bloqueado_em"))
@@ -423,6 +454,7 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
         balance=balance,
         status_date=status_date,
         treatment_queue=treatment_queue,
+        in_treatment=in_treatment_flag,
         blocked=blocked,
         blocked_at=blocked_at,
         unlocked_at=unlocked_at,
@@ -456,6 +488,7 @@ def _should_use_keyset(request: Request | None) -> bool:
         "tipo_doc",
         "situacao",
         "dias_min",
+        "saldo_key",
         "saldo_min",
         "dt_sit_range",
     }
@@ -486,6 +519,7 @@ def _build_filters(
     occurrences_only: bool = False,
     situacoes: Sequence[str] | None = None,
     dias_min: int | None = None,
+    saldo_key: str | None = None,
     saldo_min: int | None = None,
     dt_sit_range: str | None = None,
     table_alias: str | None = None,
@@ -528,9 +562,20 @@ def _build_filters(
             f"{col('atraso_desde')} <= CURRENT_DATE - make_interval(days => %(dias_min)s)"
         )
 
-    if saldo_min is not None:
-        params["saldo_min"] = saldo_min
-        clauses.append(f"COALESCE({col('saldo')}, 0) >= %(saldo_min)s")
+    saldo_lo: int | None = None
+    saldo_hi: int | None = None
+
+    if saldo_key:
+        saldo_lo, saldo_hi = SALDO_RANGES.get(saldo_key, (None, None))
+    elif saldo_min is not None:
+        saldo_lo = saldo_min
+
+    if saldo_lo is not None:
+        params["saldo_lo"] = saldo_lo
+        clauses.append(f"COALESCE({col('saldo')}, 0) >= %(saldo_lo)s")
+    if saldo_hi is not None:
+        params["saldo_hi"] = saldo_hi
+        clauses.append(f"COALESCE({col('saldo')}, 0) < %(saldo_hi)s")
 
     if dt_sit_range:
         start_clause, end_clause = _DT_SITUATION_RANGE_CLAUSES[dt_sit_range]
@@ -606,6 +651,7 @@ async def _fetch_keyset_page(
     occurrences_only: bool,
     situacoes: Sequence[str] | None,
     dias_min: int | None,
+    saldo_key: str | None,
     saldo_min: int | None,
     dt_sit_range: str | None,
     page_size: int,
@@ -623,6 +669,7 @@ async def _fetch_keyset_page(
         occurrences_only=occurrences_only,
         situacoes=situacoes,
         dias_min=dias_min,
+        saldo_key=saldo_key,
         saldo_min=saldo_min,
         dt_sit_range=dt_sit_range,
         table_alias="planos",
@@ -673,6 +720,7 @@ async def _fetch_keyset_page(
     sql = (
         "SELECT planos.plano_id, planos.numero_plano, planos.documento, planos.razao_social, planos.situacao,"
         " planos.dias_em_atraso, planos.saldo, planos.dt_situacao,"
+        " (pending.plano_id IS NOT NULL) AS em_tratamento,"
         " trat.filas, trat.users_enfileirando, trat.lotes,"
         " (bloqueio.id IS NOT NULL) AS bloqueado,"
         " bloqueio.created_at AS bloqueado_em,"
@@ -680,6 +728,7 @@ async def _fetch_keyset_page(
         " bloqueio.motivo AS motivo_bloqueio"
         " FROM app.vw_planos_busca AS planos"
         " LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id"
+        " LEFT JOIN app.planos_em_tratamento() AS pending ON pending.plano_id = planos.plano_id"
         " LEFT JOIN app.plano_bloqueio AS bloqueio"
         "        ON bloqueio.plano_id = planos.plano_id"
         f"       AND {_ACTIVE_BLOCK_PREDICATE}"
@@ -790,6 +839,11 @@ async def list_plans(
         None,
         description="Saldo mínimo em reais (10000, 50000, 150000, 500000, 1000000)",
     ),
+    saldo_key: str | None = Query(
+        None,
+        pattern=r"^(10_50k|50_150k|150_500k|500_1000k|gte_1000k)$",
+        description="Faixa de saldo pré-definida",
+    ),
     dt_sit_range: str | None = Query(
         None,
         description="Intervalo relativo para dt_situacao (LAST_3_MONTHS, LAST_2_MONTHS, LAST_MONTH, THIS_MONTH)",
@@ -816,6 +870,7 @@ async def list_plans(
     situacao = _unwrap_query_param(situacao)
     dias_min = _unwrap_query_param(dias_min)
     saldo_min = _unwrap_query_param(saldo_min)
+    saldo_key = _unwrap_query_param(saldo_key)
     dt_sit_range = _unwrap_query_param(dt_sit_range)
 
     limit = int(limit) if limit is not None else DEFAULT_LIMIT
@@ -826,16 +881,19 @@ async def list_plans(
     cursor = str(cursor) if cursor is not None else None
     direction = str(direction) if direction is not None else None
     tipo_doc = str(tipo_doc).upper() if tipo_doc else None
+    saldo_key = str(saldo_key).lower() if saldo_key else None
     dt_sit_range = str(dt_sit_range).upper() if dt_sit_range else None
 
     situacao_values = _normalize_situacao_filter(situacao)
     dias_threshold = _normalize_dias_min(dias_min)
     saldo_threshold = _normalize_saldo_min(saldo_min)
+    saldo_key_value = _normalize_saldo_key(saldo_key)
     dt_range_value = _normalize_dt_range(dt_sit_range)
 
     filters_applied = bool(
         situacao_values
         or dias_threshold is not None
+        or saldo_key_value is not None
         or saldo_threshold is not None
         or dt_range_value is not None
     )
@@ -843,12 +901,14 @@ async def list_plans(
     filters_model = PlansFilters(
         situacao=situacao_values or None,
         dias_min=dias_threshold,
-        saldo_min=saldo_threshold,
+        saldo_key=saldo_key_value,
+        saldo_min=saldo_threshold if saldo_key_value is None else None,
         dt_sit_range=dt_range_value,
     )
     if not (
         filters_model.situacao
         or filters_model.dias_min is not None
+        or filters_model.saldo_key is not None
         or filters_model.saldo_min is not None
         or filters_model.dt_sit_range is not None
     ):
@@ -876,6 +936,7 @@ async def list_plans(
                     occurrences_only=occurrences_only,
                     situacoes=situacao_values,
                     dias_min=dias_threshold,
+                    saldo_key=saldo_key_value,
                     saldo_min=saldo_threshold,
                     dt_sit_range=dt_range_value,
                     page_size=page_size,
@@ -889,6 +950,7 @@ async def list_plans(
                     occurrences_only=occurrences_only,
                     situacoes=situacao_values,
                     dias_min=dias_threshold,
+                    saldo_key=saldo_key_value,
                     saldo_min=saldo_threshold,
                     dt_sit_range=dt_range_value,
                     table_alias="planos",
@@ -896,7 +958,8 @@ async def list_plans(
                 cache_key = (
                     f"{matricula}|{q or ''}|{tipo_doc or ''}|occ={occurrences_only}"
                     f"|situ={','.join(situacao_values) if situacao_values else ''}"
-                    f"|dias={dias_threshold or ''}|saldo={saldo_threshold or ''}|dt={dt_range_value or ''}"
+                    f"|dias={dias_threshold or ''}|saldo_key={saldo_key_value or ''}|"
+                    f"saldo={saldo_threshold or ''}|dt={dt_range_value or ''}"
                 )
                 total_count = await _fast_total_count(
                     connection,

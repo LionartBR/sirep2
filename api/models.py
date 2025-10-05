@@ -64,6 +64,7 @@ class PlanSummaryResponse(BaseModel):
     balance: Optional[Decimal] = None
     status_date: Optional[date] = None
     treatment_queue: Optional[PlanQueueStatusResponse] = None
+    in_treatment: bool = False
     blocked: bool = False
     blocked_at: Optional[datetime] = None
     unlocked_at: Optional[datetime] = None
@@ -93,6 +94,7 @@ class PlansFilters(BaseModel):
 
     situacao: list[str] | None = None
     dias_min: int | None = None
+    saldo_key: str | None = None
     saldo_min: int | None = None
     dt_sit_range: str | None = None
 
@@ -155,7 +157,7 @@ class TreatmentMigrationResponse(BaseModel):
     """Payload returned after requesting a treatment snapshot."""
 
     lote_id: UUID
-    items_seeded: int
+    affected: int
     created: bool | None = None
 
 

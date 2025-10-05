@@ -173,8 +173,8 @@ export function registerTreatmentModule(context) {
     if (typeof filtersState.diasMin === 'number' && Number.isFinite(filtersState.diasMin)) {
       filters.dias_min = filtersState.diasMin;
     }
-    if (typeof filtersState.saldoMin === 'number' && Number.isFinite(filtersState.saldoMin)) {
-      filters.saldo_min = filtersState.saldoMin;
+    if (filtersState.saldoKey) {
+      filters.saldo_key = filtersState.saldoKey;
     }
     if (filtersState.dtRange) {
       filters.dt_sit_range = filtersState.dtRange;
@@ -561,7 +561,26 @@ export function registerTreatmentModule(context) {
         if (!response.ok) {
           throw new Error('Falha ao migrar planos.');
         }
-        await response.json().catch(() => null);
+        const result = await response.json().catch(() => null);
+        const affected = Number(result?.affected ?? result?.items_seeded ?? NaN);
+        const loteIdResponse = result?.lote_id ? String(result.lote_id) : null;
+
+        if (!Number.isFinite(affected)) {
+          await fetchTreatmentState({ refreshItems: true });
+          return;
+        }
+
+        if (affected === 0) {
+          if (typeof context.showToast === 'function') {
+            context.showToast('No momento NÃO há planos disponíveis para rescisão');
+          }
+          return;
+        }
+
+        if (loteIdResponse) {
+          state.treatmentBatchId = loteIdResponse;
+        }
+
         await fetchTreatmentState({ refreshItems: true });
       } catch (error) {
         console.error('Erro ao migrar planos para tratamento.', error);

@@ -116,13 +116,15 @@ export function createAppContext() {
   context.filtersState = {
     situacao: [],
     diasMin: null,
-    saldoMin: null,
+    saldoKey: null,
     dtRange: null,
   };
   context.plansSelection = new Set();
   context.occSelection = new Set();
   context.FILTER_LABELS = {
     situacao: {
+      EM_DIA: 'Em dia',
+      EM_ATRASO: 'Em atraso',
       P_RESCISAO: 'P. Rescisão',
       SIT_ESPECIAL: 'Sit. Especial',
       RESCINDIDO: 'Rescindido',
@@ -134,12 +136,12 @@ export function createAppContext() {
       100: '100+ dias',
       120: '120+ dias',
     },
-    saldoMin: {
-      10000: 'R$ 10 mil+',
-      50000: 'R$ 50 mil+',
-      150000: 'R$ 150 mil+',
-      500000: 'R$ 500 mil+',
-      1000000: 'R$ 1 mi+',
+    saldoKey: {
+      '10_50k': 'Saldo: R$ 10 mil – R$ 50 mil',
+      '50_150k': 'Saldo: R$ 50 mil – R$ 150 mil',
+      '150_500k': 'Saldo: R$ 150 mil – R$ 500 mil',
+      '500_1000k': 'Saldo: R$ 500 mil – R$ 1 mi',
+      'gte_1000k': 'Saldo: Acima de R$ 1 mi',
     },
     dtRange: {
       LAST_3_MONTHS: 'Até 3 meses',

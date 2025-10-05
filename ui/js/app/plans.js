@@ -118,31 +118,44 @@ export function registerPlansModule(context) {
 
     const lockButton = row.querySelector('.table__row-action--lock');
     if (lockButton instanceof HTMLButtonElement) {
+      const isQueueDisabled = lockButton.dataset.queueDisabled === 'true';
+      const queueDisabledTitle = lockButton.dataset.queueDisabledTitle || 'Plano em tratamento';
+
+      const labelTarget = lockButton.dataset.planLabel || '';
+      const lockLabel = labelTarget ? `Bloquear plano ${labelTarget}` : 'Bloquear plano';
+      const unlockLabel = labelTarget ? `Desbloquear plano ${labelTarget}` : 'Desbloquear plano';
+
       if (locked) {
-        lockButton.disabled = false;
-        lockButton.removeAttribute('aria-disabled');
-        const labelTarget = lockButton.dataset.planLabel || '';
-        const unlockLabel = labelTarget
-          ? `Desbloquear plano ${labelTarget}`
-          : 'Desbloquear plano';
-        lockButton.setAttribute('aria-label', unlockLabel);
-        lockButton.title = unlockLabel;
         lockButton.innerHTML =
           unlockIconTemplate ?? '<span class="table__row-action-fallback" aria-hidden="true">🔓</span>';
         lockButton.dataset.locked = 'true';
+        if (isQueueDisabled) {
+          lockButton.disabled = true;
+          lockButton.setAttribute('aria-disabled', 'true');
+          lockButton.title = queueDisabledTitle;
+          lockButton.setAttribute('aria-label', queueDisabledTitle);
+        } else {
+          lockButton.disabled = false;
+          lockButton.removeAttribute('aria-disabled');
+          lockButton.title = unlockLabel;
+          lockButton.setAttribute('aria-label', unlockLabel);
+        }
       } else {
-        lockButton.disabled = false;
-        lockButton.removeAttribute('aria-disabled');
-        const labelTarget = lockButton.dataset.planLabel || '';
-        const lockLabel = labelTarget
-          ? `Bloquear plano ${labelTarget}`
-          : 'Bloquear plano';
-        lockButton.setAttribute('aria-label', lockLabel);
-        lockButton.title = lockLabel;
-        lockButton.dataset.defaultTitle = lockLabel;
         lockButton.innerHTML =
           lockIconTemplate ?? '<span class="table__row-action-fallback" aria-hidden="true">🔒</span>';
         lockButton.dataset.locked = 'false';
+        if (isQueueDisabled) {
+          lockButton.disabled = true;
+          lockButton.setAttribute('aria-disabled', 'true');
+          lockButton.title = queueDisabledTitle;
+          lockButton.setAttribute('aria-label', queueDisabledTitle);
+        } else {
+          lockButton.disabled = false;
+          lockButton.removeAttribute('aria-disabled');
+          lockButton.title = lockLabel;
+          lockButton.dataset.defaultTitle = lockLabel;
+          lockButton.setAttribute('aria-label', lockLabel);
+        }
       }
     }
   };
@@ -702,28 +715,13 @@ export function registerPlansModule(context) {
 
       const queueInfo = item?.treatment_queue ?? null;
       const isQueued = Boolean(queueInfo?.enqueued);
-      if (isQueued) {
+      const isMarkedInTreatment = Boolean(
+        item?.in_treatment ?? item?.em_tratamento ?? false,
+      );
+      if (isQueued || isMarkedInTreatment) {
         row.classList.add('table__row--queued');
-        const badge = document.createElement('span');
-        badge.className = 'badge badge--queue';
-        badge.textContent = 'Em tratamento';
-        const badgeDetails = [];
-        if (typeof queueInfo?.filas === 'number' && queueInfo.filas > 0) {
-          badgeDetails.push(`Filas: ${queueInfo.filas}`);
-        }
-        if (typeof queueInfo?.users === 'number' && queueInfo.users > 0) {
-          badgeDetails.push(`Usuários: ${queueInfo.users}`);
-        }
-        if (typeof queueInfo?.lotes === 'number' && queueInfo.lotes > 0) {
-          badgeDetails.push(`Lotes: ${queueInfo.lotes}`);
-        }
-        if (badgeDetails.length) {
-          badge.title = badgeDetails.join(' • ');
-        } else {
-          badge.title = 'Plano atualmente enfileirado para tratamento';
-        }
-        planCell.appendChild(document.createElement('br'));
-        planCell.appendChild(badge);
+      } else {
+        row.classList.remove('table__row--queued');
       }
       row.appendChild(planCell);
 
@@ -823,10 +821,25 @@ export function registerPlansModule(context) {
         lockButton.setAttribute('aria-disabled', 'true');
       }
 
+      if (isQueued) {
+        lockButton.disabled = true;
+        lockButton.setAttribute('aria-disabled', 'true');
+        lockButton.dataset.queueDisabled = 'true';
+        const queueDisabledTitle = queueInfo?.filas
+          ? `Plano em tratamento (${queueInfo.filas} filas ativas)`
+          : 'Plano em tratamento';
+        lockButton.dataset.queueDisabledTitle = queueDisabledTitle;
+        lockButton.title = queueDisabledTitle;
+        lockButton.setAttribute('aria-label', queueDisabledTitle);
+      } else {
+        delete lockButton.dataset.queueDisabled;
+        delete lockButton.dataset.queueDisabledTitle;
+      }
+
       lockButton.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (!planId) {
+        if (!planId || lockButton.disabled || lockButton.getAttribute('aria-disabled') === 'true') {
           return;
         }
         const currentlyLocked = context.lockedPlans instanceof Set && context.lockedPlans.has(planId);
@@ -990,8 +1003,8 @@ export function registerPlansModule(context) {
     if (filtersState.diasMin !== null) {
       url.searchParams.set('dias_min', String(filtersState.diasMin));
     }
-    if (filtersState.saldoMin !== null) {
-      url.searchParams.set('saldo_min', String(filtersState.saldoMin));
+    if (filtersState.saldoKey) {
+      url.searchParams.set('saldo_key', filtersState.saldoKey);
     }
     if (filtersState.dtRange) {
       url.searchParams.set('dt_sit_range', filtersState.dtRange);
@@ -1042,13 +1055,32 @@ export function registerPlansModule(context) {
           : [];
         filtersState.diasMin =
           typeof filtersResponse.dias_min === 'number' ? filtersResponse.dias_min : null;
-        filtersState.saldoMin =
-          typeof filtersResponse.saldo_min === 'number' ? filtersResponse.saldo_min : null;
+        if (typeof filtersResponse.saldo_key === 'string') {
+          filtersState.saldoKey = filtersResponse.saldo_key.toLowerCase();
+        } else if (typeof filtersResponse.saldo_min === 'number') {
+          // Retrocompatibilidade: traduz saldo_min legado para faixa mínima correspondente.
+          const legacyValue = filtersResponse.saldo_min;
+          if (legacyValue === 10_000) {
+            filtersState.saldoKey = '10_50k';
+          } else if (legacyValue === 50_000) {
+            filtersState.saldoKey = '50_150k';
+          } else if (legacyValue === 150_000) {
+            filtersState.saldoKey = '150_500k';
+          } else if (legacyValue === 500_000) {
+            filtersState.saldoKey = '500_1000k';
+          } else if (legacyValue === 1_000_000) {
+            filtersState.saldoKey = 'gte_1000k';
+          } else {
+            filtersState.saldoKey = null;
+          }
+        } else {
+          filtersState.saldoKey = null;
+        }
         filtersState.dtRange = filtersResponse.dt_sit_range || null;
       } else {
         filtersState.situacao = [];
         filtersState.diasMin = null;
-        filtersState.saldoMin = null;
+        filtersState.saldoKey = null;
         filtersState.dtRange = null;
       }
       if (typeof context.syncFilterInputs === 'function') {

@@ -65,7 +65,7 @@ class TreatmentMigrationResult:
     """Outcome produced after attempting to seed a treatment batch."""
 
     lote_id: UUID
-    items_seeded: int
+    affected: int
     created: bool
 
 

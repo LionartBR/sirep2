@@ -40,11 +40,28 @@ class _DummyPlansRepository:
     def __init__(self) -> None:
         self._store: dict[str, SimpleNamespace] = {}
         self._counter = 0
+        self.prefetch_calls = 0
+        self.prefetch_args: list[tuple[tuple[str, ...], int]] = []
+        self.get_calls = 0
+        self.upsert_calls = 0
 
     def get_by_numero(self, numero: str) -> SimpleNamespace | None:
+        self.get_calls += 1
         return self._store.get(numero)
 
+    def prefetch_plan_ids(self, numeros, *, chunk_size: int = 2500):
+        valores = tuple(numeros)
+        self.prefetch_calls += 1
+        self.prefetch_args.append((valores, chunk_size))
+        cache: dict[str, SimpleNamespace] = {}
+        for numero in valores:
+            plano = self._store.get(numero)
+            if plano is not None:
+                cache[numero] = plano
+        return cache
+
     def upsert(self, numero_plano: str, existing=None, **kwargs):
+        self.upsert_calls += 1
         if existing is None:
             self._counter += 1
             plan = SimpleNamespace(
@@ -127,3 +144,37 @@ def test_persist_rows_registers_occurrences_for_non_passivel(monkeypatch):
     assert result["importados"] == 3
     assert {item["numero_plano"] for item in captured} == {"0000002", "0000003"}
     assert all(item["situacao"] in {"RESCINDIDO", "LIQUIDADO"} for item in captured)
+
+
+def test_persist_rows_prefetches_plan_ids_once(monkeypatch):
+    monkeypatch.setattr(persistence.settings, "DRY_RUN", True)
+
+    plans = _DummyPlansRepository()
+    events = _DummyEventsRepository()
+    context = SimpleNamespace(db=object(), plans=plans, events=events)
+
+    total = 10_000
+    rows = [
+        PlanRowEnriched(
+            numero=f"{idx:07d}",
+            dt_propost="01/01/2024",
+            tipo="Tipo",
+            situac="P.RESC",
+            resoluc="R",
+            razao_social=f"Empresa {idx}",
+            saldo_total="100,00",
+            cnpj="11.111.111/0001-11",
+        )
+        for idx in range(total)
+    ]
+
+    data = GestaoBaseData(rows=rows, raw_lines=[], portal_po=[], descartados_974=0)
+
+    resultado = persistence.persist_rows(context, data)
+
+    assert resultado["importados"] == total
+    assert plans.prefetch_calls == 1
+    assert plans.prefetch_args[0][1] == 2500
+    assert len(plans.prefetch_args[0][0]) == total
+    assert plans.get_calls == 0
+    assert plans.upsert_calls == total

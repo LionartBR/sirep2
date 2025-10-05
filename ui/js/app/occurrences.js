@@ -1,5 +1,6 @@
 export function registerOccurrencesModule(context) {
   const OCCURRENCE_ALLOWED_STATUSES = ['SIT_ESPECIAL', 'GRDE_EMITIDA'];
+  const OCCURRENCE_DEFAULT_STATUSES = [...OCCURRENCE_ALLOWED_STATUSES];
 
   const state = context;
   const {
@@ -27,8 +28,12 @@ export function registerOccurrencesModule(context) {
   state.occurrenceRecords = state.occurrenceRecords instanceof Map ? state.occurrenceRecords : new Map();
   context.occurrenceRecords = state.occurrenceRecords;
 
-  const planRecords = context.planRecords instanceof Map ? context.planRecords : new Map();
-  context.planRecords = planRecords;
+  const ensurePlanRecords = () => {
+    if (!(context.planRecords instanceof Map)) {
+      context.planRecords = new Map();
+    }
+    return context.planRecords;
+  };
 
   if (!(context.lockedPlans instanceof Set)) {
     context.lockedPlans = new Set();
@@ -490,6 +495,7 @@ export function registerOccurrencesModule(context) {
             ? String(planNumberRaw)
             : '';
 
+      const planRecords = ensurePlanRecords();
       const existingRecord = planId ? planRecords.get(planId) ?? {} : {};
       const planUuidRaw = item?.plan_id ?? item?.plan_uuid ?? item?.id ?? null;
       const existingUuid =
@@ -515,6 +521,17 @@ export function registerOccurrencesModule(context) {
       occPlanSpan.dataset.copySource = 'occ-plan-number';
       planCell.appendChild(occPlanSpan);
       row.appendChild(planCell);
+
+      const queueInfo = item?.treatment_queue ?? null;
+      const isQueued = Boolean(queueInfo?.enqueued);
+      const isMarkedInTreatment = Boolean(
+        item?.in_treatment ?? item?.em_tratamento ?? false,
+      );
+      if (isQueued || isMarkedInTreatment) {
+        row.classList.add('table__row--queued');
+      } else {
+        row.classList.remove('table__row--queued');
+      }
 
       const documentCell = document.createElement('td');
       documentCell.className = 'table__cell';
@@ -678,7 +695,7 @@ export function registerOccurrencesModule(context) {
         }
         mergedRecord.locked = isLocked;
         state.occurrenceRecords.set(planId, mergedRecord);
-        planRecords.set(planId, mergedRecord);
+        ensurePlanRecords().set(planId, mergedRecord);
         detailRecord = mergedRecord;
       }
 
@@ -787,15 +804,15 @@ export function registerOccurrencesModule(context) {
     }
     const effectiveSituations = normalizedSituations.length
       ? normalizedSituations
-      : OCCURRENCE_ALLOWED_STATUSES;
+      : OCCURRENCE_DEFAULT_STATUSES;
     new Set(effectiveSituations).forEach((value) => {
       url.searchParams.append('situacao', value);
     });
     if (filtersState.diasMin !== null) {
       url.searchParams.set('dias_min', String(filtersState.diasMin));
     }
-    if (filtersState.saldoMin !== null) {
-      url.searchParams.set('saldo_min', String(filtersState.saldoMin));
+    if (filtersState.saldoKey) {
+      url.searchParams.set('saldo_key', filtersState.saldoKey);
     }
     if (filtersState.dtRange) {
       url.searchParams.set('dt_sit_range', filtersState.dtRange);
@@ -1058,7 +1075,7 @@ export function registerOccurrencesModule(context) {
       if (occRecord) {
         occRecord.locked = true;
       }
-      const sharedRecord = planRecords.get(planId);
+      const sharedRecord = ensurePlanRecords().get(planId);
       if (sharedRecord) {
         sharedRecord.locked = true;
       }
@@ -1079,7 +1096,7 @@ export function registerOccurrencesModule(context) {
       if (occRecord) {
         occRecord.locked = false;
       }
-      const sharedRecord = planRecords.get(planId);
+      const sharedRecord = ensurePlanRecords().get(planId);
       if (sharedRecord) {
         sharedRecord.locked = false;
       }
@@ -1089,6 +1106,7 @@ export function registerOccurrencesModule(context) {
 
   const setupOccurrencesCounter = () => {
     const countElement = document.getElementById('occurrencesCount');
+    const countStatusElement = document.getElementById('occurrencesCountStatus');
     const occurrencesPanel = document.getElementById('occurrencesTablePanel');
 
     if (!countElement || !occurrencesPanel) {
@@ -1102,8 +1120,26 @@ export function registerOccurrencesModule(context) {
       const fallbackTotal =
         typeof state.occurrencesBadgeTotal === 'number' ? state.occurrencesBadgeTotal : 0;
       const total = pagerTotal ?? fallbackTotal;
-      countElement.textContent = `(${total})`;
-      countElement.classList.toggle('section-switch__count--alert', total > 0);
+      const clampedTotal = Math.max(0, total);
+      const displayValue = clampedTotal > 99 ? '99+' : String(clampedTotal);
+      countElement.textContent = displayValue;
+      countElement.dataset.count = String(clampedTotal);
+
+      let ariaLabel;
+      if (clampedTotal === 0) {
+        ariaLabel = 'Nenhuma ocorrência pendente';
+      } else if (clampedTotal === 1) {
+        ariaLabel = '1 ocorrência pendente';
+      } else if (clampedTotal > 99) {
+        ariaLabel = 'Mais de 99 ocorrências pendentes';
+      } else {
+        ariaLabel = `${clampedTotal} ocorrências pendentes`;
+      }
+
+      countElement.setAttribute('aria-label', ariaLabel);
+      if (countStatusElement) {
+        countStatusElement.textContent = ariaLabel;
+      }
     };
 
     let pendingHandle = null;

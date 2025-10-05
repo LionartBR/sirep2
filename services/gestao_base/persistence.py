@@ -11,7 +11,7 @@ from domain.enums import PlanStatus, Step
 from infra.config import settings
 from infra.repositories import OccurrenceRepository
 from services.base import StepJobContext
-from shared.text import normalize_document
+from shared.text import normalize_document, only_digits
 
 from .models import GestaoBaseData, ProgressCallback
 from .parcelas import normalize_parcelas_atraso
@@ -152,9 +152,28 @@ def persist_rows(
     occurrence_repo = OccurrenceRepository(context.db) if not settings.DRY_RUN else None
     occurrence_registrados: set[str] = set()
 
+    numeros_normalizados: list[str] = []
+    for row in data.rows:
+        digits = only_digits(row.numero)
+        numero_normalizado = digits if digits else (row.numero or "").strip()
+        numeros_normalizados.append(numero_normalizado)
+
+    numeros_unicos = [
+        numero for numero in dict.fromkeys(numeros_normalizados) if numero
+    ]
+
+    plan_cache = context.plans.prefetch_plan_ids(numeros_unicos)
+
     for idx, row in enumerate(data.rows, start=1):
+        numero_normalizado = numeros_normalizados[idx - 1]
+        if not numero_normalizado:
+            logger.debug("Número de plano inválido na linha %s: %r", idx, row.numero)
+            continue
+
+        existing = plan_cache.get(numero_normalizado)
+        existing_id = getattr(existing, "id", None)
+
         processados += 1
-        existente = context.plans.get_by_numero(row.numero)
         situacao = (row.situac or "").strip()
         tipo = (row.tipo or "").strip()
         dt_proposta = parse_date_any(row.dt_propost)
@@ -166,8 +185,10 @@ def persist_rows(
 
         campos: dict[str, Any] = {
             "dt_situacao_atual": hoje,
-            "situacao_anterior": existente.situacao_atual if existente else None,
         }
+        situacao_anterior = getattr(existing, "situacao_atual", None)
+        if situacao_anterior is not None:
+            campos["situacao_anterior"] = situacao_anterior
 
         parcelas_normalizadas, dias_calculado = normalize_parcelas_atraso(
             getattr(row, "parcelas_atraso", None),
@@ -202,15 +223,19 @@ def persist_rows(
         status = _infer_plan_status(situacao)
         if status is not None:
             campos["status"] = status
-        elif existente is None:
+        elif existing is None:
             campos["status"] = PlanStatus.PASSIVEL_RESC
 
         plan = context.plans.upsert(
-            numero_plano=row.numero, existing=existente, **campos
+            numero_plano=numero_normalizado,
+            existing=existing,
+            **campos,
         )
 
+        plan_cache[numero_normalizado] = plan
+
         if occurrence_repo and _should_register_occurrence(situacao):
-            numero_plano = row.numero.strip()
+            numero_plano = numero_normalizado
             if numero_plano and numero_plano not in occurrence_registrados:
                 cnpj_ocorrencia = (
                     representacao or inscricao_original or inscricao_canonica
@@ -231,7 +256,7 @@ def persist_rows(
                         numero_plano,
                     )
 
-        if existente is None:
+        if existing_id is None:
             novos += 1
             mensagem = "Plano importado via Gestão da Base"
         else:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Mapping, Optional, Sequence
 from uuid import UUID
@@ -155,30 +156,53 @@ class TreatmentRepository:
     ) -> TreatmentMigrationResult:
         filters_dict = dict(filters) if filters is not None else None
         payload = Json(filters_dict) if filters_dict is not None else None
-        existing_batch = await self.fetch_open_batch(grid)
+
+        existing_before = await self.fetch_open_batch(grid)
+        call_started_at = datetime.now(timezone.utc)
 
         async with self._connection.cursor(row_factory=dict_row) as cur:
             await cur.execute(
-                "SELECT app.tratamento_migrar_planos_global(%s::jsonb) AS result",
+                "SELECT lote_id, affected FROM app.tratamento_migrar_planos_global(%s::jsonb)",
                 (payload,),
             )
             result_row = await cur.fetchone()
 
-        lote_id, created_flag, items_seeded = self._parse_migration_result(result_row)
+        if not result_row:
+            raise RuntimeError("Resposta inválida ao migrar planos para tratamento")
+
+        lote_id_raw = result_row.get("lote_id")
+        affected_raw = result_row.get("affected")
+
+        lote_id = self._coerce_uuid(lote_id_raw)
+        affected = self._coerce_int(affected_raw) or 0
 
         if lote_id is None:
-            batch_after = await self.fetch_open_batch(grid)
-            if not batch_after:
+            batch_snapshot = await self.fetch_open_batch(grid)
+            if not batch_snapshot:
                 raise RuntimeError("Falha ao localizar lote aberto de tratamento")
-            lote_id = batch_after.id
-        created = (
-            bool(created_flag)
-            if created_flag is not None
-            else not existing_batch or existing_batch.id != lote_id
-        )
+            lote_id = batch_snapshot.id
+        else:
+            batch_snapshot = await self.fetch_batch_by_id(lote_id)
 
-        if items_seeded is None:
-            items_seeded = await self._count_items_for_lote(lote_id) if created else 0
+        if batch_snapshot is None:
+            batch_snapshot = await self.fetch_open_batch(grid)
+
+        if batch_snapshot is None:
+            raise RuntimeError("Lote de tratamento não encontrado após migração")
+
+        if batch_snapshot.created_at and batch_snapshot.created_at.tzinfo is None:
+            batch_created_at = batch_snapshot.created_at.replace(tzinfo=timezone.utc)
+        else:
+            batch_created_at = batch_snapshot.created_at
+
+        created = False
+        if existing_before is None:
+            if affected > 0:
+                created = True
+            elif batch_created_at:
+                created = batch_created_at >= call_started_at
+        else:
+            created = existing_before.id != lote_id
 
         await log_event_async(
             self._connection,
@@ -189,14 +213,14 @@ class TreatmentRepository:
             data={
                 "grid": grid,
                 "filters": filters_dict or {},
-                "items": items_seeded,
+                "items": affected,
                 "created": created,
             },
         )
 
         return TreatmentMigrationResult(
             lote_id=lote_id,
-            items_seeded=items_seeded,
+            affected=affected,
             created=created,
         )
 
@@ -219,68 +243,6 @@ class TreatmentRepository:
             return int(value)
         except (TypeError, ValueError):  # pragma: no cover - defensive
             return None
-
-    def _parse_migration_result(
-        self, row: Optional[Mapping[str, Any]]
-    ) -> tuple[Optional[UUID], Optional[bool], Optional[int]]:
-        if not row:
-            return None, None, None
-
-        candidate: Any
-        if len(row) == 1:
-            candidate = next(iter(row.values()))
-        else:
-            candidate = row
-
-        lote_id: Optional[UUID] = None
-        created_flag: Optional[bool] = None
-        items_seeded: Optional[int] = None
-
-        if isinstance(candidate, Mapping):
-            lote_id = self._coerce_uuid(
-                candidate.get("lote_id")
-                or candidate.get("id")
-                or candidate.get("lote")
-                or candidate.get("batch_id")
-            )
-            items_seeded = self._coerce_int(
-                candidate.get("items_seeded")
-                or candidate.get("items")
-                or candidate.get("inserted")
-                or candidate.get("count")
-            )
-            if "created" in candidate:
-                created_flag = bool(candidate.get("created"))
-        elif isinstance(candidate, (list, tuple)) and candidate:
-            lote_id = self._coerce_uuid(candidate[0])
-            if len(candidate) > 1:
-                items_seeded = self._coerce_int(candidate[1])
-            if len(candidate) > 2:
-                created_flag = bool(candidate[2])
-        else:
-            lote_id = self._coerce_uuid(candidate)
-
-        if lote_id is None:
-            lote_id = self._coerce_uuid(row.get("lote_id"))
-        if items_seeded is None:
-            items_seeded = self._coerce_int(row.get("items_seeded") or row.get("items"))
-        if created_flag is None and "created" in row:
-            created_flag = bool(row.get("created"))
-
-        return lote_id, created_flag, items_seeded
-
-    async def _count_items_for_lote(self, lote_id: UUID) -> int:
-        async with self._connection.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
-                "SELECT COUNT(*) AS total FROM app.tratamento_item WHERE lote_id = %s",
-                (lote_id,),
-            )
-            row = await cur.fetchone()
-        total = row.get("total") if row else 0
-        try:
-            return int(total)
-        except (TypeError, ValueError):  # pragma: no cover - defensive
-            return 0
 
     async def list_items_keyset(
         self,

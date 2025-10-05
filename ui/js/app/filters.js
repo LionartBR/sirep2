@@ -4,13 +4,13 @@ export function registerFiltersModule(context) {
   const hasActiveFilters = () =>
     (Array.isArray(filtersState.situacao) && filtersState.situacao.length > 0) ||
     filtersState.diasMin !== null ||
-    filtersState.saldoMin !== null ||
+    filtersState.saldoKey !== null ||
     Boolean(filtersState.dtRange);
 
   const resetFiltersState = () => {
     filtersState.situacao = [];
     filtersState.diasMin = null;
-    filtersState.saldoMin = null;
+    filtersState.saldoKey = null;
     filtersState.dtRange = null;
   };
 
@@ -38,8 +38,8 @@ export function registerFiltersModule(context) {
     if (filtersState.diasMin !== null) {
       chips.push({ type: 'diasMin', value: String(filtersState.diasMin) });
     }
-    if (filtersState.saldoMin !== null) {
-      chips.push({ type: 'saldoMin', value: String(filtersState.saldoMin) });
+    if (filtersState.saldoKey) {
+      chips.push({ type: 'saldoKey', value: String(filtersState.saldoKey) });
     }
     if (filtersState.dtRange) {
       chips.push({ type: 'dtRange', value: filtersState.dtRange });
@@ -118,8 +118,7 @@ export function registerFiltersModule(context) {
       }
 
       if (filterType === 'saldo') {
-        input.checked =
-          filtersState.saldoMin !== null && Number(value) === Number(filtersState.saldoMin);
+        input.checked = filtersState.saldoKey === value;
         return;
       }
 
@@ -148,7 +147,7 @@ export function registerFiltersModule(context) {
         filtersState.diasMin = null;
         break;
       case 'saldo':
-        filtersState.saldoMin = null;
+        filtersState.saldoKey = null;
         break;
       case 'dt':
         filtersState.dtRange = null;
@@ -208,8 +207,8 @@ export function registerFiltersModule(context) {
         case 'diasMin':
           filtersState.diasMin = null;
           break;
-        case 'saldoMin':
-          filtersState.saldoMin = null;
+        case 'saldoKey':
+          filtersState.saldoKey = null;
           break;
         case 'dtRange':
           filtersState.dtRange = null;
@@ -285,7 +284,7 @@ export function registerFiltersModule(context) {
           }
 
           if (filterType === 'saldo') {
-            filtersState.saldoMin = Number(target.value);
+            filtersState.saldoKey = target.value;
             applyFilters({ closeDropdown: true });
             return;
           }

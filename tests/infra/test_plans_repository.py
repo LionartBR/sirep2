@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import math
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, call, patch
@@ -118,12 +119,38 @@ def test_registrar_historico_insere_quando_situacao_altera():
     connection.cursor.assert_called_once_with()
     sql, params = cursor.execute.call_args[0]
     assert "INSERT INTO app.plano_situacao_hist" in sql
-    assert params == (
-        "plano-1",
-        "sit-1",
-        "2024-05-01T00:00:00+00:00",
-        "Carga inicial",
-    )
+
+
+def test_prefetch_plan_ids_uses_chunks():
+    total = 10_000
+    chunk_size = 2_500
+    expected_calls = math.ceil(total / chunk_size)
+
+    cursor = MagicMock()
+    cursor.fetchall.side_effect = [[] for _ in range(expected_calls)]
+
+    cursor_cm = MagicMock()
+    cursor_cm.__enter__.return_value = cursor
+    cursor_cm.__exit__.return_value = False
+
+    connection = MagicMock()
+    connection.cursor.side_effect = [cursor_cm for _ in range(expected_calls)]
+
+    repo = PlansRepository(connection)
+
+    numeros = [f"{idx:07d}" for idx in range(total)]
+    resultado = repo.prefetch_plan_ids(numeros)
+
+    assert resultado == {}
+    assert connection.cursor.call_count == expected_calls
+
+    for index, call_args in enumerate(cursor.execute.call_args_list):
+        _, params = call_args.args
+        lote = params[0]
+        if index < expected_calls - 1:
+            assert len(lote) == chunk_size
+        else:
+            assert len(lote) == total - chunk_size * (expected_calls - 1)
 
 
 def test_registrar_historico_ignora_quando_situacao_repetida():

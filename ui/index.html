@@ -121,8 +121,20 @@
                   data-table-target="occurrences"
                   tabindex="-1"
                 >
-                  OCORRÊNCIAS
-                  <span class="section-switch__count" id="occurrencesCount">(0)</span>
+                  <span class="section-switch__title" aria-describedby="occurrencesCountStatus">
+                    <span class="section-switch__text">OCORRÊNCIAS</span>
+                    <span
+                      class="occurrences-badge"
+                      id="occurrencesCount"
+                      role="status"
+                      aria-live="polite"
+                      aria-label="Nenhuma ocorrência pendente"
+                      data-count="0"
+                    >
+                      0
+                    </span>
+                    <span class="sr-only" id="occurrencesCountStatus">Nenhuma ocorrência pendente</span>
+                  </span>
                 </button>
               </div>
 
@@ -140,8 +152,8 @@
                   type="search"
                   id="tableSearchInput"
                   name="q"
-                  placeholder="Digite o número do plano, CNPJ/CEI ou razão social…"
-                  aria-label="Digite o número do plano, CNPJ/CEI ou razão social…"
+                  placeholder="Digite o número do plano, CNPJ/CPF/CEI ou razão social…"
+                  aria-label="Digite o número do plano, CNPJ/CPF/CEI ou razão social…"
                 />
                 <button class="table-search__button" type="submit" aria-label="Buscar">
                   <i data-feather="search" aria-hidden="true"></i>
@@ -178,6 +190,14 @@
                         <div class="table-filter__dropdown" role="menu">
                           <p class="table-filter__title">Selecione as situações</p>
                           <div class="table-filter__options" role="group" aria-label="Situação">
+                            <label class="table-filter__option">
+                              <input type="checkbox" value="EM_DIA" data-filter-input="situacao" />
+                              <span>Em dia</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="checkbox" value="EM_ATRASO" data-filter-input="situacao" />
+                              <span>Em atraso</span>
+                            </label>
                             <label class="table-filter__option">
                               <input type="checkbox" value="P_RESCISAO" data-filter-input="situacao" />
                               <span>P. Rescisão</span>
@@ -252,27 +272,27 @@
                           <i data-feather="chevron-down" class="table-filter__icon" aria-hidden="true"></i>
                         </button>
                         <div class="table-filter__dropdown" role="menu">
-                          <p class="table-filter__title">Saldo mínimo</p>
-                          <div class="table-filter__options" role="group" aria-label="Saldo mínimo">
+                          <p class="table-filter__title">Faixa de saldo</p>
+                          <div class="table-filter__options" role="group" aria-label="Faixa de saldo">
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="10000" data-filter-input="saldo" />
-                              <span>R$ 10 mil+</span>
+                              <input type="radio" name="filter-saldo" value="10_50k" data-filter-input="saldo" />
+                              <span>R$ 10 mil – R$ 50 mil</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="50000" data-filter-input="saldo" />
-                              <span>R$ 50 mil+</span>
+                              <input type="radio" name="filter-saldo" value="50_150k" data-filter-input="saldo" />
+                              <span>R$ 50 mil – R$ 150 mil</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="150000" data-filter-input="saldo" />
-                              <span>R$ 150 mil+</span>
+                              <input type="radio" name="filter-saldo" value="150_500k" data-filter-input="saldo" />
+                              <span>R$ 150 mil – R$ 500 mil</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="500000" data-filter-input="saldo" />
-                              <span>R$ 500 mil+</span>
+                              <input type="radio" name="filter-saldo" value="500_1000k" data-filter-input="saldo" />
+                              <span>R$ 500 mil – R$ 1 mi</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="1000000" data-filter-input="saldo" />
-                              <span>R$ 1 mi+</span>
+                              <input type="radio" name="filter-saldo" value="gte_1000k" data-filter-input="saldo" />
+                              <span>Acima de R$ 1 mi</span>
                             </label>
                           </div>
                           <div class="table-filter__actions">
@@ -476,6 +496,14 @@
                           <p class="table-filter__title">Selecione as situações</p>
                           <div class="table-filter__options" role="group" aria-label="Situação">
                             <label class="table-filter__option">
+                              <input type="checkbox" value="EM_DIA" data-filter-input="situacao" />
+                              <span>Em dia</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="checkbox" value="EM_ATRASO" data-filter-input="situacao" />
+                              <span>Em atraso</span>
+                            </label>
+                            <label class="table-filter__option">
                               <input type="checkbox" value="P_RESCISAO" data-filter-input="situacao" />
                               <span>P. Rescisão</span>
                             </label>
@@ -549,27 +577,27 @@
                           <i data-feather="chevron-down" class="table-filter__icon" aria-hidden="true"></i>
                         </button>
                         <div class="table-filter__dropdown" role="menu">
-                          <p class="table-filter__title">Saldo mínimo</p>
-                          <div class="table-filter__options" role="group" aria-label="Saldo mínimo">
+                          <p class="table-filter__title">Faixa de saldo</p>
+                          <div class="table-filter__options" role="group" aria-label="Faixa de saldo">
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="10000" data-filter-input="saldo" />
-                              <span>R$ 10 mil+</span>
+                              <input type="radio" name="filter-saldo" value="10_50k" data-filter-input="saldo" />
+                              <span>R$ 10 mil – R$ 50 mil</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="50000" data-filter-input="saldo" />
-                              <span>R$ 50 mil+</span>
+                              <input type="radio" name="filter-saldo" value="50_150k" data-filter-input="saldo" />
+                              <span>R$ 50 mil – R$ 150 mil</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="150000" data-filter-input="saldo" />
-                              <span>R$ 150 mil+</span>
+                              <input type="radio" name="filter-saldo" value="150_500k" data-filter-input="saldo" />
+                              <span>R$ 150 mil – R$ 500 mil</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="500000" data-filter-input="saldo" />
-                              <span>R$ 500 mil+</span>
+                              <input type="radio" name="filter-saldo" value="500_1000k" data-filter-input="saldo" />
+                              <span>R$ 500 mil – R$ 1 mi</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="1000000" data-filter-input="saldo" />
-                              <span>R$ 1 mi+</span>
+                              <input type="radio" name="filter-saldo" value="gte_1000k" data-filter-input="saldo" />
+                              <span>Acima de R$ 1 mi</span>
                             </label>
                           </div>
                           <div class="table-filter__actions">

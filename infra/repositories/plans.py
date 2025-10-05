@@ -66,6 +66,53 @@ class PlansRepository:
             situacao_atual=situacao,
         )
 
+    def prefetch_plan_ids(
+        self, numeros: Iterable[str], *, chunk_size: int = 2500
+    ) -> dict[str, PlanDTO]:
+        """Resolve planos conhecidos em lotes para evitar N+1."""
+
+        cache: dict[str, PlanDTO] = {}
+        vistos: set[str] = set()
+        normalizados: list[str] = []
+
+        for numero in numeros:
+            normalizado = only_digits(numero)
+            if not normalizado:
+                continue
+            if normalizado in vistos:
+                continue
+            vistos.add(normalizado)
+            normalizados.append(normalizado)
+
+        if not normalizados:
+            return cache
+
+        for start in range(0, len(normalizados), max(1, chunk_size)):
+            lote = normalizados[start : start + chunk_size]
+            if not lote:
+                continue
+            with self._conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT p.numero_plano, p.id, sp.codigo AS situacao_codigo
+                      FROM app.plano AS p
+                 LEFT JOIN ref.situacao_plano AS sp ON sp.id = p.situacao_plano_id
+                     WHERE p.numero_plano = ANY(%s)
+                    """,
+                    (lote,),
+                )
+                for row in cur.fetchall():
+                    numero_row = str(row.get("numero_plano") or "").strip()
+                    plano_id = row.get("id")
+                    if numero_row and plano_id is not None:
+                        cache[numero_row] = PlanDTO(
+                            id=str(plano_id),
+                            numero_plano=numero_row,
+                            situacao_atual=row.get("situacao_codigo"),
+                        )
+
+        return cache
+
     def upsert(
         self,
         numero_plano: str,

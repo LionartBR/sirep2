@@ -466,6 +466,7 @@ class _DummyCursor:
         self._rows = rows
         self.executed_sql: str | None = None
         self.executed_params: dict[str, Any] | None = None
+        self.executed_sql_history: list[str] = []
 
     async def __aenter__(self) -> "_DummyCursor":
         return self
@@ -474,8 +475,9 @@ class _DummyCursor:
         return False
 
     async def execute(self, sql: str, *args: Any, **kwargs: Any) -> None:
-        if sql.strip().upper() != 'COMMIT':
+        if sql.strip().upper() != "COMMIT":
             self.executed_sql = sql
+            self.executed_sql_history.append(sql)
             if args:
                 self.executed_params = args[0]
             else:
@@ -496,11 +498,13 @@ class _DummyConnection:
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self._rows = rows
         self.last_cursor: _DummyCursor | None = None
+        self.cursors: list[_DummyCursor] = []
 
     def cursor(self, *, row_factory):
         assert row_factory is dict_row
         cursor = _DummyCursor(self._rows)
         self.last_cursor = cursor
+        self.cursors.append(cursor)
         return cursor
 
 
@@ -560,6 +564,7 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
             "dt_situacao": datetime(2024, 5, 1, tzinfo=timezone.utc),
             "total_count": 120,
             "bloqueado": False,
+            "em_tratamento": False,
         }
     ]
 
@@ -603,11 +608,65 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
         assert response.items[0].status_date == date(2024, 5, 1)
         assert response.items[0].plan_id == "00000000-0000-0000-0000-000000000123"
         assert response.items[0].blocked is False
+        assert response.items[0].in_treatment is False
         assert response.filters is None
         assert len(bind_calls) == 1
         connection, matricula = bind_calls[0]
         assert isinstance(connection, _DummyConnection)
         assert matricula == "abc123"
+
+    _run(_exercise())
+
+
+def test_list_plans_marks_in_treatment(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = [
+        {
+            "plano_id": "00000000-0000-0000-0000-000000000999",
+            "numero_plano": "99999",
+            "numero_inscricao": None,
+            "razao_social": "Empresa Tratamento",
+            "situacao": "EM_DIA",
+            "dias_em_atraso": 0,
+            "saldo_total": Decimal("0"),
+            "dt_situacao": datetime(2024, 5, 1, tzinfo=timezone.utc),
+            "total_count": 1,
+            "bloqueado": False,
+            "em_tratamento": True,
+            "filas": 0,
+            "users_enfileirando": 0,
+            "lotes": 0,
+        }
+    ]
+
+    manager = _DummyManager(rows)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
+    async def _fake_bind(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="GESTOR",
+        ),
+    )
+
+    async def _exercise() -> None:
+        response = await plans.list_plans(
+            request=_make_request(),
+            q=None,
+            limit=plans.DEFAULT_LIMIT,
+            offset=0,
+        )
+
+        assert len(response.items) == 1
+        assert response.items[0].in_treatment is True
 
     _run(_exercise())
 
@@ -697,6 +756,7 @@ def test_block_plan_executes_function(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_block_plan_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = _DummyManager([{"blocked": False}])
     monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
     async def _fake_bind(*_: Any, **__: Any) -> None:
         return None
 
@@ -726,6 +786,7 @@ def test_block_plan_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_unblock_plan_executes_function(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = _DummyManager([{"affected": 1}])
     monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
     async def _fake_bind(*_: Any, **__: Any) -> None:
         return None
 
@@ -759,6 +820,7 @@ def test_unblock_plan_executes_function(monkeypatch: pytest.MonkeyPatch) -> None
 def test_unblock_plan_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = _DummyManager([{"affected": 0}])
     monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
     async def _fake_bind(*_: Any, **__: Any) -> None:
         return None
 
@@ -982,7 +1044,8 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
             occurrences_only=False,
             situacao=["P_RESCISAO", "RESCINDIDO"],
             dias_min=90,
-            saldo_min=50000,
+            saldo_min=None,
+            saldo_key="50_150k",
             dt_sit_range="THIS_MONTH",
         )
 
@@ -991,7 +1054,8 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
         expected_filters = PlansFilters(
             situacao=["P_RESCISAO", "RESCINDIDO"],
             dias_min=90,
-            saldo_min=50000,
+            saldo_key="50_150k",
+            saldo_min=None,
             dt_sit_range="THIS_MONTH",
         )
         assert response.filters.model_dump() == expected_filters.model_dump()
@@ -1003,13 +1067,24 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
         sql = cursor_obj.executed_sql
         assert "planos.situacao_codigo = ANY" in sql
         assert "make_interval" in sql
-        assert "COALESCE(planos.saldo, 0) >= %(saldo_min)s" in sql
+        assert "COALESCE(planos.saldo, 0) >= %(saldo_lo)s" in sql
+        assert "COALESCE(planos.saldo, 0) < %(saldo_hi)s" in sql
+        history_statements = [
+            statement
+            for cursor in manager.last_connection.cursors
+            for statement in cursor.executed_sql_history
+        ]
+        assert any(
+            "app.planos_em_tratamento()" in statement
+            for statement in history_statements
+        )
         assert "planos.dt_situacao >= date_trunc('month', CURRENT_DATE)" in sql
         params = cursor_obj.executed_params
         assert params is not None
         assert list(params["situacoes"]) == ["P_RESCISAO", "RESCINDIDO"]
         assert params["dias_min"] == 90
-        assert params["saldo_min"] == 50000
+        assert params["saldo_lo"] == 50_000
+        assert params["saldo_hi"] == 150_000
 
     _run(_exercise())
 

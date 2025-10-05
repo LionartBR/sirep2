@@ -142,7 +142,7 @@ async def migrate_treatment(
 
     return TreatmentMigrationResponse(
         lote_id=result.lote_id,
-        items_seeded=result.items_seeded,
+        affected=result.affected,
         created=result.created,
     )
 
