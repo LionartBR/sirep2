@@ -7,7 +7,7 @@ from hashlib import md5
 from time import sleep
 from typing import Iterable, Iterator, List, Optional, Tuple
 
-from services.pw3270 import PW3270
+from services.pw3270 import PW3270Protocol
 
 from .constants import (
     COL_START,
@@ -65,7 +65,9 @@ def should_skip_line(raw: str) -> bool:
 
 
 @contextmanager
-def session(pw: PW3270):  # pragma: no cover - integração externa
+def session(
+    pw: PW3270Protocol,
+) -> Iterator[None]:  # pragma: no cover - integração externa
     pw.connect(delay=100)
     try:
         if not pw.is_connected():
@@ -79,55 +81,59 @@ def session(pw: PW3270):  # pragma: no cover - integração externa
             logger.info("Sessão no Rede Caixa encerrada.")
 
 
-def enter(pw: PW3270):  # pragma: no cover - integração externa
+def enter(pw: PW3270Protocol) -> None:  # pragma: no cover - integração externa
     pw.enter()
     pw.wait_status_ok()
     sleep(REQUEST_DELAY)
 
 
-def pf(pw: PW3270, n: int):  # pragma: no cover - integração externa
+def pf(pw: PW3270Protocol, n: int) -> None:  # pragma: no cover - integração externa
     pw.send_pf_key(n)
     pw.wait_status_ok()
     sleep(REQUEST_DELAY)
 
 
-def put(pw: PW3270, row: int, col: int, text: str):  # pragma: no cover
+def put(pw: PW3270Protocol, row: int, col: int, text: str) -> None:  # pragma: no cover
     pw.put_string(row, col, text)
 
 
-def get_text(pw: PW3270, row: int, col: int, length: int) -> str:  # pragma: no cover
+def get_text(
+    pw: PW3270Protocol, row: int, col: int, length: int
+) -> str:  # pragma: no cover
     return (pw.get_string(row, col, length) or "").strip()
 
 
-def fill_and_enter(pw: PW3270, row: int, col: int, text: str):  # pragma: no cover
+def fill_and_enter(
+    pw: PW3270Protocol, row: int, col: int, text: str
+) -> None:  # pragma: no cover
     put(pw, row, col, text)
     enter(pw)
 
 
-def goto_tx(pw: PW3270, code: str):  # pragma: no cover
+def goto_tx(pw: PW3270Protocol, code: str) -> None:  # pragma: no cover
     fill_and_enter(pw, 21, 14, code)
 
 
-def login_fge(pw: PW3270, senha: str):  # pragma: no cover
+def login_fge(pw: PW3270Protocol, senha: str) -> None:  # pragma: no cover
     fill_and_enter(pw, 17, 38, "611")
     fill_and_enter(pw, 9, 58, senha)
     fill_and_enter(pw, 4, 15, "FGE")
 
 
-def open_e555(pw: PW3270):  # pragma: no cover
+def open_e555(pw: PW3270Protocol) -> None:  # pragma: no cover
     goto_tx(pw, "E555")
     fill_and_enter(pw, 7, 18, "06")
 
 
-def open_e527(pw: PW3270):  # pragma: no cover
+def open_e527(pw: PW3270Protocol) -> None:  # pragma: no cover
     goto_tx(pw, "E527")
 
 
-def open_e50h(pw: PW3270):  # pragma: no cover
+def open_e50h(pw: PW3270Protocol) -> None:  # pragma: no cover
     goto_tx(pw, "E50H")
 
 
-def read_page_lines(pw: PW3270) -> List[str]:  # pragma: no cover
+def read_page_lines(pw: PW3270Protocol) -> List[str]:  # pragma: no cover
     lines: List[str] = []
     for lin in DATA_LINES:
         raw = get_text(pw, lin, COL_START, COL_WIDTH)
@@ -136,17 +142,19 @@ def read_page_lines(pw: PW3270) -> List[str]:  # pragma: no cover
     return lines
 
 
-def read_pagination_hint(pw: PW3270) -> Tuple[int, int, int]:  # pragma: no cover
+def read_pagination_hint(
+    pw: PW3270Protocol,
+) -> Tuple[int, int, int]:  # pragma: no cover
     hint = get_text(pw, *STATUS_HINT_POS)
     return parse_pagination(hint)
 
 
-def read_footer_message(pw: PW3270) -> str:  # pragma: no cover
+def read_footer_message(pw: PW3270Protocol) -> str:  # pragma: no cover
     return get_text(pw, *FOOTER_MSG_POS)
 
 
 def iterate_e555_pages(
-    pw: PW3270,
+    pw: PW3270Protocol,
 ) -> Iterator[
     Tuple[List[str], Tuple[int, int, int], Optional[str]]
 ]:  # pragma: no cover
@@ -189,7 +197,7 @@ def iterate_e555_pages(
 
 
 def enrich_on_e527(
-    pw: PW3270, rows: Iterable[PlanRow]
+    pw: PW3270Protocol, rows: Iterable[PlanRow]
 ) -> List[PlanRowEnriched]:  # pragma: no cover
     enriched: List[PlanRowEnriched] = []
     for row in rows:
@@ -231,7 +239,7 @@ def enrich_on_e527(
 
 
 def search_grde(
-    pw: PW3270,
+    pw: PW3270Protocol,
     rows: Iterable[PlanRowEnriched],
 ) -> List[PlanRowEnriched]:  # pragma: no cover
     result: List[PlanRowEnriched] = []

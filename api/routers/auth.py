@@ -57,7 +57,7 @@ async def login(payload: LoginPayload) -> LoginResponse:
         ) from exc
 
     senha = (payload.senha or "").strip()
-    set_gestao_base_password(senha or None)
+    set_gestao_base_password(senha)
 
     return LoginResponse(matricula=payload.matricula)
 

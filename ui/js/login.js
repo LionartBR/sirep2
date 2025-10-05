@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
-  if (!window.Auth) {
+  const auth = window.Auth ?? globalThis.Auth ?? null;
+  if (!auth) {
     console.error('Módulo de autenticação indisponível.');
     return;
   }
@@ -8,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.feather.replace();
   }
 
-  if (Auth.isAuthenticated()) {
+  if (auth.isAuthenticated()) {
     window.location.replace('/app/index.html');
     return;
   }
@@ -160,7 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ');
 
-    Auth.login({
+    auth.login({
       username,
       remember: rememberInput.checked,
       name: displayName,

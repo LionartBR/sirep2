@@ -1,28 +1,26 @@
 from pathlib import Path
-from typing import Any, MutableMapping
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers
+from starlette.types import Scope
 
 from infra.config import settings
 from services.orchestrator import PipelineOrchestrator
 
 from .routers import auth, pipeline, plans, treatment
 
-# Local alias replicating ``starlette.types.Scope`` to avoid depending on optional typing helpers at runtime.
-Scope = MutableMapping[str, Any]
-
 
 class NoCacheStaticFiles(StaticFiles):
     """Serve arquivos estáticos sempre ignorando cache do navegador."""
 
     def is_not_modified(
-        self, *args, **kwargs
+        self, response_headers: Headers, request_headers: Headers
     ) -> bool:  # pragma: no cover - comportamento fixo
         return False
 
-    async def get_response(self, path: str, scope: Scope) -> Response:  # type: ignore[override]
+    async def get_response(self, path: str, scope: Scope) -> Response:
         response = await super().get_response(path, scope)
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response

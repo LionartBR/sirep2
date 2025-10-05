@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional, cast
 from uuid import UUID
 
 import pydantic
@@ -8,8 +8,17 @@ import pydantic
 from domain.pipeline import PipelineState, PipelineStatus
 
 BaseModel = pydantic.BaseModel
-ConfigDict = getattr(pydantic, "ConfigDict", dict)
 _HAS_MODEL_VALIDATE = hasattr(BaseModel, "model_validate")
+
+_CONFIG_DICT_FACTORY = getattr(pydantic, "ConfigDict", None)
+
+if _HAS_MODEL_VALIDATE:
+    if _CONFIG_DICT_FACTORY is not None:
+        _PIPELINE_MODEL_CONFIG: Any = _CONFIG_DICT_FACTORY(from_attributes=True)
+    else:  # pragma: no cover - fallback when ConfigDict missing
+        _PIPELINE_MODEL_CONFIG = {"from_attributes": True}
+else:
+    _PIPELINE_MODEL_CONFIG = None
 
 
 class PipelineStartPayload(BaseModel):
@@ -27,11 +36,11 @@ class PipelineStateResponse(BaseModel):
     finished_at: Optional[datetime] = None
     message: Optional[str] = None
 
-    if _HAS_MODEL_VALIDATE:
-        model_config = ConfigDict(from_attributes=True)
+    if _PIPELINE_MODEL_CONFIG is not None:
+        model_config: ClassVar[Any] = _PIPELINE_MODEL_CONFIG
     else:  # pragma: no cover - exercised when running with Pydantic v1
 
-        class Config:  # type: ignore[no-redef]
+        class Config:
             orm_mode = True
 
     @classmethod
@@ -40,7 +49,7 @@ class PipelineStateResponse(BaseModel):
 
         if _HAS_MODEL_VALIDATE:
             return cls.model_validate(state)
-        return cls.from_orm(state)  # type: ignore[return-value]
+        return cast("PipelineStateResponse", cls.from_orm(state))
 
 
 class PlanQueueStatusResponse(BaseModel):

@@ -9,7 +9,7 @@ import time
 from decimal import Decimal
 from datetime import datetime, timezone
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Callable, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.params import Param
@@ -17,10 +17,9 @@ from psycopg import AsyncConnection
 from psycopg.errors import InvalidAuthorizationSpecification, UniqueViolation
 
 try:  # pragma: no cover - allow running under test stubs
-    from psycopg.errors import QueryCanceled  # type: ignore[attr-defined]
+    from psycopg.errors import QueryCanceled as QueryCanceledError
 except Exception:  # pragma: no cover - fallback for tests without full psycopg
-
-    class QueryCanceled(Exception): ...
+    QueryCanceledError = Exception  # type: ignore[misc,assignment]
 
 
 from psycopg.rows import dict_row
@@ -46,15 +45,24 @@ from infra.repositories._helpers import (
 )
 from api.security import resolve_request_matricula, role_required
 
-try:  # pragma: no cover - fallback for tests overriding this attribute
-    from shared.config import get_principal_settings  # type: ignore
-except Exception:  # pragma: no cover - default stub when config is absent
+_get_principal_settings: Optional[Callable[[], Any]]
+try:  # pragma: no cover - allow tests to stub principal settings provider
+    from shared.config import get_principal_settings as _imported_principal_settings
+except Exception:  # pragma: no cover - fallback stub
+    _get_principal_settings = None
+else:
+    _get_principal_settings = _imported_principal_settings
 
-    def get_principal_settings():
-        class _Principal:
-            matricula: str | None = None
 
-        return _Principal()
+def get_principal_settings() -> Any:
+    provider: Optional[Callable[[], Any]] = _get_principal_settings
+    if provider is not None:
+        return provider()
+
+    class _Principal:
+        matricula: str | None = None
+
+    return _Principal()
 
 
 from shared.text import normalize_document
@@ -507,7 +515,7 @@ def _b64url_decode_json(token: str) -> dict[str, Any] | None:
     try:
         padding = "=" * (-len(token) % 4)
         data = base64.urlsafe_b64decode(token + padding)
-        return json.loads(data.decode("utf-8"))
+        return cast(dict[str, Any], json.loads(data.decode("utf-8")))
     except Exception:
         return None
 
@@ -629,7 +637,7 @@ async def _fast_total_count(
         value = int(count_raw) if count_raw is not None else 0
         _total_count_cache[cache_key] = (time.time() + 60.0, value)
         return value
-    except QueryCanceled:
+    except QueryCanceledError:
         # Timed out: try cache
         cached = _total_count_cache.get(cache_key)
         if cached and cached[0] > time.time():
@@ -898,21 +906,23 @@ async def list_plans(
         or dt_range_value is not None
     )
 
-    filters_model = PlansFilters(
+    candidate_filters = PlansFilters(
         situacao=situacao_values or None,
         dias_min=dias_threshold,
         saldo_key=saldo_key_value,
         saldo_min=saldo_threshold if saldo_key_value is None else None,
         dt_sit_range=dt_range_value,
     )
-    if not (
-        filters_model.situacao
-        or filters_model.dias_min is not None
-        or filters_model.saldo_key is not None
-        or filters_model.saldo_min is not None
-        or filters_model.dt_sit_range is not None
-    ):
-        filters_model = None
+    has_filters_configured = (
+        bool(candidate_filters.situacao)
+        or candidate_filters.dias_min is not None
+        or candidate_filters.saldo_key is not None
+        or candidate_filters.saldo_min is not None
+        or candidate_filters.dt_sit_range is not None
+    )
+    filters_model: PlansFilters | None = (
+        candidate_filters if has_filters_configured else None
+    )
 
     connection_manager = get_connection_manager()
     use_keyset = _should_use_keyset(request)

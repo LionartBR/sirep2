@@ -5,7 +5,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator, Optional, Union, TypeAlias
+from types import TracebackType
 
 from psycopg import AsyncConnection, Connection
 from psycopg.rows import dict_row
@@ -51,7 +52,13 @@ class JobStepHandle:
 _VALID_STEP_STATUSES = {"PENDING", "RUNNING", "SUCCESS", "ERROR", "SKIPPED"}
 
 
-_UNSET = object()
+class _UnsetType:
+    __slots__ = ()
+
+
+_UNSET = _UnsetType()
+
+OptionalStrOrUnset: TypeAlias = Union[Optional[str], _UnsetType]
 
 
 def _normalize_step_status(value: Optional[str], default: str = "SUCCESS") -> str:
@@ -146,8 +153,8 @@ def _persist_job_payload(
     job: JobRunHandle,
     payload: dict[str, Any],
     *,
-    status: Optional[str] = _UNSET,
-    error_message: Optional[str] = _UNSET,
+    status: OptionalStrOrUnset = _UNSET,
+    error_message: OptionalStrOrUnset = _UNSET,
 ) -> None:
     """Atualiza o payload do job (e, opcionalmente, status e erro)."""
 
@@ -155,10 +162,12 @@ def _persist_job_payload(
     params: list[Any] = [Json(_sanitize_payload(payload))]
 
     if status is not _UNSET:
+        assert status is None or isinstance(status, str)
         update_columns.append("status = %s")
         params.append(status)
 
     if error_message is not _UNSET:
+        assert error_message is None or isinstance(error_message, str)
         update_columns.append("error_msg = %s")
         params.append(error_message)
 
@@ -378,7 +387,7 @@ def job_run(
     conn: Connection,
     job_name: str,
     payload: Optional[dict[str, Any]] = None,
-) -> JobRunHandle:
+) -> Iterator[JobRunHandle]:
     """Registra o início e o término de um ``audit.job_run``."""
 
     with conn.cursor(row_factory=dict_row) as cur:
@@ -556,7 +565,12 @@ class JobRunAsync:
         )
         return self.handle
 
-    async def __aexit__(self, exc_type, exc, tb) -> Optional[bool]:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> Optional[bool]:
         assert self.handle is not None
         tenant_id, started_at, job_id = (
             self.handle.tenant_id,

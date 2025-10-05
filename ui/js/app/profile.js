@@ -1,6 +1,5 @@
-/* global Auth */
-
 export function registerProfileModule(context) {
+  const auth = window.Auth ?? globalThis.Auth ?? null;
   const canAccessBase = () => context.userProfile === 'GESTOR';
 
   const ensureToastElement = () => {
@@ -37,8 +36,8 @@ export function registerProfileModule(context) {
   };
 
   context.refreshProfileFromStore = () => {
-    if (typeof Auth?.getProfile === 'function') {
-      const storedProfile = Auth.getProfile();
+    if (typeof auth?.getProfile === 'function') {
+      const storedProfile = auth.getProfile();
       if (storedProfile) {
         context.userProfile = storedProfile;
       }
@@ -134,8 +133,8 @@ export function registerProfileModule(context) {
       return;
     }
     let normalizedProfile = perfil;
-    if (typeof Auth?.setProfile === 'function') {
-      const updatedSession = Auth.setProfile(perfil);
+    if (typeof auth?.setProfile === 'function') {
+      const updatedSession = auth.setProfile(perfil);
       if (updatedSession?.profile) {
         normalizedProfile = updatedSession.profile;
       }
@@ -161,11 +160,12 @@ export function registerProfileModule(context) {
     }
     context.signOutLink.addEventListener('click', (event) => {
       event.preventDefault();
-      Auth.logout();
+      if (typeof auth?.logout === 'function') {
+        auth.logout();
+      }
       window.location.replace('/app/login.html');
     });
   };
 
   context.canAccessBase = canAccessBase;
 }
-

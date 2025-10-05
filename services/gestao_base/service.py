@@ -40,6 +40,7 @@ class GestaoBaseService:
             return DryRunCollector()
 
         provided = (senha or "").strip()
+        resolved: Optional[str]
         if provided:
             set_gestao_base_password(provided)
             resolved = provided

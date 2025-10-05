@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Callable, Optional
 
+from services.pw3270 import PW3270Protocol
+
 from .constants import MSG_FIM_BLOCO, MSG_ULTIMA_PAGINA, RESOLUCAO_DESCARTAR
 from .models import GestaoBaseData, PlanRow, ProgressCallback, PipelineAuditHooks
 from .portal import aplica_sit_especial, build_tipo_map
@@ -22,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_pipeline(
-    pw,
+    pw: PW3270Protocol,
     senha: str,
     portal_provider: Optional[Callable[[], list[dict]]] = None,
     *,

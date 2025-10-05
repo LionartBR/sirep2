@@ -715,9 +715,7 @@ export function registerPlansModule(context) {
 
       const queueInfo = item?.treatment_queue ?? null;
       const isQueued = Boolean(queueInfo?.enqueued);
-      const isMarkedInTreatment = Boolean(
-        item?.in_treatment ?? item?.em_tratamento ?? false,
-      );
+      const isMarkedInTreatment = Boolean(item?.in_treatment ?? item?.em_tratamento ?? false);
       if (isQueued || isMarkedInTreatment) {
         row.classList.add('table__row--queued');
       } else {

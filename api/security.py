@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from collections.abc import Callable
-from typing import Any, Iterable, Literal
+from collections.abc import Awaitable, Callable
+from typing import Any, Iterable, Literal, Optional, cast
 
 from fastapi import HTTPException, Request, status
 from psycopg import AsyncConnection
@@ -37,7 +37,7 @@ def _normalized_role(role: str) -> RequestRole | None:
         return None
     mapped = _LEGACY_ROLE_MAP.get(candidate, candidate)
     if mapped in ("GESTOR", "RESCISAO"):
-        return mapped  # type: ignore[return-value]
+        return cast(RequestRole, mapped)
     return None
 
 
@@ -55,12 +55,14 @@ def resolve_request_matricula(
                 if candidate:
                     return candidate
 
-    provider: Callable[[], Any] | None = fallback
+    provider: Optional[Callable[[], Any]] = fallback
     if provider is None:
         try:  # late import to avoid circular dependency during startup/tests
-            from shared.config import get_principal_settings as provider  # type: ignore
+            from shared.config import get_principal_settings
         except Exception:  # pragma: no cover - defensive fallback
             provider = None
+        else:
+            provider = get_principal_settings
 
     if provider is None:
         return None
@@ -132,10 +134,12 @@ async def require_roles(
             detail="Você não tem permissão para acessar este recurso.",
         )
 
-    return profile
+    return cast(RequestRole, profile)
 
 
-def role_required(*roles: RequestRole):
+def role_required(
+    *roles: RequestRole,
+) -> Callable[[Request], Awaitable[RequestRole]]:
     """Create a dependency enforcing the given roles."""
 
     async def dependency(request: Request) -> RequestRole:

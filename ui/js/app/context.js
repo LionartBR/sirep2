@@ -1,7 +1,6 @@
-/* global Auth */
-
 export function createAppContext() {
-  const currentUser = Auth.getUser();
+  const auth = window.Auth ?? globalThis.Auth ?? null;
+  const currentUser = typeof auth?.getUser === 'function' ? auth.getUser() : null;
 
   const context = {
     currentUser,
@@ -105,7 +104,7 @@ export function createAppContext() {
   context.DEFAULT_PLAN_PAGE_SIZE = 10;
   context.TREATMENT_GRID = 'PLANOS_P_RESCISAO';
 
-  context.userProfile = typeof Auth?.getProfile === 'function' ? Auth.getProfile() : null;
+  context.userProfile = typeof auth?.getProfile === 'function' ? auth.getProfile() : null;
 
   context.treatmentBatchId = null;
   context.treatmentTotals = { pending: 0, processed: 0, skipped: 0 };

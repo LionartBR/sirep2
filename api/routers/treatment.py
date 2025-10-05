@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any, Callable, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -27,15 +28,24 @@ from services.treatment import (
 )
 from api.security import resolve_request_matricula, role_required
 
-try:  # pragma: no cover - allow monkeypatching in tests without config module
-    from shared.config import get_principal_settings  # type: ignore
-except Exception:  # pragma: no cover - fallback stub when config missing
+_get_principal_settings: Optional[Callable[[], Any]]
+try:  # pragma: no cover - allow tests to stub principal settings provider
+    from shared.config import get_principal_settings as _imported_principal_settings
+except Exception:  # pragma: no cover - fallback stub
+    _get_principal_settings = None
+else:
+    _get_principal_settings = _imported_principal_settings
 
-    def get_principal_settings():
-        class _Principal:
-            matricula: str | None = None
 
-        return _Principal()
+def get_principal_settings() -> Any:
+    provider: Optional[Callable[[], Any]] = _get_principal_settings
+    if provider is not None:
+        return provider()
+
+    class _Principal:
+        matricula: str | None = None
+
+    return _Principal()
 
 
 logger = logging.getLogger(__name__)
@@ -283,7 +293,7 @@ async def close_treatment_batch(
     request: Request,
     payload: TreatmentCloseRequest,
 ) -> dict[str, object]:
-    matricula = resolve_request_matricula(request, get_principal_settings)
+    matricula = resolve_request_matricula(request)
     if not matricula:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
