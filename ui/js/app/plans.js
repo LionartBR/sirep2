@@ -235,11 +235,7 @@ export function registerPlansModule(context) {
       plansLockAction.dataset.intent = intent;
       plansLockAction.disabled = shouldDisable;
       plansLockAction.setAttribute('aria-disabled', String(shouldDisable));
-      if (intent === 'block' && (hasQueuedSelection || hasTreatmentSelection)) {
-        plansLockAction.title = 'Plans in treatment cannot be locked';
-      } else {
-        plansLockAction.removeAttribute('title');
-      }
+      plansLockAction.removeAttribute('title');
       if (plansLockActionLabel) {
         plansLockActionLabel.textContent = intent === 'unblock' ? 'Desbloquear' : 'Bloquear';
       }
@@ -622,9 +618,7 @@ export function registerPlansModule(context) {
       if (!planId || statusInTreatment) {
         lockButton.disabled = true;
         lockButton.setAttribute('aria-disabled', 'true');
-        if (statusInTreatment) {
-          lockButton.title = 'Plans in treatment cannot be locked';
-        }
+        lockButton.removeAttribute('title');
       } else {
         lockButton.disabled = false;
         lockButton.setAttribute('aria-disabled', 'false');
