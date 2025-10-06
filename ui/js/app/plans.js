@@ -11,82 +11,16 @@ export function registerPlansModule(context) {
     plansSelectAllLabel,
     plansActionsSeparator,
     filtersState,
-    planMetadataById,
     plansPagerPrevBtn,
     plansPagerNextBtn,
     plansPagerLabel,
     plansPagerRange,
     PLANS_ENDPOINT,
     DEFAULT_PLAN_PAGE_SIZE,
-    plansLockAction,
   } = context;
 
   const plansPager = context.plansPager;
   const planCheckboxSelector = "input[type='checkbox'][data-plan-checkbox]";
-
-  const getPlanMetadata = (planId) => {
-    if (!planId || typeof planId !== 'string') {
-      return null;
-    }
-    if (!(planMetadataById instanceof Map)) {
-      return null;
-    }
-    const metadata = planMetadataById.get(planId) ?? null;
-    if (!metadata || typeof metadata !== 'object') {
-      return null;
-    }
-    return metadata;
-  };
-
-  const isPlanInTreatment = (planId) => {
-    const metadata = getPlanMetadata(planId);
-    if (!metadata) {
-      return false;
-    }
-    if (metadata.isQueued) {
-      return true;
-    }
-    const status = typeof metadata.status === 'string' ? metadata.status.trim().toLowerCase() : '';
-    return status.includes('em tratamento');
-  };
-
-  const updateLockActionState = (hasSelection) => {
-    if (!(plansLockAction instanceof HTMLElement)) {
-      return;
-    }
-    const selectedPlanIds = new Set(plansSelection);
-    if (plansTableBody) {
-      const checked = plansTableBody.querySelectorAll(
-        `${planCheckboxSelector}:checked:not(:disabled)`,
-      );
-      checked.forEach((checkbox) => {
-        if (!(checkbox instanceof HTMLInputElement)) {
-          return;
-        }
-        const planId = checkbox.dataset.planId ?? '';
-        if (planId) {
-          selectedPlanIds.add(planId);
-        }
-      });
-    }
-
-    let disabledDueToTreatment = false;
-    for (const planId of selectedPlanIds) {
-      if (isPlanInTreatment(planId)) {
-        disabledDueToTreatment = true;
-        break;
-      }
-    }
-
-    const shouldDisable = disabledDueToTreatment || !hasSelection;
-    plansLockAction.disabled = shouldDisable;
-    plansLockAction.setAttribute('aria-disabled', String(shouldDisable));
-    if (disabledDueToTreatment) {
-      plansLockAction.title = 'Plano em tratamento não pode ser bloqueado';
-    } else {
-      plansLockAction.removeAttribute('title');
-    }
-  };
 
   const getFirstVisiblePlansAction = () => {
     if (!plansActionsMenu) {
@@ -139,8 +73,6 @@ export function registerPlansModule(context) {
         plansActionsSeparator.setAttribute('hidden', 'hidden');
       }
     }
-
-    updateLockActionState(hasSelection);
 
     if (plansSelectAllAction instanceof HTMLElement) {
       const isDisabled = totalEnabledCheckboxes === 0;
@@ -285,9 +217,6 @@ export function registerPlansModule(context) {
       return;
     }
     plansSelection.clear();
-    if (planMetadataById instanceof Map) {
-      planMetadataById.clear();
-    }
     updatePlansActionsMenuState();
     closePlansActionsMenu();
     plansTableBody.innerHTML = '';
@@ -357,9 +286,6 @@ export function registerPlansModule(context) {
     plansTableBody.innerHTML = '';
     plansSelection.clear();
     closePlansActionsMenu();
-    if (planMetadataById instanceof Map) {
-      planMetadataById.clear();
-    }
     const plans = Array.isArray(items) ? items : [];
     if (!plans.length) {
       if (state.currentPlansSearchTerm) {
@@ -389,12 +315,6 @@ export function registerPlansModule(context) {
 
       const queueInfo = item?.treatment_queue ?? null;
       const isQueued = Boolean(queueInfo?.enqueued);
-      if (planId && planMetadataById instanceof Map) {
-        planMetadataById.set(planId, {
-          status: typeof item?.status === 'string' ? item.status : '',
-          isQueued,
-        });
-      }
       const planCell = document.createElement('td');
       planCell.className = 'table__cell';
       planCell.textContent = item?.number ?? '';

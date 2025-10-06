@@ -51,7 +51,6 @@ export function createAppContext() {
   context.plansActionsMenu = document.getElementById('plansActionsMenu');
   context.plansSelectAllAction = context.plansActionsMenu?.querySelector('[data-action="select-all"]') ?? null;
   context.plansSelectAllLabel = context.plansSelectAllAction?.querySelector('span') ?? null;
-  context.plansLockAction = context.plansActionsMenu?.querySelector('[data-action="lock"]') ?? null;
   context.plansActionsSeparator = context.plansActionsMenu?.querySelector('[data-role="separator"]') ?? null;
   context.plansFiltersChipsContainer = document.getElementById('plansFiltersChips');
   context.occFiltersChipsContainer = document.getElementById('occFiltersChips');
@@ -115,7 +114,6 @@ export function createAppContext() {
     dtRange: null,
   };
   context.plansSelection = new Set();
-  context.planMetadataById = new Map();
   context.FILTER_LABELS = {
     situacao: {
       EM_DIA: 'EM DIA',
