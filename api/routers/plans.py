@@ -25,8 +25,12 @@ except Exception:  # pragma: no cover - fallback for tests without full psycopg
 from psycopg.rows import dict_row
 
 from api.models import (
+    PlanBlockRequest,
+    PlanBlockResponse,
     PlanQueueStatusResponse,
     PlanSummaryResponse,
+    PlanUnblockRequest,
+    PlanUnblockResponse,
     PlansFilters,
     PlansPaging,
     PlansResponse,
@@ -50,6 +54,7 @@ except Exception:  # pragma: no cover - default stub when config is absent
             matricula: str | None = None
 
         return _Principal()
+from services.plans import PlanBlockingService
 from shared.text import normalize_document
 
 logger = logging.getLogger(__name__)
@@ -164,6 +169,7 @@ def _normalize_dt_range(value: str | None) -> str | None:
 
 PLAN_DEFAULT_QUERY = """
     SELECT
+        planos.plano_id,
         planos.numero_plano,
         planos.documento,
         planos.razao_social,
@@ -174,8 +180,17 @@ PLAN_DEFAULT_QUERY = """
         COUNT(*) OVER () AS total_count,
         trat.filas,
         trat.users_enfileirando,
-        trat.lotes
+        trat.lotes,
+        (b.plano_id IS NOT NULL) AS bloqueado,
+        b.created_at AS bloqueado_em,
+        b.unlocked_at AS desbloqueado_em,
+        b.motivo AS motivo_bloqueio
       FROM app.vw_planos_busca AS planos
+ LEFT JOIN app.plano_bloqueio AS b
+        ON b.plano_id = planos.plano_id
+       AND b.ativo = TRUE
+       AND b.unlocked_at IS NULL
+       AND (b.expires_at IS NULL OR b.expires_at > now())
  LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
      ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
@@ -183,6 +198,7 @@ PLAN_DEFAULT_QUERY = """
 
 PLAN_SEARCH_BY_NUMBER_QUERY = """
     SELECT
+        planos.plano_id,
         planos.numero_plano,
         planos.documento,
         planos.razao_social,
@@ -193,8 +209,17 @@ PLAN_SEARCH_BY_NUMBER_QUERY = """
         COUNT(*) OVER () AS total_count,
         trat.filas,
         trat.users_enfileirando,
-        trat.lotes
+        trat.lotes,
+        (b.plano_id IS NOT NULL) AS bloqueado,
+        b.created_at AS bloqueado_em,
+        b.unlocked_at AS desbloqueado_em,
+        b.motivo AS motivo_bloqueio
       FROM app.vw_planos_busca AS planos
+ LEFT JOIN app.plano_bloqueio AS b
+        ON b.plano_id = planos.plano_id
+       AND b.ativo = TRUE
+       AND b.unlocked_at IS NULL
+       AND (b.expires_at IS NULL OR b.expires_at > now())
  LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
      WHERE planos.numero_plano = %(number)s
         OR planos.numero_plano LIKE %(number_prefix)s
@@ -204,6 +229,7 @@ PLAN_SEARCH_BY_NUMBER_QUERY = """
 
 PLAN_SEARCH_BY_NAME_QUERY = """
     SELECT
+        planos.plano_id,
         planos.numero_plano,
         planos.documento,
         planos.razao_social,
@@ -214,8 +240,17 @@ PLAN_SEARCH_BY_NAME_QUERY = """
         COUNT(*) OVER () AS total_count,
         trat.filas,
         trat.users_enfileirando,
-        trat.lotes
+        trat.lotes,
+        (b.plano_id IS NOT NULL) AS bloqueado,
+        b.created_at AS bloqueado_em,
+        b.unlocked_at AS desbloqueado_em,
+        b.motivo AS motivo_bloqueio
       FROM app.vw_planos_busca AS planos
+ LEFT JOIN app.plano_bloqueio AS b
+        ON b.plano_id = planos.plano_id
+       AND b.ativo = TRUE
+       AND b.unlocked_at IS NULL
+       AND (b.expires_at IS NULL OR b.expires_at > now())
  LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
      WHERE planos.razao_social ILIKE %(name_pattern)s
      ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
@@ -224,6 +259,7 @@ PLAN_SEARCH_BY_NAME_QUERY = """
 
 PLAN_SEARCH_BY_DOCUMENT_QUERY = """
     SELECT
+        planos.plano_id,
         planos.numero_plano,
         planos.documento,
         planos.razao_social,
@@ -234,8 +270,17 @@ PLAN_SEARCH_BY_DOCUMENT_QUERY = """
         COUNT(*) OVER () AS total_count,
         trat.filas,
         trat.users_enfileirando,
-        trat.lotes
+        trat.lotes,
+        (b.plano_id IS NOT NULL) AS bloqueado,
+        b.created_at AS bloqueado_em,
+        b.unlocked_at AS desbloqueado_em,
+        b.motivo AS motivo_bloqueio
       FROM app.vw_planos_busca AS planos
+ LEFT JOIN app.plano_bloqueio AS b
+        ON b.plano_id = planos.plano_id
+       AND b.ativo = TRUE
+       AND b.unlocked_at IS NULL
+       AND (b.expires_at IS NULL OR b.expires_at > now())
  LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
      WHERE planos.documento = %(document)s
        AND planos.tipo_doc IN ('CNPJ', 'CPF', 'CEI')
@@ -324,6 +369,7 @@ def _format_status(value: Any) -> str | None:
 def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
     """Transform a database row into the API response model."""
 
+    plan_id = row.get("plano_id") or row.get("plan_id") or None
     number = str(row.get("numero_plano") or "").strip()
     document = _normalize_document(
         row.get("numero_inscricao") or row.get("documento") or row.get("document")
@@ -353,7 +399,17 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
         lotes=lotes,
     )
 
+    blocked = bool(row.get("bloqueado"))
+    blocked_at = row.get("bloqueado_em")
+    unblocked_at = row.get("desbloqueado_em")
+    block_reason_raw = row.get("motivo_bloqueio")
+    block_reason = None
+    if block_reason_raw is not None:
+        reason_str = str(block_reason_raw).strip()
+        block_reason = reason_str or None
+
     return PlanSummaryResponse(
+        plan_id=plan_id,
         number=number,
         document=document,
         company_name=company_name,
@@ -362,7 +418,89 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
         balance=balance,
         status_date=status_date,
         treatment_queue=treatment_queue,
+        blocked=blocked,
+        blocked_at=blocked_at,
+        unblocked_at=unblocked_at,
+        block_reason=block_reason,
     )
+
+
+@router.post("/block", response_model=PlanBlockResponse)
+async def block_plans_endpoint(
+    request: Request,
+    payload: PlanBlockRequest,
+) -> PlanBlockResponse:
+    matricula = resolve_request_matricula(request, get_principal_settings)
+    if not matricula:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais de acesso ausentes.",
+        )
+
+    if not payload.plano_ids:
+        return PlanBlockResponse(ok=True, blocked_count=0)
+
+    connection_manager = get_connection_manager()
+    try:
+        async with connection_manager as connection:
+            await bind_session(connection, matricula)
+            service = PlanBlockingService(connection)
+            result = await service.block_plans(
+                plano_ids=payload.plano_ids,
+                motivo=payload.motivo,
+                expires_at=payload.expires_at,
+            )
+    except (PermissionError, InvalidAuthorizationSpecification) as exc:
+        logger.exception("Erro de autenticação ao bloquear planos")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais de acesso inválidas.",
+        ) from exc
+    except Exception as exc:  # pragma: no cover - defensive programming
+        logger.exception("Erro ao bloquear planos")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Não foi possível bloquear os planos.",
+        ) from exc
+
+    return PlanBlockResponse(ok=True, blocked_count=result.blocked_count)
+
+
+@router.post("/unblock", response_model=PlanUnblockResponse)
+async def unblock_plans_endpoint(
+    request: Request,
+    payload: PlanUnblockRequest,
+) -> PlanUnblockResponse:
+    matricula = resolve_request_matricula(request, get_principal_settings)
+    if not matricula:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais de acesso ausentes.",
+        )
+
+    if not payload.plano_ids:
+        return PlanUnblockResponse(ok=True, unblocked_count=0)
+
+    connection_manager = get_connection_manager()
+    try:
+        async with connection_manager as connection:
+            await bind_session(connection, matricula)
+            service = PlanBlockingService(connection)
+            result = await service.unblock_plans(plano_ids=payload.plano_ids)
+    except (PermissionError, InvalidAuthorizationSpecification) as exc:
+        logger.exception("Erro de autenticação ao desbloquear planos")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais de acesso inválidas.",
+        ) from exc
+    except Exception as exc:  # pragma: no cover - defensive programming
+        logger.exception("Erro ao desbloquear planos")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Não foi possível desbloquear os planos.",
+        ) from exc
+
+    return PlanUnblockResponse(ok=True, unblocked_count=result.unblocked_count)
 
 
 def _get_query_params(request: Request | None) -> set[str]:
@@ -614,10 +752,19 @@ async def _fetch_keyset_page(
         )
 
     sql = (
-        "SELECT planos.numero_plano, planos.documento, planos.razao_social, planos.situacao,"
+        "SELECT planos.plano_id, planos.numero_plano, planos.documento, planos.razao_social, planos.situacao,"
         " planos.dias_em_atraso, planos.saldo, planos.dt_situacao,"
-        " trat.filas, trat.users_enfileirando, trat.lotes"
+        " trat.filas, trat.users_enfileirando, trat.lotes,"
+        " (b.plano_id IS NOT NULL) AS bloqueado,"
+        " b.created_at AS bloqueado_em,"
+        " b.unlocked_at AS desbloqueado_em,"
+        " b.motivo AS motivo_bloqueio"
         " FROM app.vw_planos_busca AS planos"
+        " LEFT JOIN app.plano_bloqueio AS b"
+        "        ON b.plano_id = planos.plano_id"
+        "       AND b.ativo = TRUE"
+        "       AND b.unlocked_at IS NULL"
+        "       AND (b.expires_at IS NULL OR b.expires_at > now())"
         " LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id"
         f"{where_clause}{order_sql}{limit_sql}"
     )

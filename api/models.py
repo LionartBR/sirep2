@@ -55,6 +55,7 @@ class PlanQueueStatusResponse(BaseModel):
 class PlanSummaryResponse(BaseModel):
     """Represents a single row shown in the plans dashboard."""
 
+    plan_id: Optional[UUID] = None
     number: str
     document: Optional[str] = None
     company_name: Optional[str] = None
@@ -63,6 +64,38 @@ class PlanSummaryResponse(BaseModel):
     balance: Optional[Decimal] = None
     status_date: Optional[date] = None
     treatment_queue: Optional[PlanQueueStatusResponse] = None
+    blocked: bool = False
+    blocked_at: Optional[datetime] = None
+    unblocked_at: Optional[datetime] = None
+    block_reason: Optional[str] = None
+
+
+class PlanBlockRequest(BaseModel):
+    """Payload accepted to block one or more plans."""
+
+    plano_ids: list[UUID]
+    motivo: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+
+class PlanBlockResponse(BaseModel):
+    """Response after attempting to block plans."""
+
+    ok: bool
+    blocked_count: int
+
+
+class PlanUnblockRequest(BaseModel):
+    """Payload accepted to unblock plans."""
+
+    plano_ids: list[UUID]
+
+
+class PlanUnblockResponse(BaseModel):
+    """Response after attempting to unblock plans."""
+
+    ok: bool
+    unblocked_count: int
 
 
 class PlansPaging(BaseModel):

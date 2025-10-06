@@ -7,9 +7,12 @@ from typing import Any
 from types import ModuleType
 import importlib
 import sys
+from uuid import UUID
 
 import pytest
 
+from api.models import PlanBlockRequest, PlanUnblockRequest
+from domain.plan_block import PlanBlockResult, PlanUnblockResult
 
 def _ensure_psycopg_stub() -> None:
     required_modules = [
@@ -493,6 +496,7 @@ def _run(coro: asyncio.Future[Any]) -> Any:
 def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     rows = [
         {
+            "plano_id": UUID("12345678-1234-5678-1234-567812345678"),
             "numero_plano": "12345",
             "numero_inscricao": "12.345.678/0001-90",
             "razao_social": "Empresa Teste",
@@ -501,6 +505,10 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
             "saldo_total": Decimal("1500.50"),
             "dt_situacao": datetime(2024, 5, 1, tzinfo=timezone.utc),
             "total_count": 120,
+            "bloqueado": True,
+            "bloqueado_em": datetime(2024, 5, 2, tzinfo=timezone.utc),
+            "desbloqueado_em": None,
+            "motivo_bloqueio": "Processo judicial",
         }
     ]
 
@@ -542,11 +550,124 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
         assert response.items[0].days_overdue == 12
         assert response.items[0].balance == Decimal("1500.50")
         assert response.items[0].status_date == date(2024, 5, 1)
+        assert response.items[0].plan_id == UUID("12345678-1234-5678-1234-567812345678")
+        assert response.items[0].blocked is True
+        assert response.items[0].blocked_at == datetime(2024, 5, 2, tzinfo=timezone.utc)
+        assert response.items[0].unblocked_at is None
+        assert response.items[0].block_reason == "Processo judicial"
         assert response.filters is None
         assert len(bind_calls) == 1
         connection, matricula = bind_calls[0]
         assert isinstance(connection, _DummyConnection)
         assert matricula == "abc123"
+
+    _run(_exercise())
+
+
+def test_block_plans_endpoint_returns_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _DummyManager([])
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
+    async def _fake_bind(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula=None,
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    captured: dict[str, Any] = {}
+
+    class _FakeBlockingService:
+        def __init__(self, connection: Any) -> None:
+            captured["connection"] = connection
+
+        async def block_plans(
+            self,
+            *,
+            plano_ids: Any,
+            motivo: str | None = None,
+            expires_at: Any = None,
+        ) -> PlanBlockResult:
+            captured["ids"] = list(plano_ids)
+            captured["motivo"] = motivo
+            captured["expires_at"] = expires_at
+            return PlanBlockResult(blocked_count=5)
+
+    monkeypatch.setattr(plans, "PlanBlockingService", _FakeBlockingService)
+
+    payload = PlanBlockRequest(
+        plano_ids=[UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")],
+        motivo="manutenção",
+    )
+
+    async def _exercise() -> None:
+        response = await plans.block_plans_endpoint(
+            request=_make_request({"X-User-Registration": "abc123"}),
+            payload=payload,
+        )
+
+        assert response.ok is True
+        assert response.blocked_count == 5
+        assert captured["ids"] == list(payload.plano_ids)
+        assert captured["motivo"] == "manutenção"
+        assert captured["connection"] is manager.last_connection
+
+    _run(_exercise())
+
+
+def test_unblock_plans_endpoint_returns_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _DummyManager([])
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
+    async def _fake_bind(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    captured: dict[str, Any] = {}
+
+    class _FakeBlockingService:
+        def __init__(self, connection: Any) -> None:
+            captured["connection"] = connection
+
+        async def unblock_plans(self, *, plano_ids: Any) -> PlanUnblockResult:
+            captured["ids"] = list(plano_ids)
+            return PlanUnblockResult(unblocked_count=7)
+
+    monkeypatch.setattr(plans, "PlanBlockingService", _FakeBlockingService)
+
+    payload = PlanUnblockRequest(plano_ids=[UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")])
+
+    async def _exercise() -> None:
+        response = await plans.unblock_plans_endpoint(
+            request=_make_request(),
+            payload=payload,
+        )
+
+        assert response.ok is True
+        assert response.unblocked_count == 7
+        assert captured["ids"] == list(payload.plano_ids)
+        assert captured["connection"] is manager.last_connection
 
     _run(_exercise())
 

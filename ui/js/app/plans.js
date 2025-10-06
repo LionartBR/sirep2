@@ -9,6 +9,8 @@ export function registerPlansModule(context) {
     plansActionsMenu,
     plansSelectAllAction,
     plansSelectAllLabel,
+    plansLockAction,
+    plansLockActionLabel,
     plansActionsSeparator,
     filtersState,
     plansPagerPrevBtn,
@@ -21,6 +23,128 @@ export function registerPlansModule(context) {
 
   const plansPager = context.plansPager;
   const planCheckboxSelector = "input[type='checkbox'][data-plan-checkbox]";
+
+  state.isProcessingPlanLock = false;
+  if (!(state.planMetadata instanceof Map)) {
+    state.planMetadata = new Map();
+  }
+
+  const getPlanRowById = (planId) => {
+    if (!plansTableBody || !planId) {
+      return null;
+    }
+    const rows = plansTableBody.querySelectorAll('tr[data-plan-id]');
+    for (const row of rows) {
+      if (row instanceof HTMLElement && row.dataset.planId === planId) {
+        return row;
+      }
+    }
+    return null;
+  };
+
+  const selectionHasBlockedRows = () => {
+    if (!plansSelection.size || !plansTableBody) {
+      return false;
+    }
+    for (const planId of plansSelection) {
+      const row = getPlanRowById(planId);
+      if (row?.dataset.planBlocked === 'true') {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const selectionHasQueuedRows = () => {
+    if (!plansSelection.size) {
+      return false;
+    }
+    if (!(state.planMetadata instanceof Map)) {
+      return false;
+    }
+    for (const planId of plansSelection) {
+      const metadata = state.planMetadata.get(planId);
+      if (metadata?.queued) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const selectionHasTreatmentStatus = () => {
+    if (!plansSelection.size) {
+      return false;
+    }
+    if (!(state.planMetadata instanceof Map)) {
+      return false;
+    }
+    for (const planId of plansSelection) {
+      const metadata = state.planMetadata.get(planId);
+      if (metadata?.statusInTreatment) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const buildPlansActionUrl = (path) => {
+    const baseUrl =
+      window.location.origin && window.location.origin !== 'null'
+        ? window.location.origin
+        : window.location.href;
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return new URL(`${PLANS_ENDPOINT}${normalizedPath}`, baseUrl);
+  };
+
+  const performPlansMutation = async (path, body) => {
+    const url = buildPlansActionUrl(path);
+    const headers = new Headers({ Accept: 'application/json', 'Content-Type': 'application/json' });
+    const matricula = state.currentUser?.username?.trim();
+    if (matricula) {
+      headers.set('X-User-Registration', matricula);
+    }
+    const response = await fetch(url.toString(), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error('Falha ao atualizar o bloqueio dos planos.');
+    }
+    return response.json().catch(() => null);
+  };
+
+  const requestBlockPlans = (planIds, { motivo = null, expiresAt = null } = {}) =>
+    performPlansMutation('/block', {
+      plano_ids: planIds,
+      motivo,
+      expires_at: expiresAt,
+    });
+
+  const requestUnblockPlans = (planIds) =>
+    performPlansMutation('/unblock', {
+      plano_ids: planIds,
+    });
+
+  const updateLockButtonIcon = (button, { locked, planNumber, planId }) => {
+    if (!(button instanceof HTMLElement)) {
+      return;
+    }
+    let icon = button.querySelector('i');
+    if (!(icon instanceof HTMLElement)) {
+      icon = document.createElement('i');
+      icon.setAttribute('aria-hidden', 'true');
+      button.appendChild(icon);
+    }
+    icon.setAttribute('data-feather', locked ? 'unlock' : 'lock');
+    button.dataset.locked = locked ? 'true' : 'false';
+    button.setAttribute('aria-pressed', locked ? 'true' : 'false');
+    const identifier = planNumber || planId || '';
+    const actionLabel = locked ? 'Desbloquear plano' : 'Bloquear plano';
+    const label = identifier ? `${actionLabel} ${identifier}` : actionLabel;
+    button.setAttribute('aria-label', label);
+    button.title = label;
+  };
 
   const getFirstVisiblePlansAction = () => {
     if (!plansActionsMenu) {
@@ -42,15 +166,16 @@ export function registerPlansModule(context) {
     if (!plansActionsMenu) {
       return;
     }
-    const totalEnabledCheckboxes = plansTableBody
-      ? plansTableBody.querySelectorAll(`${planCheckboxSelector}:not(:disabled)`).length
-      : 0;
-    const checkedEnabledCheckboxes = plansTableBody
-      ? plansTableBody.querySelectorAll(`${planCheckboxSelector}:checked:not(:disabled)`).length
-      : 0;
-    const hasSelection = plansSelection.size > 0 || checkedEnabledCheckboxes > 0;
-    const allSelected =
-      totalEnabledCheckboxes > 0 && checkedEnabledCheckboxes === totalEnabledCheckboxes;
+    const allCheckboxes = plansTableBody
+      ? plansTableBody.querySelectorAll(`${planCheckboxSelector}`)
+      : [];
+    const totalCheckboxes = allCheckboxes.length;
+    const checkedCheckboxes = plansTableBody
+      ? plansTableBody.querySelectorAll(`${planCheckboxSelector}:checked`)
+      : [];
+    const checkedCount = checkedCheckboxes.length;
+    const hasSelection = plansSelection.size > 0 || checkedCount > 0;
+    const allSelected = totalCheckboxes > 0 && checkedCount === totalCheckboxes;
 
     const requiresSelectionItems = plansActionsMenu.querySelectorAll('[data-requires-selection]');
     requiresSelectionItems.forEach((node) => {
@@ -75,12 +200,33 @@ export function registerPlansModule(context) {
     }
 
     if (plansSelectAllAction instanceof HTMLElement) {
-      const isDisabled = totalEnabledCheckboxes === 0;
+      const isDisabled = totalCheckboxes === 0;
       plansSelectAllAction.disabled = isDisabled;
       plansSelectAllAction.setAttribute('aria-disabled', String(isDisabled));
       plansSelectAllAction.dataset.mode = allSelected ? 'clear' : 'select';
       if (plansSelectAllLabel) {
         plansSelectAllLabel.textContent = allSelected ? 'Desmarcar todos' : 'Selecionar todos';
+      }
+    }
+
+    if (plansLockAction instanceof HTMLElement) {
+      const intent = selectionHasBlockedRows() ? 'unblock' : 'block';
+      const hasQueuedSelection = selectionHasQueuedRows();
+      const hasTreatmentSelection = selectionHasTreatmentStatus();
+      const shouldDisable =
+        !hasSelection ||
+        state.isProcessingPlanLock ||
+        (intent === 'block' && (hasQueuedSelection || hasTreatmentSelection));
+      plansLockAction.dataset.intent = intent;
+      plansLockAction.disabled = shouldDisable;
+      plansLockAction.setAttribute('aria-disabled', String(shouldDisable));
+      if (intent === 'block' && (hasQueuedSelection || hasTreatmentSelection)) {
+        plansLockAction.title = 'Plans in treatment cannot be locked';
+      } else {
+        plansLockAction.removeAttribute('title');
+      }
+      if (plansLockActionLabel) {
+        plansLockActionLabel.textContent = intent === 'unblock' ? 'Desbloquear' : 'Bloquear';
       }
     }
 
@@ -154,14 +300,21 @@ export function registerPlansModule(context) {
     if (row instanceof HTMLElement) {
       applyPlanRowSelectionState(row, checked);
     }
-    const hasIdentifier = typeof planId === 'string' && planId.trim().length > 0;
-    if (!hasIdentifier) {
+    let normalizedId = '';
+    if (typeof planId === 'string') {
+      normalizedId = planId.trim();
+    } else if (typeof planId === 'number') {
+      normalizedId = String(planId);
+    } else if (planId && typeof planId === 'object' && 'toString' in planId) {
+      normalizedId = String(planId).trim();
+    }
+    if (!normalizedId) {
       return;
     }
     if (checked) {
-      plansSelection.add(planId);
+      plansSelection.add(normalizedId);
     } else {
-      plansSelection.delete(planId);
+      plansSelection.delete(normalizedId);
     }
   };
 
@@ -217,6 +370,9 @@ export function registerPlansModule(context) {
       return;
     }
     plansSelection.clear();
+    if (state.planMetadata instanceof Map) {
+      state.planMetadata.clear();
+    }
     updatePlansActionsMenuState();
     closePlansActionsMenu();
     plansTableBody.innerHTML = '';
@@ -286,6 +442,11 @@ export function registerPlansModule(context) {
     plansTableBody.innerHTML = '';
     plansSelection.clear();
     closePlansActionsMenu();
+    if (!(state.planMetadata instanceof Map)) {
+      state.planMetadata = new Map();
+    } else {
+      state.planMetadata.clear();
+    }
     const plans = Array.isArray(items) ? items : [];
     if (!plans.length) {
       if (state.currentPlansSearchTerm) {
@@ -303,18 +464,45 @@ export function registerPlansModule(context) {
       row.setAttribute('aria-selected', 'false');
 
       const planNumberRaw = item?.number ?? '';
-      const planId =
+      const planNumber =
         typeof planNumberRaw === 'string'
           ? planNumberRaw.trim()
           : typeof planNumberRaw === 'number'
             ? String(planNumberRaw)
             : '';
+      const planIdRaw = item?.plan_id ?? item?.planId ?? '';
+      let planId = '';
+      if (typeof planIdRaw === 'string') {
+        planId = planIdRaw.trim();
+      } else if (planIdRaw && typeof planIdRaw === 'object' && 'toString' in planIdRaw) {
+        planId = String(planIdRaw).trim();
+      }
+      if (!planId && planNumber) {
+        planId = planNumber;
+      }
       if (planId) {
         row.dataset.planId = planId;
+      }
+      if (planNumber) {
+        row.dataset.planNumber = planNumber;
       }
 
       const queueInfo = item?.treatment_queue ?? null;
       const isQueued = Boolean(queueInfo?.enqueued);
+      const isBlocked = Boolean(item?.blocked);
+      row.dataset.planBlocked = isBlocked ? 'true' : 'false';
+      row.dataset.planQueued = isQueued ? 'true' : 'false';
+      const rawStatus = typeof item?.status === 'string' ? item.status : '';
+      const formattedStatus = context.formatStatusLabel(item?.status);
+      const normalizedStatus = String(formattedStatus || rawStatus || '')
+        .trim()
+        .toLowerCase();
+      const statusInTreatment = normalizedStatus === 'em tratamento';
+      row.dataset.planStatus = normalizedStatus || '';
+      if (isBlocked) {
+        row.classList.add('table__row--blocked');
+      }
+
       const planCell = document.createElement('td');
       planCell.className = 'table__cell';
       planCell.textContent = item?.number ?? '';
@@ -360,42 +548,165 @@ export function registerPlansModule(context) {
 
       const actionsCell = document.createElement('td');
       actionsCell.className = 'table__cell table__cell--select';
+
+      const actionsWrapper = document.createElement('div');
+      actionsWrapper.className = 'table__select-actions';
+
+      const selectWrapper = document.createElement('span');
+      selectWrapper.className = 'table__select-wrapper';
+
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.dataset.planCheckbox = 'true';
       if (planId) {
         checkbox.dataset.planId = planId;
       }
+      if (planNumber) {
+        checkbox.dataset.planNumber = planNumber;
+      }
+      checkbox.dataset.planQueued = isQueued ? 'true' : 'false';
+      const labelIdentifier = planNumber || planId;
       checkbox.setAttribute(
         'aria-label',
-        planId ? `Selecionar plano ${planId}` : 'Selecionar plano',
+        labelIdentifier ? `Selecionar plano ${labelIdentifier}` : 'Selecionar plano',
       );
-      if (isQueued) {
-        checkbox.disabled = true;
-        checkbox.setAttribute('aria-disabled', 'true');
-        const disabledHint = queueInfo?.filas
-          ? `Plano em tratamento (${queueInfo.filas} filas ativas)`
-          : 'Plano em tratamento';
-        checkbox.title = disabledHint;
+      if (isBlocked) {
+        checkbox.title = 'Plano bloqueado';
+      } else {
+        checkbox.removeAttribute('title');
       }
       checkbox.addEventListener('change', () => {
-        if (checkbox.disabled) {
-          return;
-        }
         const isChecked = checkbox.checked;
         setPlanSelection(planId, isChecked, { checkbox, row });
         updatePlansActionsMenuState();
       });
-      actionsCell.appendChild(checkbox);
-      row.appendChild(actionsCell);
+      selectWrapper.appendChild(checkbox);
+      actionsWrapper.appendChild(selectWrapper);
 
+      const lockButton = document.createElement('button');
+      lockButton.type = 'button';
+      lockButton.className = 'table__lock-toggle';
+      if (planId) {
+        lockButton.dataset.planId = planId;
+      }
+      if (planNumber) {
+        lockButton.dataset.planNumber = planNumber;
+      }
+      updateLockButtonIcon(lockButton, {
+        locked: isBlocked,
+        planNumber,
+        planId,
+      });
+      lockButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!planId) {
+          return;
+        }
+        const locked = lockButton.dataset.locked === 'true';
+        void handlePlanLockToggle({
+          planId,
+          planNumber,
+          button: lockButton,
+          currentlyLocked: locked,
+        });
+      });
+      if (!planId) {
+        lockButton.disabled = true;
+        lockButton.setAttribute('aria-disabled', 'true');
+      }
+      actionsWrapper.appendChild(lockButton);
+
+      actionsCell.appendChild(actionsWrapper);
+
+      row.appendChild(actionsCell);
       plansTableBody.appendChild(row);
+
+      if (planId && state.planMetadata instanceof Map) {
+        state.planMetadata.set(planId, {
+          queued: isQueued,
+          statusInTreatment,
+        });
+      }
     });
 
     if (typeof context.renderFilterChips === 'function') {
       context.renderFilterChips();
     }
     updatePlansActionsMenuState();
+    window.feather?.replace();
+  };
+
+  const mutatePlanLockState = async ({ planIds, unblock, disableMenu = true }) => {
+    if (!Array.isArray(planIds) || !planIds.length) {
+      return false;
+    }
+
+    const ids = planIds.filter((value) => typeof value === 'string' && value.trim().length > 0);
+    if (!ids.length) {
+      return false;
+    }
+
+    const shouldDisableMenu = disableMenu;
+    if (shouldDisableMenu) {
+      state.isProcessingPlanLock = true;
+      updatePlansActionsMenuState();
+    }
+
+    let success = false;
+    try {
+      if (unblock) {
+        await requestUnblockPlans(ids);
+      } else {
+        await requestBlockPlans(ids);
+      }
+      const successMessage = unblock
+        ? (ids.length > 1 ? 'Planos desbloqueados com sucesso.' : 'Plano desbloqueado.')
+        : (ids.length > 1 ? 'Planos bloqueados com sucesso.' : 'Plano bloqueado.');
+      context.showToast?.(successMessage);
+      ids.forEach((id) => plansSelection.delete(id));
+      success = true;
+      await refreshPlans({ showLoading: false });
+    } catch (error) {
+      console.error('Erro ao atualizar bloqueio dos planos.', error);
+      const failureMessage = unblock
+        ? (ids.length > 1
+            ? 'Não foi possível desbloquear os planos selecionados.'
+            : 'Não foi possível desbloquear o plano.')
+        : (ids.length > 1
+            ? 'Não foi possível bloquear os planos selecionados.'
+            : 'Não foi possível bloquear o plano.');
+      context.showToast?.(failureMessage);
+    } finally {
+      if (shouldDisableMenu) {
+        state.isProcessingPlanLock = false;
+      }
+      updatePlansActionsMenuState();
+    }
+
+    return success;
+  };
+
+  const handlePlanLockToggle = async ({ planId, planNumber, button, currentlyLocked }) => {
+    if (!planId || !(button instanceof HTMLElement)) {
+      return;
+    }
+    button.disabled = true;
+    button.setAttribute('aria-disabled', 'true');
+    const success = await mutatePlanLockState({
+      planIds: [planId],
+      unblock: currentlyLocked,
+      disableMenu: false,
+    });
+    if (!success) {
+      button.disabled = false;
+      button.setAttribute('aria-disabled', 'false');
+      updateLockButtonIcon(button, {
+        locked: currentlyLocked,
+        planNumber,
+        planId,
+      });
+    }
   };
 
   const resetPlansPagination = () => {
@@ -604,6 +915,11 @@ export function registerPlansModule(context) {
       if (!(target instanceof HTMLElement)) {
         return;
       }
+      if (target.getAttribute('aria-disabled') === 'true' || target.disabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       const action = target.dataset.action || '';
@@ -614,6 +930,33 @@ export function registerPlansModule(context) {
         } else {
           selectAllPlansOnPage();
         }
+        updatePlansActionsMenuState();
+        closePlansActionsMenu();
+        return;
+      }
+      if (action === 'lock') {
+        const intent = target.dataset.intent === 'unblock' ? 'unblock' : 'block';
+        if (intent === 'block') {
+          const hasQueuedSelection = selectionHasQueuedRows();
+          const hasTreatmentSelection = selectionHasTreatmentStatus();
+          if (hasQueuedSelection || hasTreatmentSelection) {
+            closePlansActionsMenu();
+            context.showToast?.('Plans in treatment cannot be locked');
+            return;
+          }
+        }
+
+        const selectedIds = Array.from(plansSelection);
+        closePlansActionsMenu();
+        if (!selectedIds.length) {
+          return;
+        }
+        if (intent === 'unblock') {
+          void mutatePlanLockState({ planIds: selectedIds, unblock: true });
+        } else {
+          void mutatePlanLockState({ planIds: selectedIds, unblock: false });
+        }
+        return;
       }
       updatePlansActionsMenuState();
       closePlansActionsMenu();

@@ -2,6 +2,19 @@
   background-color: #fffbf0;
 }
 
+.table__row--blocked .table__cell {
+  background-color: #f3f4f6;
+  color: var(--muted);
+}
+
+.table__row--selected.table__row--blocked .table__cell {
+  color: var(--text);
+}
+
+.table__row--blocked .table__cell--select input[type='checkbox'] {
+  cursor: default;
+}
+
 .table-legend {
   display: flex;
   align-items: center;
@@ -35,6 +48,11 @@
 .table-legend__swatch--stale {
   background: #fef2f2;
   border-color: #f8b4b4;
+}
+
+.table-legend__swatch--blocked {
+  background: #e5e7eb;
+  border-color: #d1d5db;
 }
 
 .table-legend__label {
@@ -280,13 +298,49 @@
 
 .table__cell--select {
   text-align: center;
+  vertical-align: middle;
 }
 
-.table__cell--select input[type='checkbox'] {
+.table__select-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.table__select-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.table__select-wrapper input[type='checkbox'] {
   accent-color: var(--primary);
   width: 16px;
   height: 16px;
   cursor: pointer;
+}
+
+.table__lock-toggle {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.table__lock-toggle[aria-disabled='true'],
+.table__lock-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.table__lock-toggle i {
+  width: 16px;
+  height: 16px;
 }
 
 .table__row--selected .table__cell {
