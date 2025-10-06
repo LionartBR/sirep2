@@ -235,11 +235,7 @@ export function registerPlansModule(context) {
       plansLockAction.dataset.intent = intent;
       plansLockAction.disabled = shouldDisable;
       plansLockAction.setAttribute('aria-disabled', String(shouldDisable));
-      if (intent === 'block' && (hasQueuedSelection || hasTreatmentSelection)) {
-        plansLockAction.title = 'Plans in treatment cannot be locked';
-      } else {
-        plansLockAction.removeAttribute('title');
-      }
+      plansLockAction.removeAttribute('title');
       if (plansLockActionLabel) {
         plansLockActionLabel.textContent = intent === 'unblock' ? 'Desbloquear' : 'Bloquear';
       }
@@ -622,9 +618,7 @@ export function registerPlansModule(context) {
       if (!planId || statusInTreatment) {
         lockButton.disabled = true;
         lockButton.setAttribute('aria-disabled', 'true');
-        if (statusInTreatment) {
-          lockButton.title = 'Plans in treatment cannot be locked';
-        }
+        lockButton.removeAttribute('title');
       } else {
         lockButton.disabled = false;
         lockButton.setAttribute('aria-disabled', 'false');
@@ -1037,6 +1031,42 @@ export function registerPlansModule(context) {
         event.preventDefault();
         closePlansActionsMenu({ focusTrigger: true });
       }
+    });
+  }
+
+  if (plansTableBody) {
+    plansTableBody.addEventListener('dblclick', (event) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (!target) {
+        return;
+      }
+      const interactive = target.closest('button, a[href], input, select, textarea, label');
+      if (interactive) {
+        return;
+      }
+      const row = target.closest('tr[data-plan-id]');
+      if (!(row instanceof HTMLElement)) {
+        return;
+      }
+      if (row.classList.contains('table__row--empty')) {
+        return;
+      }
+      const checkbox = row.querySelector(planCheckboxSelector);
+      if (!(checkbox instanceof HTMLInputElement)) {
+        return;
+      }
+      if (checkbox.disabled) {
+        return;
+      }
+      const planId = checkbox.dataset.planId || row.dataset.planId;
+      const planNumber = checkbox.dataset.planNumber || row.dataset.planNumber;
+      if (!planId && !planNumber) {
+        return;
+      }
+      const nextState = !checkbox.checked;
+      checkbox.checked = nextState;
+      setPlanSelection(planId || planNumber || '', nextState, { checkbox, row });
+      updatePlansActionsMenuState();
     });
   }
 
