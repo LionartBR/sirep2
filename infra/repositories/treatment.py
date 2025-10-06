@@ -130,7 +130,7 @@ class TreatmentRepository:
                 SELECT LOWER(status) AS status_key, COUNT(*) AS total
                   FROM app.tratamento_item
                  WHERE lote_id = %s
-                 GROUP BY status_key
+                 GROUP BY LOWER(status)
                 """,
                 (lote_id,),
             )
