@@ -181,6 +181,7 @@ PLAN_DEFAULT_QUERY = """
         trat.filas,
         trat.users_enfileirando,
         trat.lotes,
+        (tratamento.plano_id IS NOT NULL) AS em_tratamento,
         (b.plano_id IS NOT NULL) AS bloqueado,
         b.created_at AS bloqueado_em,
         b.unlocked_at AS desbloqueado_em,
@@ -192,6 +193,7 @@ PLAN_DEFAULT_QUERY = """
        AND b.unlocked_at IS NULL
        AND (b.expires_at IS NULL OR b.expires_at > now())
  LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
+ LEFT JOIN app.planos_em_tratamento_all() AS tratamento ON tratamento.plano_id = planos.plano_id
      ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
 """
@@ -210,6 +212,7 @@ PLAN_SEARCH_BY_NUMBER_QUERY = """
         trat.filas,
         trat.users_enfileirando,
         trat.lotes,
+        (tratamento.plano_id IS NOT NULL) AS em_tratamento,
         (b.plano_id IS NOT NULL) AS bloqueado,
         b.created_at AS bloqueado_em,
         b.unlocked_at AS desbloqueado_em,
@@ -221,6 +224,7 @@ PLAN_SEARCH_BY_NUMBER_QUERY = """
        AND b.unlocked_at IS NULL
        AND (b.expires_at IS NULL OR b.expires_at > now())
  LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
+ LEFT JOIN app.planos_em_tratamento_all() AS tratamento ON tratamento.plano_id = planos.plano_id
      WHERE planos.numero_plano = %(number)s
         OR planos.numero_plano LIKE %(number_prefix)s
      ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
@@ -241,6 +245,7 @@ PLAN_SEARCH_BY_NAME_QUERY = """
         trat.filas,
         trat.users_enfileirando,
         trat.lotes,
+        (tratamento.plano_id IS NOT NULL) AS em_tratamento,
         (b.plano_id IS NOT NULL) AS bloqueado,
         b.created_at AS bloqueado_em,
         b.unlocked_at AS desbloqueado_em,
@@ -252,6 +257,7 @@ PLAN_SEARCH_BY_NAME_QUERY = """
        AND b.unlocked_at IS NULL
        AND (b.expires_at IS NULL OR b.expires_at > now())
  LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id
+ LEFT JOIN app.planos_em_tratamento_all() AS tratamento ON tratamento.plano_id = planos.plano_id
      WHERE planos.razao_social ILIKE %(name_pattern)s
      ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
      LIMIT %(limit)s OFFSET %(offset)s
@@ -388,6 +394,7 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
         balance_raw = row.get("valor_atrasado")
     balance = _normalize_balance(balance_raw)
     status_date = extract_date_from_timestamp(row.get("dt_situacao"))
+    in_treatment = bool(row.get("em_tratamento"))
 
     filas = _normalize_queue_count(row.get("filas"))
     users = _normalize_queue_count(row.get("users_enfileirando") or row.get("users"))
@@ -417,6 +424,7 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
         days_overdue=days_overdue,
         balance=balance,
         status_date=status_date,
+        em_tratamento=in_treatment,
         treatment_queue=treatment_queue,
         blocked=blocked,
         blocked_at=blocked_at,
@@ -755,6 +763,7 @@ async def _fetch_keyset_page(
         "SELECT planos.plano_id, planos.numero_plano, planos.documento, planos.razao_social, planos.situacao,"
         " planos.dias_em_atraso, planos.saldo, planos.dt_situacao,"
         " trat.filas, trat.users_enfileirando, trat.lotes,"
+        " (tratamento.plano_id IS NOT NULL) AS em_tratamento,"
         " (b.plano_id IS NOT NULL) AS bloqueado,"
         " b.created_at AS bloqueado_em,"
         " b.unlocked_at AS desbloqueado_em,"
@@ -766,6 +775,7 @@ async def _fetch_keyset_page(
         "       AND b.unlocked_at IS NULL"
         "       AND (b.expires_at IS NULL OR b.expires_at > now())"
         " LEFT JOIN app.vw_tratamento_enfileirado AS trat ON trat.plano_id = planos.plano_id"
+        " LEFT JOIN app.planos_em_tratamento_all() AS tratamento ON tratamento.plano_id = planos.plano_id"
         f"{where_clause}{order_sql}{limit_sql}"
     )
 

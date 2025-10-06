@@ -505,6 +505,7 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
             "saldo_total": Decimal("1500.50"),
             "dt_situacao": datetime(2024, 5, 1, tzinfo=timezone.utc),
             "total_count": 120,
+            "em_tratamento": False,
             "bloqueado": True,
             "bloqueado_em": datetime(2024, 5, 2, tzinfo=timezone.utc),
             "desbloqueado_em": None,
@@ -551,6 +552,7 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
         assert response.items[0].balance == Decimal("1500.50")
         assert response.items[0].status_date == date(2024, 5, 1)
         assert response.items[0].plan_id == UUID("12345678-1234-5678-1234-567812345678")
+        assert response.items[0].em_tratamento is False
         assert response.items[0].blocked is True
         assert response.items[0].blocked_at == datetime(2024, 5, 2, tzinfo=timezone.utc)
         assert response.items[0].unblocked_at is None
@@ -560,6 +562,56 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
         connection, matricula = bind_calls[0]
         assert isinstance(connection, _DummyConnection)
         assert matricula == "abc123"
+
+    _run(_exercise())
+
+
+def test_list_plans_marks_em_tratamento(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = [
+        {
+            "plano_id": UUID("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+            "numero_plano": "98765",
+            "numero_inscricao": "98.765.432/0001-10",
+            "razao_social": "Empresa Em Tratamento",
+            "situacao": "PENDENTE",
+            "dias_em_atraso": 5,
+            "saldo_total": Decimal("100.00"),
+            "dt_situacao": datetime(2024, 6, 1, tzinfo=timezone.utc),
+            "total_count": 1,
+            "em_tratamento": True,
+        }
+    ]
+
+    manager = _DummyManager(rows)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
+    async def _fake_bind(connection: Any, matricula: str) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    async def _exercise() -> None:
+        response = await plans.list_plans(
+            request=_make_request(),
+            q=None,
+            limit=plans.DEFAULT_LIMIT,
+            offset=0,
+        )
+
+        assert isinstance(response, PlansResponse)
+        assert response.total == 1
+        assert response.items[0].em_tratamento is True
 
     _run(_exercise())
 

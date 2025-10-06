@@ -57,6 +57,7 @@ IGNORE_DIRS = {
     ".pytest_cache",
     ".mypy_cache",
     ".ruff_cache",
+    "docs",
 }
 
 # Arquivos específicos a ignorar (por nome exato)
@@ -69,6 +70,7 @@ IGNORE_FILES = {
     "AGENTS.md",
     "pw3270.py",
     ".pre-commit-config.yaml",
+    "mypy.ini",
 }
 
 # Extensões que normalmente são binárias e devem ser puladas

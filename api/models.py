@@ -63,6 +63,7 @@ class PlanSummaryResponse(BaseModel):
     days_overdue: Optional[int] = None
     balance: Optional[Decimal] = None
     status_date: Optional[date] = None
+    em_tratamento: bool = False
     treatment_queue: Optional[PlanQueueStatusResponse] = None
     blocked: bool = False
     blocked_at: Optional[datetime] = None

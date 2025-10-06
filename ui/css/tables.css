@@ -2,6 +2,10 @@
   background-color: #fffbf0;
 }
 
+.table__row--in-treatment {
+  background-color: #fff6d4;
+}
+
 .table__row--blocked .table__cell {
   background-color: #f3f4f6;
   color: var(--muted);
@@ -41,7 +45,7 @@
 }
 
 .table-legend__swatch--queue {
-  background: #fffbe6;
+  background: #fff6d4;
   border-color: #f5d77d;
 }
 

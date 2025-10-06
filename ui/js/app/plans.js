@@ -87,6 +87,21 @@ export function registerPlansModule(context) {
     return false;
   };
 
+  const isStatusInTreatment = (value) => {
+    if (!value) {
+      return false;
+    }
+    const text = String(value).trim().toLowerCase();
+    if (!text) {
+      return false;
+    }
+    const compact = text.replace(/\s+/g, ' ');
+    if (compact === 'em tratamento' || compact === 'in treatment') {
+      return true;
+    }
+    return compact.includes('tratamento') || compact.includes('treatment');
+  };
+
   const buildPlansActionUrl = (path) => {
     const baseUrl =
       window.location.origin && window.location.origin !== 'null'
@@ -497,10 +512,15 @@ export function registerPlansModule(context) {
       const normalizedStatus = String(formattedStatus || rawStatus || '')
         .trim()
         .toLowerCase();
-      const statusInTreatment = normalizedStatus === 'em tratamento';
+      const serverInTreatment = item?.em_tratamento === true;
+      const statusInTreatment = serverInTreatment || isStatusInTreatment(normalizedStatus);
       row.dataset.planStatus = normalizedStatus || '';
+      row.dataset.planInTreatment = statusInTreatment ? 'true' : 'false';
       if (isBlocked) {
         row.classList.add('table__row--blocked');
+      }
+      if (statusInTreatment) {
+        row.classList.add('table__row--in-treatment');
       }
 
       const planCell = document.createElement('td');
@@ -592,15 +612,34 @@ export function registerPlansModule(context) {
       if (planNumber) {
         lockButton.dataset.planNumber = planNumber;
       }
+      lockButton.dataset.planQueued = isQueued ? 'true' : 'false';
       updateLockButtonIcon(lockButton, {
         locked: isBlocked,
         planNumber,
         planId,
       });
+      lockButton.dataset.statusInTreatment = statusInTreatment ? 'true' : 'false';
+      if (!planId || statusInTreatment) {
+        lockButton.disabled = true;
+        lockButton.setAttribute('aria-disabled', 'true');
+        if (statusInTreatment) {
+          lockButton.title = 'Plans in treatment cannot be locked';
+        }
+      } else {
+        lockButton.disabled = false;
+        lockButton.setAttribute('aria-disabled', 'false');
+        lockButton.removeAttribute('title');
+      }
       lockButton.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
         if (!planId) {
+          return;
+        }
+        const statusLocked = lockButton.dataset.locked === 'true';
+        const statusInTreatmentButton = lockButton.dataset.statusInTreatment === 'true';
+        if (!statusLocked && statusInTreatmentButton) {
+          context.showToast?.('Plans in treatment cannot be locked');
           return;
         }
         const locked = lockButton.dataset.locked === 'true';
@@ -611,10 +650,6 @@ export function registerPlansModule(context) {
           currentlyLocked: locked,
         });
       });
-      if (!planId) {
-        lockButton.disabled = true;
-        lockButton.setAttribute('aria-disabled', 'true');
-      }
       actionsWrapper.appendChild(lockButton);
 
       actionsCell.appendChild(actionsWrapper);
