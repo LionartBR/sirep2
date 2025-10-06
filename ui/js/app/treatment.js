@@ -565,7 +565,12 @@ export function registerTreatmentModule(context) {
         if (!response.ok) {
           throw new Error('Falha ao migrar planos.');
         }
-        await response.json().catch(() => null);
+        const result = await response.json().catch(() => null);
+        const itemsSeededValue = Number(result?.items_seeded);
+        const itemsSeeded = Number.isFinite(itemsSeededValue) ? itemsSeededValue : 0;
+        if (itemsSeeded <= 0) {
+          context.showToast?.('Não há planos disponíveis para rescisão.');
+        }
         await fetchTreatmentState({ refreshItems: true });
       } catch (error) {
         console.error('Erro ao migrar planos para tratamento.', error);
