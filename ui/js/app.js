@@ -9,6 +9,7 @@ import { registerTreatmentModule } from './app/treatment.js';
 import { registerSearchModule } from './app/search.js';
 import { registerPipelineModule } from './app/pipeline.js';
 import { registerUiModule } from './app/ui.js';
+import { registerPlanDetailsModule } from './app/plan-details.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   if (!window.Auth || !Auth.isAuthenticated()) {
@@ -31,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   registerHelperModule(context);
   registerProfileModule(context);
+  registerPlanDetailsModule(context);
   registerFiltersModule(context);
   registerPlansModule(context);
   registerOccurrencesModule(context);

@@ -71,6 +71,28 @@ class PlanSummaryResponse(BaseModel):
     block_reason: Optional[str] = None
 
 
+class PlanDetailResponse(BaseModel):
+    """Full set of fields shown in the plan details pane."""
+
+    plan_id: UUID
+    numero_plano: str
+    razao_social: Optional[str] = None
+    documento: Optional[str] = None
+    tipo_doc: Optional[str] = None
+    tipo_plano: Optional[str] = None
+    resolucao: Optional[str] = None
+    situacao: Optional[str] = None
+    competencia_ini: Optional[date] = None
+    competencia_fim: Optional[date] = None
+    atraso_desde: Optional[date] = None
+    dias_em_atraso: Optional[int] = None
+    saldo_total: Optional[Decimal] = None
+    last_update_at: Optional[datetime] = None
+    em_tratamento: bool = False
+    bloqueado: bool = False
+    rescisao_comunicada: bool = False
+
+
 class PlanBlockRequest(BaseModel):
     """Payload accepted to block one or more plans."""
 

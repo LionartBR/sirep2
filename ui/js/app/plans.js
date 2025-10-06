@@ -189,7 +189,8 @@ export function registerPlansModule(context) {
       ? plansTableBody.querySelectorAll(`${planCheckboxSelector}:checked`)
       : [];
     const checkedCount = checkedCheckboxes.length;
-    const hasSelection = plansSelection.size > 0 || checkedCount > 0;
+    const selectionCount = Math.max(plansSelection.size, checkedCount);
+    const hasSelection = selectionCount > 0;
     const allSelected = totalCheckboxes > 0 && checkedCount === totalCheckboxes;
 
     const requiresSelectionItems = plansActionsMenu.querySelectorAll('[data-requires-selection]');
@@ -221,6 +222,18 @@ export function registerPlansModule(context) {
       plansSelectAllAction.dataset.mode = allSelected ? 'clear' : 'select';
       if (plansSelectAllLabel) {
         plansSelectAllLabel.textContent = allSelected ? 'Desmarcar todos' : 'Selecionar todos';
+      }
+    }
+
+    const viewDetailsAction = plansActionsMenu.querySelector('[data-action="view-details"]');
+    if (viewDetailsAction instanceof HTMLElement) {
+      const isExactlyOneSelected = selectionCount === 1;
+      viewDetailsAction.disabled = !isExactlyOneSelected;
+      viewDetailsAction.setAttribute('aria-disabled', String(!isExactlyOneSelected));
+      if (!isExactlyOneSelected) {
+        viewDetailsAction.title = 'Selecione apenas um plano para ver os detalhes';
+      } else {
+        viewDetailsAction.removeAttribute('title');
       }
     }
 
@@ -651,10 +664,41 @@ export function registerPlansModule(context) {
       row.appendChild(actionsCell);
       plansTableBody.appendChild(row);
 
+      row.addEventListener('dblclick', (event) => {
+        const interactive = event.target instanceof HTMLElement
+          ? event.target.closest('button, input, a')
+          : null;
+        if (interactive) {
+          return;
+        }
+        event.preventDefault();
+        if (typeof context.showPlanDetails === 'function') {
+          let planData = item;
+          if (state.planMetadata instanceof Map) {
+            const metadataEntry = state.planMetadata.get(planId) ??
+              (planNumber ? state.planMetadata.get(planNumber) : null);
+            if (metadataEntry?.detail) {
+              planData = metadataEntry.detail;
+            }
+          }
+          context.showPlanDetails(planData);
+        }
+      });
+
       if (planId && state.planMetadata instanceof Map) {
+        const previous = state.planMetadata.get(planId) ?? {};
         state.planMetadata.set(planId, {
+          ...previous,
           queued: isQueued,
           statusInTreatment,
+          summary: item,
+        });
+      }
+      if (planNumber && state.planMetadata instanceof Map) {
+        const previousNumberEntry = state.planMetadata.get(planNumber) ?? {};
+        state.planMetadata.set(planNumber, {
+          ...previousNumberEntry,
+          summary: item,
         });
       }
     });
@@ -985,6 +1029,39 @@ export function registerPlansModule(context) {
         } else {
           void mutatePlanLockState({ planIds: selectedIds, unblock: false });
         }
+        return;
+      }
+      if (action === 'view-details') {
+        const selectedIds = Array.from(plansSelection);
+        closePlansActionsMenu();
+        if (selectedIds.length !== 1) {
+          context.showToast?.('Selecione apenas um plano para ver os detalhes.');
+          return;
+        }
+        const selectedId = selectedIds[0];
+        let metadataEntry = null;
+        if (state.planMetadata instanceof Map) {
+          metadataEntry = state.planMetadata.get(selectedId) ?? null;
+          if (!metadataEntry) {
+            for (const [key, value] of state.planMetadata.entries()) {
+              if (key === selectedId) {
+                metadataEntry = value;
+                break;
+              }
+              const candidateNumber = value?.summary?.number ?? value?.summary?.plan_number;
+              if (candidateNumber && String(candidateNumber) === selectedId) {
+                metadataEntry = value;
+                break;
+              }
+            }
+          }
+        }
+        const detailPlan = metadataEntry?.detail ?? metadataEntry?.summary ?? null;
+        if (!detailPlan) {
+          context.showToast?.('Detalhes indisponíveis para o plano selecionado.');
+          return;
+        }
+        context.showPlanDetails?.(detailPlan);
         return;
       }
       updatePlansActionsMenuState();

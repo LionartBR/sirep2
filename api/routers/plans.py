@@ -9,6 +9,7 @@ import time
 from decimal import Decimal
 from collections.abc import Sequence
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.params import Param
@@ -27,6 +28,7 @@ from psycopg.rows import dict_row
 from api.models import (
     PlanBlockRequest,
     PlanBlockResponse,
+    PlanDetailResponse,
     PlanQueueStatusResponse,
     PlanSummaryResponse,
     PlanUnblockRequest,
@@ -260,8 +262,65 @@ PLAN_SEARCH_BY_NAME_QUERY = """
  LEFT JOIN app.planos_em_tratamento_all() AS tratamento ON tratamento.plano_id = planos.plano_id
      WHERE planos.razao_social ILIKE %(name_pattern)s
      ORDER BY planos.saldo DESC NULLS LAST, planos.dt_situacao DESC NULLS LAST, planos.numero_plano
-     LIMIT %(limit)s OFFSET %(offset)s
+    LIMIT %(limit)s OFFSET %(offset)s
 """
+
+PLAN_DETAIL_QUERY_TEMPLATE = """
+    SELECT
+        p.id,
+        p.numero_plano,
+        e.razao_social,
+        e.numero_inscricao        AS documento,
+        ti.codigo                 AS tipo_doc,
+        tp.descricao              AS tipo_plano,
+        r.codigo                  AS resolucao,
+        sp.descricao              AS situacao,
+        p.competencia_ini,
+        p.competencia_fim,
+        p.atraso_desde,
+        CASE
+            WHEN p.atraso_desde IS NULL THEN NULL
+            ELSE GREATEST(0, (CURRENT_DATE - p.atraso_desde))::int
+        END                       AS dias_em_atraso,
+        p.saldo_total,
+        COALESCE(p.updated_at, p.created_at) AS last_update_at,
+        COALESCE(t.pending_count, 0) > 0     AS em_tratamento,
+        EXISTS (
+            SELECT 1
+              FROM app.plano_bloqueio b
+             WHERE b.plano_id = p.id
+               AND b.ativo = TRUE
+               AND b.unlocked_at IS NULL
+               AND (b.expires_at IS NULL OR b.expires_at > now())
+        )                                   AS bloqueado,
+        EXISTS (
+            SELECT 1
+              FROM app.comunicacao c
+             WHERE c.plano_id = p.id
+               AND c.tenant_id = p.tenant_id
+               AND c.enviado_em IS NOT NULL
+        )                                   AS rescisao_comunicada
+      FROM app.plano AS p
+INNER JOIN app.empregador      AS e  ON e.id = p.empregador_id
+INNER JOIN ref.tipo_inscricao  AS ti ON ti.id = e.tipo_inscricao_id
+ LEFT JOIN ref.tipo_plano      AS tp ON tp.id = p.tipo_plano_id
+ LEFT JOIN ref.resolucao       AS r  ON r.id = p.resolucao_id
+INNER JOIN ref.situacao_plano  AS sp ON sp.id = p.situacao_plano_id
+ LEFT JOIN LATERAL (
+        SELECT COUNT(*) AS pending_count
+          FROM app.planos_em_tratamento_all() AS t0
+         WHERE t0.plano_id = p.id
+    ) AS t ON TRUE
+     WHERE {predicate}
+"""
+
+PLAN_DETAIL_QUERY_BY_ID = PLAN_DETAIL_QUERY_TEMPLATE.format(
+    predicate="p.id = %(plano_id)s::uuid"
+)
+
+PLAN_DETAIL_QUERY_BY_NUMBER = PLAN_DETAIL_QUERY_TEMPLATE.format(
+    predicate="p.numero_plano = %(numero_plano)s"
+)
 
 PLAN_SEARCH_BY_DOCUMENT_QUERY = """
     SELECT
@@ -431,6 +490,138 @@ def _row_to_plan_summary(row: dict[str, Any]) -> PlanSummaryResponse:
         unblocked_at=unblocked_at,
         block_reason=block_reason,
     )
+
+
+def _row_to_plan_detail(row: dict[str, Any]) -> PlanDetailResponse:
+    """Convert a raw database row into the detail response model."""
+
+    if not row:
+        raise ValueError("Empty row received for plan detail")
+
+    plan_id_raw = row.get("id") or row.get("plan_id") or row.get("plano_id")
+    if plan_id_raw is None:
+        raise ValueError("Plan detail row missing identifier")
+
+    plan_id = plan_id_raw if isinstance(plan_id_raw, UUID) else UUID(str(plan_id_raw))
+
+    numero_plano = str(row.get("numero_plano") or "").strip()
+    razao_social_raw = row.get("razao_social")
+    razao_social = str(razao_social_raw).strip() or None if razao_social_raw else None
+
+    documento = _normalize_document(row.get("documento"))
+
+    def _clean(value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    tipo_doc = _clean(row.get("tipo_doc"))
+    if tipo_doc:
+        tipo_doc = tipo_doc.upper()
+    tipo_plano = _clean(row.get("tipo_plano"))
+    resolucao = _clean(row.get("resolucao"))
+    situacao = _format_status(row.get("situacao"))
+
+    competencia_ini = extract_date_from_timestamp(row.get("competencia_ini"))
+    competencia_fim = extract_date_from_timestamp(row.get("competencia_fim"))
+    atraso_desde = extract_date_from_timestamp(row.get("atraso_desde"))
+
+    dias_raw = row.get("dias_em_atraso")
+    try:
+        dias_em_atraso = int(dias_raw) if dias_raw is not None else None
+    except (TypeError, ValueError):
+        dias_em_atraso = None
+
+    saldo_total = to_decimal(row.get("saldo_total"))
+
+    last_update = row.get("last_update_at")
+    if last_update is None:
+        last_update = row.get("ultima_atualizacao")
+
+    em_tratamento = bool(row.get("em_tratamento"))
+    bloqueado = bool(row.get("bloqueado"))
+    rescisao_comunicada = bool(row.get("rescisao_comunicada"))
+
+    return PlanDetailResponse(
+        plan_id=plan_id,
+        numero_plano=numero_plano,
+        razao_social=razao_social,
+        documento=documento,
+        tipo_doc=tipo_doc,
+        tipo_plano=tipo_plano,
+        resolucao=resolucao,
+        situacao=situacao,
+        competencia_ini=competencia_ini,
+        competencia_fim=competencia_fim,
+        atraso_desde=atraso_desde,
+        dias_em_atraso=dias_em_atraso,
+        saldo_total=saldo_total,
+        last_update_at=last_update,
+        em_tratamento=em_tratamento,
+        bloqueado=bloqueado,
+        rescisao_comunicada=rescisao_comunicada,
+    )
+
+
+@router.get("/{id_or_num}/detail", response_model=PlanDetailResponse)
+async def get_plan_detail(id_or_num: str, request: Request) -> PlanDetailResponse:
+    """Return the detailed information required by the plans pane."""
+
+    matricula = resolve_request_matricula(request, get_principal_settings)
+    if not matricula:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais de acesso ausentes.",
+        )
+
+    identifier = (id_or_num or "").strip()
+    if not identifier:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Plano não encontrado.",
+        )
+
+    query = PLAN_DETAIL_QUERY_BY_NUMBER
+    params: dict[str, Any] = {"numero_plano": identifier}
+
+    try:
+        plan_uuid = UUID(identifier)
+    except ValueError:
+        plan_uuid = None
+
+    if plan_uuid is not None:
+        query = PLAN_DETAIL_QUERY_BY_ID
+        params = {"plano_id": plan_uuid}
+
+    connection_manager = get_connection_manager()
+
+    try:
+        async with connection_manager as connection:
+            await bind_session(connection, matricula)
+            async with connection.cursor(row_factory=dict_row) as cursor:
+                await cursor.execute(query, params)
+                row = await cursor.fetchone()
+    except (PermissionError, InvalidAuthorizationSpecification) as exc:
+        logger.exception("Erro de autenticação ao carregar detalhes do plano")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais de acesso inválidas.",
+        ) from exc
+    except Exception as exc:  # pragma: no cover - defensive programming
+        logger.exception("Erro ao carregar detalhes do plano")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Não foi possível carregar os detalhes do plano.",
+        ) from exc
+
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Plano não encontrado.",
+        )
+
+    return _row_to_plan_detail(row)
 
 
 @router.post("/block", response_model=PlanBlockResponse)

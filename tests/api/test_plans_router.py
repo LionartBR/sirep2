@@ -418,6 +418,7 @@ class _DummyCursor:
         self._rows = rows
         self.executed_sql: str | None = None
         self.executed_params: dict[str, Any] | None = None
+        self._position = 0
 
     async def __aenter__(self) -> "_DummyCursor":
         return self
@@ -436,6 +437,13 @@ class _DummyCursor:
 
     async def fetchall(self) -> list[dict[str, Any]]:
         return self._rows
+
+    async def fetchone(self) -> dict[str, Any] | None:
+        if self._position >= len(self._rows):
+            return None
+        row = self._rows[self._position]
+        self._position += 1
+        return row
 
 
 class _DummyConnection:
@@ -564,6 +572,115 @@ def test_list_plans_returns_rows(monkeypatch: pytest.MonkeyPatch) -> None:
         assert matricula == "abc123"
 
     _run(_exercise())
+
+
+def test_get_plan_detail_by_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    plan_id = UUID("12345678-1234-5678-1234-567812345678")
+    row = {
+        "id": plan_id,
+        "numero_plano": "12345",
+        "razao_social": "Empresa Teste",
+        "documento": "12.345.678/0001-90",
+        "tipo_doc": "CNPJ",
+        "tipo_plano": "Coletivo",
+        "resolucao": "RS-01",
+        "situacao": "EM_ATRASO",
+        "competencia_ini": date(2024, 1, 1),
+        "competencia_fim": date(2024, 2, 1),
+        "atraso_desde": date(2024, 3, 1),
+        "dias_em_atraso": 30,
+        "saldo_total": Decimal("1000.00"),
+        "last_update_at": datetime(2024, 5, 1, tzinfo=timezone.utc),
+        "em_tratamento": True,
+        "bloqueado": False,
+        "rescisao_comunicada": True,
+    }
+
+    manager = _DummyManager([row])
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
+    bind_calls: list[tuple[Any, str]] = []
+
+    async def _fake_bind(connection: Any, matricula: str) -> None:
+        bind_calls.append((connection, matricula))
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+
+    request = _make_request(headers={"x-user-registration": "abc123"})
+
+    result = _run(plans.get_plan_detail(str(plan_id), request))
+
+    assert result.plan_id == plan_id
+    assert result.numero_plano == "12345"
+    assert result.documento == "12345678000190"
+    assert result.tipo_doc == "CNPJ"
+    assert result.situacao == "EM ATRASO"
+    assert result.last_update_at == row["last_update_at"]
+    assert result.competencia_ini == date(2024, 1, 1)
+    assert result.rescisao_comunicada is True
+
+    assert len(bind_calls) == 1
+    assert bind_calls[0][1] == "abc123"
+
+    assert manager.last_connection is not None
+    cursor = manager.last_connection.last_cursor
+    assert cursor is not None
+    assert "p.id = %(plano_id)s::uuid" in (cursor.executed_sql or "")
+    assert cursor.executed_params == {"plano_id": plan_id}
+
+
+def test_get_plan_detail_by_number(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = {
+        "id": UUID("12345678-1234-5678-1234-567812345678"),
+        "numero_plano": "98765",
+        "razao_social": "Empresa X",
+        "documento": "12345678000190",
+        "tipo_doc": "CNPJ",
+        "situacao": "EM_DIA",
+        "dias_em_atraso": 0,
+        "saldo_total": Decimal("0"),
+        "last_update_at": datetime(2024, 5, 10, tzinfo=timezone.utc),
+        "em_tratamento": False,
+        "bloqueado": False,
+        "rescisao_comunicada": False,
+    }
+
+    manager = _DummyManager([row])
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
+    async def _fake_bind(connection: Any, matricula: str) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+
+    request = _make_request(headers={"x-user-registration": "user"})
+
+    result = _run(plans.get_plan_detail("98765", request))
+
+    assert result.numero_plano == "98765"
+    assert result.situacao == "EM DIA"
+    assert manager.last_connection is not None
+    cursor = manager.last_connection.last_cursor
+    assert cursor is not None
+    assert "p.numero_plano = %(numero_plano)s" in (cursor.executed_sql or "")
+    assert cursor.executed_params == {"numero_plano": "98765"}
+
+
+def test_get_plan_detail_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _DummyManager([])
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
+    async def _fake_bind(connection: Any, matricula: str) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+
+    request = _make_request(headers={"x-user-registration": "abc123"})
+
+    with pytest.raises(plans.HTTPException) as excinfo:
+        _run(plans.get_plan_detail("00000", request))
+
+    assert excinfo.value.status_code == plans.status.HTTP_404_NOT_FOUND
 
 
 def test_list_plans_marks_em_tratamento(monkeypatch: pytest.MonkeyPatch) -> None:

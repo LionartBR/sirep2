@@ -871,6 +871,75 @@
       <p>CAIXA™ 2025</p>
     </footer>
 
+    <div
+      class="plan-details"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="planDetailsTitle"
+      data-plan-details
+      hidden
+    >
+      <div class="plan-details__overlay" data-plan-details-overlay></div>
+      <div class="plan-details__panel" data-plan-details-panel tabindex="-1">
+        <button
+          type="button"
+          class="plan-details__close"
+          aria-label="Fechar detalhes do plano"
+          data-plan-details-close
+        >
+          <i data-feather="x" aria-hidden="true"></i>
+        </button>
+        <header class="plan-details__header">
+          <div class="plan-details__heading">
+            <h2 class="plan-details__title" id="planDetailsTitle">
+              <span data-plan-details-title>Plano —</span>
+            </h2>
+            <p class="plan-details__subtitle" data-plan-details-subtitle>—</p>
+          </div>
+        </header>
+        <div class="plan-details__body">
+          <dl class="plan-details__grid">
+            <div class="plan-details__item">
+              <dt class="plan-details__term" data-plan-details-label="document">Documento</dt>
+              <dd class="plan-details__value" data-plan-details-field="document">—</dd>
+            </div>
+            <div class="plan-details__item">
+              <dt class="plan-details__term">Tipo</dt>
+              <dd class="plan-details__value" data-plan-details-field="type">—</dd>
+            </div>
+            <div class="plan-details__item">
+              <dt class="plan-details__term">Resolução</dt>
+              <dd class="plan-details__value" data-plan-details-field="resolution">—</dd>
+            </div>
+            <div class="plan-details__item">
+              <dt class="plan-details__term">Situação</dt>
+              <dd class="plan-details__value" data-plan-details-field="status">—</dd>
+            </div>
+            <div class="plan-details__item">
+              <dt class="plan-details__term">Período</dt>
+              <dd class="plan-details__value" data-plan-details-field="period">—</dd>
+            </div>
+            <div class="plan-details__item">
+              <dt class="plan-details__term">Dias em atraso</dt>
+              <dd class="plan-details__value" data-plan-details-field="days">—</dd>
+            </div>
+            <div class="plan-details__item">
+              <dt class="plan-details__term">Saldo total</dt>
+              <dd class="plan-details__value" data-plan-details-field="balance">—</dd>
+            </div>
+            <div class="plan-details__item">
+              <dt class="plan-details__term">Última atualização</dt>
+              <dd class="plan-details__value" data-plan-details-field="updated">—</dd>
+            </div>
+            <div class="plan-details__item">
+              <dt class="plan-details__term">Rescisão comunicada?</dt>
+              <dd class="plan-details__value" data-plan-details-field="rescission">—</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js"></script>
     <script src="https://unpkg.com/feather-icons"></script>

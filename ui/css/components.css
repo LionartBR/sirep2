@@ -208,3 +208,148 @@
   font-size: 12px;
   font-weight: 600;
 }
+
+.plan-details {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: stretch;
+  justify-content: flex-end;
+  z-index: 1600;
+}
+
+.plan-details.plan-details--visible {
+  display: flex;
+}
+
+.plan-details__overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.plan-details__panel {
+  position: relative;
+  z-index: 1;
+  width: min(520px, 100%);
+  max-width: 520px;
+  min-height: 100%;
+  max-height: 100%;
+  background: #ffffff;
+  box-shadow: -6px 0 24px rgba(15, 23, 42, 0.18);
+  padding: 36px 32px 40px;
+  overflow-y: auto;
+}
+
+.plan-details__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  border: none;
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--muted);
+  border-radius: 999px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.plan-details__close:hover,
+.plan-details__close:focus {
+  background: rgba(15, 23, 42, 0.12);
+  color: var(--primary);
+}
+
+.plan-details__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.plan-details__heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.plan-details__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.plan-details__subtitle {
+  margin: 6px 0 0 0;
+  font-size: 14px;
+  color: var(--muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-details__body {
+  display: block;
+}
+
+.plan-details__grid {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px 24px;
+}
+
+.plan-details__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plan-details__term {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+
+.plan-details__value {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-word;
+}
+
+@media (max-width: 768px) {
+  .plan-details__panel {
+    width: 100%;
+    max-width: none;
+  }
+
+  .plan-details__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+body.plan-details-open {
+  overflow: hidden;
+}
+
+.plan-details__value-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
