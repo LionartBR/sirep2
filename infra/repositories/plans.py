@@ -94,12 +94,6 @@ class PlansRepository:
         )
         dt_proposta = campos.get("dt_proposta")
         saldo_total = self._to_decimal(campos.get("saldo"))
-        representacao_val = campos.get("representacao")
-        if representacao_val is not None:
-            representacao_val = str(representacao_val).strip() or None
-        status_val = campos.get("status")
-        if status_val is not None:
-            status_val = str(status_val).strip() or None
 
         with self._conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -107,14 +101,12 @@ class PlansRepository:
                 INSERT INTO app.plano (
                     tenant_id, numero_plano, empregador_id,
                     tipo_plano_id, resolucao_id, situacao_plano_id,
-                    dt_proposta, saldo_total, atraso_desde,
-                    representacao, status
+                    dt_proposta, saldo_total, atraso_desde
                 )
                 VALUES (
                     app.current_tenant_id(), %s, %s,
                     %s, %s, %s,
-                    %s, %s, %s,
-                    %s, %s
+                    %s, %s, %s
                 )
                 ON CONFLICT (numero_plano)
                 DO UPDATE SET
@@ -124,9 +116,7 @@ class PlansRepository:
                     situacao_plano_id = EXCLUDED.situacao_plano_id,
                     dt_proposta       = EXCLUDED.dt_proposta,
                     saldo_total       = EXCLUDED.saldo_total,
-                    atraso_desde      = COALESCE(EXCLUDED.atraso_desde, app.plano.atraso_desde),
-                    representacao     = COALESCE(EXCLUDED.representacao, app.plano.representacao),
-                    status            = COALESCE(EXCLUDED.status, app.plano.status)
+                    atraso_desde      = COALESCE(EXCLUDED.atraso_desde, app.plano.atraso_desde)
                 RETURNING id
                 """,
                 (
@@ -138,8 +128,6 @@ class PlansRepository:
                     dt_proposta,
                     saldo_total,
                     atraso_desde,
-                    representacao_val,
-                    status_val,
                 ),
             )
             resultado = cur.fetchone()
