@@ -104,7 +104,6 @@
   `dt_proposta date`, `qtd_parcelas smallint`,
   `saldo_total numeric`,
   `atraso_desde date` (**derivado**),
-  `representacao text`, `status text`,
   **`dt_situacao_atual timestamptz`** (**derivado por trigger**),
   soft‑audit.
 

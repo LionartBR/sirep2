@@ -7,7 +7,7 @@ import unicodedata
 from datetime import UTC, datetime
 from typing import Any, Optional
 
-from domain.enums import PlanStatus, Step
+from domain.enums import Step
 from infra.config import settings
 from infra.repositories import OccurrenceRepository
 from services.base import StepJobContext
@@ -30,24 +30,6 @@ def _representacao_value(raw: str | None, fallback: str | None) -> str | None:
     if texto:
         return texto
     return fallback or None
-
-
-def _infer_plan_status(situacao: str | None) -> PlanStatus | None:
-    texto = (situacao or "").strip()
-    if not texto:
-        return None
-    normalizado = texto.upper()
-    if normalizado.startswith("P.RESC") or normalizado.startswith("PRESC"):
-        return PlanStatus.PASSIVEL_RESC
-    if "ESPECIAL" in normalizado:
-        return PlanStatus.ESPECIAL
-    if "LIQ" in normalizado:
-        return PlanStatus.LIQUIDADO
-    if "GRDE" in normalizado:
-        return PlanStatus.NAO_RESCINDIDO
-    if normalizado.startswith("RESC"):
-        return PlanStatus.RESCINDIDO
-    return PlanStatus.PASSIVEL_RESC
 
 
 def _normalize_situacao_tokens(situacao: str | None) -> list[str]:
@@ -193,17 +175,9 @@ def persist_rows(
         if inscricao_canonica:
             campos["numero_inscricao"] = inscricao_canonica
         representacao = _representacao_value(inscricao_original, inscricao_canonica)
-        if representacao is not None:
-            campos["representacao"] = representacao
         campos["parcelas_atraso"] = parcelas_normalizadas
 
         campos["dias_em_atraso"] = dias_calculado
-
-        status = _infer_plan_status(situacao)
-        if status is not None:
-            campos["status"] = status
-        elif existente is None:
-            campos["status"] = PlanStatus.PASSIVEL_RESC
 
         plan = context.plans.upsert(
             numero_plano=row.numero, existing=existente, **campos
