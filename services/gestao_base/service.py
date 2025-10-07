@@ -99,7 +99,7 @@ class GestaoBaseService:
 
         return run_step_job(
             step=Step.ETAPA_1,
-            job_name=Step.ETAPA_1,
+            job_name="gestao_base",
             callback=_run,
             user_id=matricula,
         )
