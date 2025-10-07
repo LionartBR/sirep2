@@ -1,0 +1,4 @@
+[mcp_servers.postgres]
+command = "postgres-mcp"
+args = ["--access-mode=restricted"]
+env = { DATABASE_URI = "postgresql://postgres@localhost:5432/sirep_db" }
