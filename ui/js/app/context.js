@@ -163,6 +163,8 @@ export function createAppContext() {
     totalPages: null,
     showingFrom: 0,
     showingTo: 0,
+    currentCursor: null,
+    currentDirection: null,
   };
 
   context.occPager = {

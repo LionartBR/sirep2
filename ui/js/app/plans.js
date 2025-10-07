@@ -791,6 +791,8 @@ export function registerPlansModule(context) {
     plansPager.showingTo = 0;
     plansPager.totalCount = null;
     plansPager.totalPages = null;
+    plansPager.currentCursor = null;
+    plansPager.currentDirection = null;
   };
 
   const updatePlansPagerUI = () => {
@@ -822,7 +824,30 @@ export function registerPlansModule(context) {
     }
   };
 
-  const buildPlansRequestUrl = ({ direction = null } = {}) => {
+  const resolvePlansCursorForRequest = (direction) => {
+    let requestDirection = direction;
+    let cursorToken = null;
+
+    if (requestDirection === 'next' && plansPager.nextCursor) {
+      cursorToken = plansPager.nextCursor;
+    } else if (requestDirection === 'prev' && plansPager.prevCursor) {
+      cursorToken = plansPager.prevCursor;
+    } else if (!requestDirection) {
+      const hasStoredCursor = plansPager.currentCursor && plansPager.currentDirection;
+      if (plansPager.page > 1 && hasStoredCursor) {
+        requestDirection = plansPager.currentDirection;
+        cursorToken = plansPager.currentCursor;
+      }
+    }
+
+    if (!cursorToken) {
+      requestDirection = null;
+    }
+
+    return { cursor: cursorToken, direction: requestDirection };
+  };
+
+  const buildPlansRequest = ({ direction = null } = {}) => {
     const baseUrl =
       window.location.origin && window.location.origin !== 'null'
         ? window.location.origin
@@ -830,13 +855,13 @@ export function registerPlansModule(context) {
     const url = new URL(PLANS_ENDPOINT, baseUrl);
     url.searchParams.set('page', String(plansPager.page));
     url.searchParams.set('page_size', String(plansPager.pageSize));
-    if (direction === 'next' && plansPager.nextCursor) {
-      url.searchParams.set('cursor', plansPager.nextCursor);
-      url.searchParams.set('direction', 'next');
-    } else if (direction === 'prev' && plansPager.prevCursor) {
-      url.searchParams.set('cursor', plansPager.prevCursor);
-      url.searchParams.set('direction', 'prev');
+
+    const { cursor, direction: requestDirection } = resolvePlansCursorForRequest(direction);
+    if (cursor && requestDirection) {
+      url.searchParams.set('cursor', cursor);
+      url.searchParams.set('direction', requestDirection);
     }
+
     if (state.currentPlansSearchTerm) {
       url.searchParams.set('q', state.currentPlansSearchTerm);
     }
@@ -854,7 +879,12 @@ export function registerPlansModule(context) {
     if (filtersState.dtRange) {
       url.searchParams.set('dt_sit_range', filtersState.dtRange);
     }
-    return url.toString();
+
+    return {
+      url: url.toString(),
+      cursor,
+      direction: requestDirection,
+    };
   };
 
   const refreshPlans = async ({ showLoading, direction = null } = {}) => {
@@ -883,7 +913,8 @@ export function registerPlansModule(context) {
       if (matricula) {
         requestHeaders.set('X-User-Registration', matricula);
       }
-      const response = await fetch(buildPlansRequestUrl({ direction }), {
+      const requestConfig = buildPlansRequest({ direction });
+      const response = await fetch(requestConfig.url, {
         headers: requestHeaders,
         signal: state.plansFetchController.signal,
       });
@@ -940,6 +971,13 @@ export function registerPlansModule(context) {
         plansPager.showingTo = items.length;
         plansPager.totalCount = typeof payload?.total === 'number' ? payload.total : null;
         plansPager.totalPages = plansPager.totalCount ? 1 : null;
+      }
+      if (requestConfig.direction && requestConfig.cursor) {
+        plansPager.currentCursor = requestConfig.cursor;
+        plansPager.currentDirection = requestConfig.direction;
+      } else {
+        plansPager.currentCursor = null;
+        plansPager.currentDirection = null;
       }
       updatePlansPagerUI();
       state.plansLoaded = true;
