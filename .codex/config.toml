@@ -16,3 +16,8 @@ command = "npx"
 args = ["@playwright/mcp@latest",
         "--allowed-hosts=*",
         "--caps=pdf,clipboard"]
+
+[mcp_servers.filesystem]
+command = "/home/arthur_martins/.nvm/versions/node/v22.20.0/bin/npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem",
+        "/mnt/c/Users/Arthur A. Martins/OneDrive/Desktop/py_projects/sirep2"]
