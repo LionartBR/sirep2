@@ -16,9 +16,3 @@ command = "npx"
 args = ["@playwright/mcp@latest",
         "--allowed-hosts=*",
         "--caps=pdf,clipboard"]
-
-[mcp_servers.sentry]
-command = "npx"
-args = ["-y", "@sentry/mcp-server@latest"]
-[mcp_servers.sentry.env]
-SENTRY_ACCESS_TOKEN = "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"
