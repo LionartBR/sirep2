@@ -78,8 +78,6 @@ export function registerFiltersModule(context) {
       const scope = container.getAttribute('data-filter-chips') ?? '';
       const isPlanContainer = scope.startsWith('plans');
       const isPlanEmptyContainer = scope === 'plans-empty';
-      const isOccContainer = scope.startsWith('occ');
-      const isOccEmptyContainer = scope === 'occ-empty';
 
       let shouldShow = hasChips;
 
@@ -88,11 +86,6 @@ export function registerFiltersModule(context) {
           hasChips &&
           ((context.plansHasResults && !isPlanEmptyContainer) ||
             (!context.plansHasResults && isPlanEmptyContainer));
-      } else if (isOccContainer) {
-        shouldShow =
-          hasChips &&
-          ((context.occHasResults && !isOccEmptyContainer) ||
-            (!context.occHasResults && isOccEmptyContainer));
       }
 
       if (!shouldShow) {
@@ -194,16 +187,13 @@ export function registerFiltersModule(context) {
     if (typeof context.resetPlansPagination === 'function') {
       context.resetPlansPagination();
     }
-    if (typeof context.resetOccurrencesPagination === 'function') {
-      context.resetOccurrencesPagination();
-    }
     syncFilterInputs();
     renderFilterChips();
     if (typeof context.refreshPlans === 'function') {
       void context.refreshPlans({ showLoading: true });
     }
-    if (typeof context.refreshOccurrences === 'function') {
-      void context.refreshOccurrences({ showLoading: true });
+    if (typeof context.scheduleOccurrencesCountUpdate === 'function') {
+      context.scheduleOccurrencesCountUpdate();
     }
     if (closeDropdown) {
       closeAllFilterDropdowns();
@@ -260,10 +250,6 @@ export function registerFiltersModule(context) {
     if (context.plansFiltersChipsContainer) {
       attachFilterChipHandler(context.plansFiltersChipsContainer);
     }
-    if (context.occFiltersChipsContainer) {
-      attachFilterChipHandler(context.occFiltersChipsContainer);
-    }
-
     const quickFilterCheckbox = context.quickFilterOccurrencesCheckbox;
     const quickFilterLabel = quickFilterCheckbox?.closest('.quick-filter');
     if (quickFilterLabel instanceof HTMLElement) {

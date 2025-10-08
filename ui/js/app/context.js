@@ -55,18 +55,8 @@ export function createAppContext() {
   context.plansLockActionLabel = context.plansLockAction?.querySelector('span') ?? null;
   context.plansActionsSeparator = context.plansActionsMenu?.querySelector('[data-role="separator"]') ?? null;
   context.plansFiltersChipsContainer = document.getElementById('plansFiltersChips');
-  context.occFiltersChipsContainer = document.getElementById('occFiltersChips');
   context.quickFilterOccurrencesCheckbox = document.getElementById('quickFilterOccurrences');
   context.quickFilterOccurrencesBadge = document.getElementById('occurrencesCountQuickFilter');
-
-  // Occurrences table references
-  context.occTablePanel = document.getElementById('occurrencesTablePanel');
-  context.occTableElement = context.occTablePanel?.querySelector('table') ?? null;
-  context.occTableBody = context.occTableElement?.tBodies?.[0] ?? null;
-  context.occColumnCount =
-    context.occTableElement?.tHead?.rows?.[0]?.cells?.length ??
-    context.occTableElement?.rows?.[0]?.cells?.length ??
-    8;
 
   // Treatment table references
   context.treatmentPanelEl = document.getElementById('panel-treatment');
@@ -85,11 +75,6 @@ export function createAppContext() {
   context.plansPagerNextBtn = document.getElementById('plansPagerNext');
   context.plansPagerLabel = document.getElementById('plansPagerLabel');
   context.plansPagerRange = document.getElementById('plansPagerRange');
-
-  context.occPagerPrevBtn = document.getElementById('occPagerPrev');
-  context.occPagerNextBtn = document.getElementById('occPagerNext');
-  context.occPagerLabel = document.getElementById('occPagerLabel');
-  context.occPagerRange = document.getElementById('occPagerRange');
 
   context.kpiQueueEl = document.getElementById('kpiQueueCount');
   context.kpiRescindedEl = document.getElementById('kpiRescindedCount');
@@ -110,7 +95,7 @@ export function createAppContext() {
   context.treatmentStatusFilter = 'pending';
   context.treatmentLoaded = false;
 
-  context.tableSearchState = { plans: '', occurrences: '' };
+  context.tableSearchState = { plans: '' };
   context.filtersState = {
     situacao: [],
     diasMin: null,
@@ -150,10 +135,8 @@ export function createAppContext() {
   };
 
   context.plansHasResults = false;
-  context.occHasResults = false;
   context.filterWrappers = [];
   context.currentPlansSearchTerm = '';
-  context.currentOccurrencesSearchTerm = '';
   context.activeTableSearchTarget = 'plans';
   context.quickFilterOccActive = false;
   context.prevSituacaoBeforeOccQuick = null;
@@ -172,18 +155,6 @@ export function createAppContext() {
     currentDirection: null,
   };
 
-  context.occPager = {
-    page: 1,
-    pageSize: context.DEFAULT_PLAN_PAGE_SIZE,
-    nextCursor: null,
-    prevCursor: null,
-    hasMore: false,
-    totalCount: null,
-    totalPages: null,
-    showingFrom: 0,
-    showingTo: 0,
-  };
-
   context.treatmentPager = {
     page: 1,
     pageSize: context.DEFAULT_PLAN_PAGE_SIZE,
@@ -197,7 +168,6 @@ export function createAppContext() {
   };
 
   context.plansFetchController = null;
-  context.occFetchController = null;
   context.pipelineMetaController = null;
 
   context.currencyFormatter = new Intl.NumberFormat('pt-BR', {
@@ -218,7 +188,6 @@ export function createAppContext() {
   context.isFetchingTreatment = false;
   context.isFetchingTreatmentState = false;
   context.plansLoaded = false;
-  context.occurrencesLoaded = false;
 
   context.permissionToastHandle = null;
   context.isPlansActionsMenuOpen = false;
@@ -235,15 +204,14 @@ export function createAppContext() {
   context.attachFilterChipHandler = () => {};
 
   context.resetPlansPagination = () => {};
-  context.resetOccurrencesPagination = () => {};
   context.resetTreatmentPagination = () => {};
 
   context.refreshPlans = async () => undefined;
-  context.refreshOccurrences = async () => undefined;
   context.refreshTreatment = async () => undefined;
   context.fetchTreatmentState = async () => null;
   context.buildTreatmentFilters = () => null;
   context.updateTreatmentKpis = () => {};
+  context.refreshOccurrencesCount = async () => undefined;
 
   context.togglePipelineButtons = () => {};
   context.refreshPipelineMeta = async () => null;
@@ -256,8 +224,6 @@ export function createAppContext() {
   context.setupFilters = () => {};
   context.setupCopyableCells = () => {};
   context.setupDocumentObserver = () => {};
-  context.setupOccurrencesSearchObserver = () => {};
-  context.setupOccurrencesCounter = () => {};
   context.setupTableSwitching = () => {};
   context.setupMainTabsSwitching = () => {};
   context.initializeDatePickers = () => {};

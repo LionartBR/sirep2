@@ -4,7 +4,7 @@ import { registerHelperModule } from './app/helpers.js';
 import { registerProfileModule } from './app/profile.js';
 import { registerFiltersModule } from './app/filters.js';
 import { registerPlansModule } from './app/plans.js';
-import { registerOccurrencesModule } from './app/occurrences.js';
+import { registerOccurrenceCounterModule } from './app/occ-counter.js';
 import { registerTreatmentModule } from './app/treatment.js';
 import { registerSearchModule } from './app/search.js';
 import { registerPipelineModule } from './app/pipeline.js';
@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
   registerPlanDetailsModule(context);
   registerFiltersModule(context);
   registerPlansModule(context);
-  registerOccurrencesModule(context);
+  registerOccurrenceCounterModule(context);
   registerTreatmentModule(context);
   registerSearchModule(context);
   registerPipelineModule(context);
@@ -50,8 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
   context.setupFilters?.();
   context.setupCopyableCells?.();
   context.setupDocumentObserver?.();
-  context.setupOccurrencesSearchObserver?.();
-  context.setupOccurrencesCounter?.();
   context.setupTableSwitching?.();
   context.setupMainTabsSwitching?.();
   context.initializeDatePickers?.();
@@ -63,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
   context.updateTreatmentKpis?.();
 
   void context.refreshPlans?.({ showLoading: true });
-  void context.refreshOccurrences?.({ showLoading: true });
+  context.scheduleOccurrencesCountUpdate?.();
   void context.fetchTreatmentState?.({ refreshItems: true });
 
   const loadPipelineState = async () => {

@@ -251,7 +251,9 @@ export function registerPipelineModule(context) {
         if (state.shouldRefreshPlansAfterRun) {
           state.shouldRefreshPlansAfterRun = false;
           void context.refreshPlans?.({ showLoading: false });
-          void context.refreshOccurrences?.({ showLoading: false });
+          if (typeof context.scheduleOccurrencesCountUpdate === 'function') {
+            context.scheduleOccurrencesCountUpdate();
+          }
         }
         break;
     }

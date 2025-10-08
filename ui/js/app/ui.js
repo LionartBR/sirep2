@@ -199,20 +199,6 @@ export function registerUiModule(context) {
     });
   };
 
-  const setupOccurrencesSearchObserver = () => {
-    const occurrencesPanel = document.getElementById('occurrencesTablePanel');
-    if (!occurrencesPanel) {
-      return;
-    }
-
-    const observer = new MutationObserver(() => {});
-
-    observer.observe(occurrencesPanel, {
-      childList: true,
-      subtree: true,
-    });
-  };
-
   const setupTableSwitching = () => {
     const tabs = Array.from(document.querySelectorAll('[data-table-target]'));
     const panels = Array.from(document.querySelectorAll('[data-table-panel]'));
@@ -244,9 +230,9 @@ export function registerUiModule(context) {
       });
 
       context.setActiveSearchTarget?.(target);
-      context.syncSearchInputValue?.(target);
-      if (target === 'occurrences' && !state.occurrencesLoaded) {
-        void context.refreshOccurrences?.({ showLoading: true });
+      context.syncSearchInputValue?.();
+      if (typeof context.scheduleOccurrencesCountUpdate === 'function') {
+        context.scheduleOccurrencesCountUpdate();
       }
     };
 
@@ -476,7 +462,6 @@ export function registerUiModule(context) {
   context.setupCopyableCells = setupCopyableCells;
   context.applyCopyBehaviorToRow = applyCopyBehaviorToRow;
   context.setupDocumentObserver = setupDocumentObserver;
-  context.setupOccurrencesSearchObserver = setupOccurrencesSearchObserver;
   context.setupTableSwitching = setupTableSwitching;
   context.setupMainTabsSwitching = setupMainTabsSwitching;
   context.initializeDatePickers = initializeDatePickers;

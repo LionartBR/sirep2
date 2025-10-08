@@ -175,6 +175,17 @@
   color: var(--primary);
 }
 
+.quick-filter.section-switch--notify {
+  padding-right: 16px;
+}
+
+.quick-filter .section-switch__badge {
+  position: static;
+  transform: none;
+  margin-left: -4px;
+  border-width: 1px;
+}
+
 .quick-filter--active .quick-filter__indicator {
   background: var(--primary);
   border-color: var(--primary);

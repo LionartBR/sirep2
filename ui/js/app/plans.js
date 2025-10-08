@@ -994,6 +994,9 @@ export function registerPlansModule(context) {
         plansPager.currentDirection = null;
       }
       updatePlansPagerUI();
+      if (typeof context.scheduleOccurrencesCountUpdate === 'function') {
+        context.scheduleOccurrencesCountUpdate();
+      }
       state.plansLoaded = true;
     } catch (error) {
       if (error?.name === 'AbortError') {
