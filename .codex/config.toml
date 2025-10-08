@@ -6,3 +6,7 @@ env = { DATABASE_URI = "postgresql://postgres@localhost:5432/sirep_db" }
 [mcp_servers.context7]
 command = "C:\\Program Files\\nodejs\\node.exe"
 args    = ["C:\\Users\\Name\\AppData\\Roaming\\npm\\node_modules\\@upstash\\context7-mcp\\dist\\index.js","--transport","stdio"]
+
+[mcp_servers.super-shell]
+command = "npx"
+args = ["-y", "super-shell-mcp"]
