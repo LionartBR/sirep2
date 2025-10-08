@@ -9,4 +9,4 @@ args    = ["C:\\Users\\Name\\AppData\\Roaming\\npm\\node_modules\\@upstash\\cont
 
 [mcp_servers.super-shell]
 command = "npx"
-args = ["-y", "super-shell-mcp"]
+args = ["-y", "super-shell-mcp", "--shell=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"]
