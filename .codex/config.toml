@@ -11,14 +11,14 @@ args    = ["C:\\Users\\Name\\AppData\\Roaming\\npm\\node_modules\\@upstash\\cont
 command = "npx"
 args = ["-y", "super-shell-mcp", "--shell=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"]
 
-[mcp_servers.filesystem]
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem",
-        "/mnt/c/Users/Arthur A. Martins/OneDrive/Desktop/py_projects/sirep2",
-        "/mnt/c/Users/Arthur A. Martins/Downloads"]
-
 [mcp_servers.playwright]
 command = "npx"
 args = ["@playwright/mcp@latest",
         "--allowed-hosts=*",
         "--caps=pdf,clipboard"]
+
+[mcp_servers.sentry]
+command = "npx"
+args = ["-y", "@sentry/mcp-server@latest"]
+[mcp_servers.sentry.env]
+SENTRY_ACCESS_TOKEN = "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"

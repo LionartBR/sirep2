@@ -1,5 +1,10 @@
 # Repository Guidelines
 
+## Rules
+- `context7-mcp/` Always use context7 when I need code generation, setup or configuration steps, or
+library/API documentation. This means you should automatically use the Context7 MCP
+tools to resolve library id and get library docs without me having to explicitly ask.
+
 ## Project Structure & Module Organization
 - `domain/` holds immutable business rules (use `@dataclass(frozen=True)`), no framework imports.
 - `services/` orchestrates domain flows and talks to adapters defined via domain interfaces.
