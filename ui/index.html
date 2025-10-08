@@ -164,6 +164,27 @@
               aria-labelledby="plansTableTab"
               data-table-panel="plans"
             >
+              <div class="table-quick-filters" id="plansQuickFilters" role="group" aria-label="Filtros rápidos">
+                <label class="quick-filter section-switch--notify" for="quickFilterOccurrences">
+                  <input
+                    type="checkbox"
+                    id="quickFilterOccurrences"
+                    name="quickFilterOccurrences"
+                    data-quick-filter="occurrences"
+                  />
+                  <span class="quick-filter__indicator" aria-hidden="true"></span>
+                  <span class="quick-filter__label">Ocorrências</span>
+                  <span
+                    class="section-switch__badge"
+                    id="occurrencesCountQuickFilter"
+                    aria-live="polite"
+                    data-count="0"
+                    hidden
+                  >
+                    0
+                  </span>
+                </label>
+              </div>
               <div
                 class="table-active-filters"
                 id="plansFiltersChips"

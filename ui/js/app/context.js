@@ -56,6 +56,8 @@ export function createAppContext() {
   context.plansActionsSeparator = context.plansActionsMenu?.querySelector('[data-role="separator"]') ?? null;
   context.plansFiltersChipsContainer = document.getElementById('plansFiltersChips');
   context.occFiltersChipsContainer = document.getElementById('occFiltersChips');
+  context.quickFilterOccurrencesCheckbox = document.getElementById('quickFilterOccurrences');
+  context.quickFilterOccurrencesBadge = document.getElementById('occurrencesCountQuickFilter');
 
   // Occurrences table references
   context.occTablePanel = document.getElementById('occurrencesTablePanel');
@@ -115,6 +117,7 @@ export function createAppContext() {
     saldoMin: null,
     dtRange: null,
   };
+  context.OCCURRENCE_SITUATION_CODES = ['SIT_ESPECIAL', 'GRDE_EMITIDA'];
   context.plansSelection = new Set();
   context.FILTER_LABELS = {
     situacao: {
@@ -152,6 +155,8 @@ export function createAppContext() {
   context.currentPlansSearchTerm = '';
   context.currentOccurrencesSearchTerm = '';
   context.activeTableSearchTarget = 'plans';
+  context.quickFilterOccActive = false;
+  context.prevSituacaoBeforeOccQuick = null;
 
   context.plansPager = {
     page: 1,

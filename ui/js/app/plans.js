@@ -23,6 +23,10 @@ export function registerPlansModule(context) {
 
   const plansPager = context.plansPager;
   const planCheckboxSelector = "input[type='checkbox'][data-plan-checkbox]";
+  const occurrenceSituacaoCodes =
+    Array.isArray(context.OCCURRENCE_SITUATION_CODES) && context.OCCURRENCE_SITUATION_CODES.length
+      ? [...context.OCCURRENCE_SITUATION_CODES]
+      : ['SIT_ESPECIAL', 'GRDE_EMITIDA'];
 
   state.isProcessingPlanLock = false;
   if (!(state.planMetadata instanceof Map)) {
@@ -878,6 +882,16 @@ export function registerPlansModule(context) {
     }
     if (filtersState.dtRange) {
       url.searchParams.set('dt_sit_range', filtersState.dtRange);
+    }
+
+    if (occurrenceSituacaoCodes.length) {
+      const matchesOccurrenceFilter =
+        Array.isArray(filtersState.situacao) &&
+        filtersState.situacao.length === occurrenceSituacaoCodes.length &&
+        occurrenceSituacaoCodes.every((code) => filtersState.situacao.includes(code));
+      if (matchesOccurrenceFilter) {
+        url.searchParams.set('occurrences_only', 'true');
+      }
     }
 
     return {

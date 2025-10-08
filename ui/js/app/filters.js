@@ -1,5 +1,32 @@
 export function registerFiltersModule(context) {
   const { filtersState, FILTER_LABELS } = context;
+  const OCCURRENCE_CODES =
+    Array.isArray(context.OCCURRENCE_SITUATION_CODES) && context.OCCURRENCE_SITUATION_CODES.length
+      ? [...context.OCCURRENCE_SITUATION_CODES]
+      : ['SIT_ESPECIAL', 'GRDE_EMITIDA'];
+
+  const isOccurrencesSelection = (values) => {
+    if (!Array.isArray(values) || values.length !== OCCURRENCE_CODES.length) {
+      return false;
+    }
+    const uniqueValues = Array.from(new Set(values));
+    if (uniqueValues.length !== OCCURRENCE_CODES.length) {
+      return false;
+    }
+    return OCCURRENCE_CODES.every((code) => uniqueValues.includes(code));
+  };
+
+  const syncQuickFilterVisualState = (active) => {
+    const checkbox = context.quickFilterOccurrencesCheckbox;
+    if (checkbox) {
+      checkbox.checked = active;
+    }
+    const quickFilterLabel = checkbox?.closest('.quick-filter');
+    if (quickFilterLabel instanceof HTMLElement) {
+      quickFilterLabel.classList.toggle('quick-filter--active', active);
+      quickFilterLabel.setAttribute('aria-checked', String(active));
+    }
+  };
 
   const hasActiveFilters = () =>
     (Array.isArray(filtersState.situacao) && filtersState.situacao.length > 0) ||
@@ -125,6 +152,13 @@ export function registerFiltersModule(context) {
         input.checked = filtersState.dtRange === value;
       }
     });
+
+    const quickFilterActive = isOccurrencesSelection(filtersState.situacao);
+    syncQuickFilterVisualState(quickFilterActive);
+    context.quickFilterOccActive = quickFilterActive;
+    if (!quickFilterActive) {
+      context.prevSituacaoBeforeOccQuick = null;
+    }
   };
 
   const closeAllFilterDropdowns = () => {
@@ -228,6 +262,45 @@ export function registerFiltersModule(context) {
     }
     if (context.occFiltersChipsContainer) {
       attachFilterChipHandler(context.occFiltersChipsContainer);
+    }
+
+    const quickFilterCheckbox = context.quickFilterOccurrencesCheckbox;
+    const quickFilterLabel = quickFilterCheckbox?.closest('.quick-filter');
+    if (quickFilterLabel instanceof HTMLElement) {
+      quickFilterLabel.setAttribute('role', 'switch');
+      quickFilterLabel.setAttribute(
+        'aria-checked',
+        String(isOccurrencesSelection(filtersState.situacao)),
+      );
+      if (!quickFilterLabel.hasAttribute('aria-label')) {
+        quickFilterLabel.setAttribute('aria-label', 'Mostrar somente planos com ocorrências');
+      }
+    }
+
+    if (quickFilterCheckbox) {
+      quickFilterCheckbox.addEventListener('change', () => {
+        const checked = quickFilterCheckbox.checked;
+        if (checked) {
+          if (!context.quickFilterOccActive) {
+            context.prevSituacaoBeforeOccQuick = Array.isArray(filtersState.situacao)
+              ? [...filtersState.situacao]
+              : [];
+          }
+          filtersState.situacao = [...OCCURRENCE_CODES];
+          context.quickFilterOccActive = true;
+        } else {
+          const fallback =
+            Array.isArray(context.prevSituacaoBeforeOccQuick) &&
+            context.prevSituacaoBeforeOccQuick.length
+              ? [...context.prevSituacaoBeforeOccQuick]
+              : filtersState.situacao.filter((value) => !OCCURRENCE_CODES.includes(value));
+          filtersState.situacao = fallback;
+          context.prevSituacaoBeforeOccQuick = null;
+          context.quickFilterOccActive = false;
+        }
+        syncQuickFilterVisualState(checked);
+        applyFilters({ closeDropdown: false });
+      });
     }
 
     if (!context.filterWrappers.length) {

@@ -13,7 +13,10 @@ export function registerOccurrencesModule(context) {
   } = context;
 
   const occPager = context.occPager;
-  const OCCURRENCE_ALLOWED_SITUATIONS = ['SIT_ESPECIAL', 'GRDE_EMITIDA'];
+  const OCCURRENCE_ALLOWED_SITUATIONS =
+    Array.isArray(context.OCCURRENCE_SITUATION_CODES) && context.OCCURRENCE_SITUATION_CODES.length
+      ? [...context.OCCURRENCE_SITUATION_CODES]
+      : ['SIT_ESPECIAL', 'GRDE_EMITIDA'];
   const occurrenceSituacaoSet = new Set(OCCURRENCE_ALLOWED_SITUATIONS);
 
   const renderOccurrencesPlaceholder = (message, modifier = 'empty') => {
@@ -310,10 +313,15 @@ export function registerOccurrencesModule(context) {
   };
 
   const setupOccurrencesCounter = () => {
-    const countElement = document.getElementById('occurrencesCount');
+    const tabBadge = document.getElementById('occurrencesCount');
+    const quickFilterBadge =
+      context.quickFilterOccurrencesBadge ?? document.getElementById('occurrencesCountQuickFilter');
+    const countElements = [tabBadge, quickFilterBadge].filter(
+      (node) => node instanceof HTMLElement,
+    );
     const occurrencesPanel = document.getElementById('occurrencesTablePanel');
 
-    if (!countElement || !occurrencesPanel) {
+    if (!countElements.length || !occurrencesPanel) {
       state.scheduleOccurrencesCountUpdate = () => {};
       return;
     }
@@ -330,12 +338,14 @@ export function registerOccurrencesModule(context) {
 
     const updateCount = () => {
       const total = typeof occPager.totalCount === 'number' ? occPager.totalCount : 0;
-      countElement.dataset.count = String(total);
       const shouldHide = total <= 0;
-      countElement.hidden = shouldHide;
-      if (!shouldHide) {
-        countElement.textContent = clampCountText(total);
-      }
+      countElements.forEach((element) => {
+        element.dataset.count = String(total);
+        element.hidden = shouldHide;
+        if (!shouldHide) {
+          element.textContent = clampCountText(total);
+        }
+      });
     };
 
     let pendingHandle = null;
