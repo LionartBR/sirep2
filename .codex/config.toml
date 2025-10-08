@@ -10,3 +10,9 @@ args    = ["C:\\Users\\Name\\AppData\\Roaming\\npm\\node_modules\\@upstash\\cont
 [mcp_servers.super-shell]
 command = "npx"
 args = ["-y", "super-shell-mcp", "--shell=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"]
+
+[mcp_servers.filesystem]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem",
+        "/mnt/c/Users/Arthur A. Martins/OneDrive/Desktop/py_projects/sirep2",
+        "/mnt/c/Users/Arthur A. Martins/Downloads"]
