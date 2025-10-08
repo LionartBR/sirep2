@@ -16,3 +16,9 @@ command = "npx"
 args = ["-y", "@modelcontextprotocol/server-filesystem",
         "/mnt/c/Users/Arthur A. Martins/OneDrive/Desktop/py_projects/sirep2",
         "/mnt/c/Users/Arthur A. Martins/Downloads"]
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["@playwright/mcp@latest",
+        "--allowed-hosts=*",
+        "--caps=pdf,clipboard"]
