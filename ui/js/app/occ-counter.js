@@ -64,8 +64,8 @@ export function registerOccurrenceCounterModule(context) {
         url.searchParams.append('situacao', value);
       });
     }
-    if (filtersState.diasMin !== null && filtersState.diasMin !== undefined) {
-      url.searchParams.set('dias_min', String(filtersState.diasMin));
+    if (typeof filtersState.diasRange === 'string' && filtersState.diasRange) {
+      url.searchParams.set('dias_range', filtersState.diasRange);
     }
     if (filtersState.saldoMin !== null && filtersState.saldoMin !== undefined) {
       url.searchParams.set('saldo_min', String(filtersState.saldoMin));

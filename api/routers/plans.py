@@ -92,7 +92,13 @@ _FILTER_SITUATION_SET = set(_FILTER_SITUATION_CODES)
 _OCCURRENCE_SITUATION_CODES: tuple[str, ...] = ("SIT_ESPECIAL", "GRDE_EMITIDA")
 _OCCURRENCE_SITUATION_SET = set(_OCCURRENCE_SITUATION_CODES)
 
-_ALLOWED_OVERDUE_THRESHOLDS: set[int] = {90, 100, 120}
+_ALLOWED_OVERDUE_RANGES: dict[str, tuple[int, int | None]] = {
+    "30-60": (30, 60),
+    "60-90": (60, 90),
+    "100-120": (100, 120),
+    "120+": (120, None),
+}
+_ALLOWED_OVERDUE_RANGE_KEYS = set(_ALLOWED_OVERDUE_RANGES)
 
 _ALLOWED_SALDO_THRESHOLDS: tuple[int, ...] = (10000, 50000, 150000, 500000, 1_000_000)
 _ALLOWED_SALDO_SET = set(_ALLOWED_SALDO_THRESHOLDS)
@@ -142,14 +148,45 @@ def _normalize_situacao_filter(values: Sequence[str] | str | None) -> list[str]:
     return normalized
 
 
-def _normalize_dias_min(value: int | None) -> int | None:
+def _normalize_dias_range(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    candidate = str(value).strip()
+    if not candidate:
+        return None
+
+    ascii_candidate = candidate.replace("–", "-")
+    normalized = ascii_candidate.upper().replace(" ", "")
+    if normalized.endswith("+"):
+        normalized = normalized[:-1] + "+"
+    if normalized in _ALLOWED_OVERDUE_RANGE_KEYS:
+        return normalized[:-1] + "+" if normalized.endswith("+") else normalized
+    return None
+
+
+def _map_legacy_dias_min(value: int | None) -> str | None:
+    """Backwards compatibility: map legacy thresholds to the closest bucket."""
+
     if value is None:
         return None
     try:
         candidate = int(value)
     except (TypeError, ValueError):
         return None
-    return candidate if candidate in _ALLOWED_OVERDUE_THRESHOLDS else None
+
+    mapping = {90: "60-90", 100: "100-120", 120: "120+"}
+    return mapping.get(candidate)
+
+
+def _normalize_legacy_dias_min(value: int | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        candidate = int(value)
+    except (TypeError, ValueError):
+        return None
+    return candidate if candidate in {90, 100, 120} else None
 
 
 def _normalize_saldo_min(value: int | None) -> int | None:
@@ -728,6 +765,7 @@ def _should_use_keyset(request: Request | None) -> bool:
         "tipo_doc",
         "situacao",
         "dias_min",
+        "dias_range",
         "saldo_min",
         "dt_sit_range",
     }
@@ -757,7 +795,7 @@ def _build_filters(
     tipo_doc: str | None,
     occurrences_only: bool = False,
     situacoes: Sequence[str] | None = None,
-    dias_min: int | None = None,
+    dias_range: str | None = None,
     saldo_min: int | None = None,
     dt_sit_range: str | None = None,
     table_alias: str | None = None,
@@ -805,11 +843,9 @@ def _build_filters(
         params["situacoes"] = effective_situacoes
         clauses.append(f"{col('situacao_codigo')} = ANY(%(situacoes)s::text[])")
 
-    if dias_min is not None:
-        params["dias_min"] = dias_min
-        clauses.append(
-            f"{col('atraso_desde')} <= CURRENT_DATE - make_interval(days => %(dias_min)s)"
-        )
+    if dias_range:
+        params["dias_range"] = dias_range
+        clauses.append(f"{col('faixa_dias_em_atraso')} = %(dias_range)s")
 
     if saldo_min is not None:
         params["saldo_min"] = saldo_min
@@ -885,7 +921,7 @@ async def _fetch_keyset_page(
     tipo_doc: str | None,
     occurrences_only: bool,
     situacoes: Sequence[str] | None,
-    dias_min: int | None,
+    dias_range: str | None,
     saldo_min: int | None,
     dt_sit_range: str | None,
     page_size: int,
@@ -902,7 +938,7 @@ async def _fetch_keyset_page(
         tipo_doc=tipo_doc,
         occurrences_only=occurrences_only,
         situacoes=situacoes,
-        dias_min=dias_min,
+        dias_range=dias_range,
         saldo_min=saldo_min,
         dt_sit_range=dt_sit_range,
         table_alias="planos",
@@ -1067,8 +1103,14 @@ async def list_plans(
     situacao: list[str] | None = Query(
         None, description="Filtro por situação (códigos normalizados)"
     ),
+    dias_range: str | None = Query(
+        None,
+        description="Faixa de dias em atraso (30-60, 60-90, 100-120, 120+)",
+    ),
     dias_min: int | None = Query(
-        None, description="Mínimo de dias em atraso (90, 100, 120)"
+        None,
+        description="(Legado) mínimo de dias em atraso (90, 100, 120)",
+        deprecated=True,
     ),
     saldo_min: int | None = Query(
         None,
@@ -1098,7 +1140,8 @@ async def list_plans(
     tipo_doc = _unwrap_query_param(tipo_doc)
     occurrences_only = _unwrap_query_param(occurrences_only)
     situacao = _unwrap_query_param(situacao)
-    dias_min = _unwrap_query_param(dias_min)
+    dias_range_value_raw = _unwrap_query_param(dias_range)
+    dias_min_value_raw = _unwrap_query_param(dias_min)
     saldo_min = _unwrap_query_param(saldo_min)
     dt_sit_range = _unwrap_query_param(dt_sit_range)
 
@@ -1113,26 +1156,31 @@ async def list_plans(
     dt_sit_range = str(dt_sit_range).upper() if dt_sit_range else None
 
     situacao_values = _normalize_situacao_filter(situacao)
-    dias_threshold = _normalize_dias_min(dias_min)
+    dias_range_value = _normalize_dias_range(dias_range_value_raw)
+    legacy_threshold = _normalize_legacy_dias_min(dias_min_value_raw)
+    dias_bucket = dias_range_value or _map_legacy_dias_min(legacy_threshold)
+    if dias_bucket and legacy_threshold is None:
+        legacy_threshold = _ALLOWED_OVERDUE_RANGES[dias_bucket][0]
     saldo_threshold = _normalize_saldo_min(saldo_min)
     dt_range_value = _normalize_dt_range(dt_sit_range)
 
     filters_applied = bool(
         situacao_values
-        or dias_threshold is not None
+        or dias_bucket is not None
         or saldo_threshold is not None
         or dt_range_value is not None
     )
 
     filters_model = PlansFilters(
         situacao=situacao_values or None,
-        dias_min=dias_threshold,
+        dias_range=dias_bucket,
+        dias_min=legacy_threshold,
         saldo_min=saldo_threshold,
         dt_sit_range=dt_range_value,
     )
     if not (
         filters_model.situacao
-        or filters_model.dias_min is not None
+        or filters_model.dias_range is not None
         or filters_model.saldo_min is not None
         or filters_model.dt_sit_range is not None
     ):
@@ -1159,7 +1207,7 @@ async def list_plans(
                     tipo_doc=tipo_doc,
                     occurrences_only=occurrences_only,
                     situacoes=situacao_values,
-                    dias_min=dias_threshold,
+                    dias_range=dias_bucket,
                     saldo_min=saldo_threshold,
                     dt_sit_range=dt_range_value,
                     page_size=page_size,
@@ -1172,7 +1220,7 @@ async def list_plans(
                     tipo_doc=tipo_doc,
                     occurrences_only=occurrences_only,
                     situacoes=situacao_values,
-                    dias_min=dias_threshold,
+                    dias_range=dias_bucket,
                     saldo_min=saldo_threshold,
                     dt_sit_range=dt_range_value,
                     table_alias="planos",
@@ -1180,7 +1228,7 @@ async def list_plans(
                 cache_key = (
                     f"{matricula}|{q or ''}|{tipo_doc or ''}|occ={occurrences_only}"
                     f"|situ={','.join(situacao_values) if situacao_values else ''}"
-                    f"|dias={dias_threshold or ''}|saldo={saldo_threshold or ''}|dt={dt_range_value or ''}"
+                    f"|dias={dias_bucket or ''}|saldo={saldo_threshold or ''}|dt={dt_range_value or ''}"
                 )
                 total_count = await _fast_total_count(
                     connection,

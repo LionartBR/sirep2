@@ -234,19 +234,23 @@
                           <i data-feather="chevron-down" class="table-filter__icon" aria-hidden="true"></i>
                         </button>
                         <div class="table-filter__dropdown" role="menu">
-                          <p class="table-filter__title">Selecione o mínimo</p>
+                          <p class="table-filter__title">Selecione a faixa</p>
                           <div class="table-filter__options" role="group" aria-label="Dias em atraso">
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-days" value="90" data-filter-input="dias" />
-                              <span>&ge; 90 dias</span>
+                              <input type="radio" name="filter-days" value="30-60" data-filter-input="dias" />
+                              <span>30-60 dias</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-days" value="100" data-filter-input="dias" />
-                              <span>&ge; 100 dias</span>
+                              <input type="radio" name="filter-days" value="60-90" data-filter-input="dias" />
+                              <span>60-90 dias</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-days" value="120" data-filter-input="dias" />
-                              <span>&ge; 120 dias</span>
+                              <input type="radio" name="filter-days" value="100-120" data-filter-input="dias" />
+                              <span>100-120 dias</span>
+                            </label>
+                            <label class="table-filter__option">
+                              <input type="radio" name="filter-days" value="120+" data-filter-input="dias" />
+                              <span>120+ dias</span>
                             </label>
                           </div>
                           <div class="table-filter__actions">

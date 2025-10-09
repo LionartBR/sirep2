@@ -174,8 +174,8 @@ export function registerTreatmentModule(context) {
     if (Array.isArray(filtersState.situacao) && filtersState.situacao.length) {
       filters.situacao = filtersState.situacao;
     }
-    if (typeof filtersState.diasMin === 'number' && Number.isFinite(filtersState.diasMin)) {
-      filters.dias_min = filtersState.diasMin;
+    if (typeof filtersState.diasRange === 'string' && filtersState.diasRange) {
+      filters.dias_range = filtersState.diasRange;
     }
     if (typeof filtersState.saldoMin === 'number' && Number.isFinite(filtersState.saldoMin)) {
       filters.saldo_min = filtersState.saldoMin;

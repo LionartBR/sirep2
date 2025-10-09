@@ -98,7 +98,7 @@ export function createAppContext() {
   context.tableSearchState = { plans: '' };
   context.filtersState = {
     situacao: [],
-    diasMin: null,
+    diasRange: null,
     saldoMin: null,
     dtRange: null,
   };
@@ -114,10 +114,11 @@ export function createAppContext() {
       LIQUIDADO: 'LIQUIDADO',
       GRDE_EMITIDA: 'GRDE Emitida',
     },
-    diasMin: {
-      90: '90+ dias',
-      100: '100+ dias',
-      120: '120+ dias',
+    diasRange: {
+      '30-60': '30-60 dias',
+      '60-90': '60-90 dias',
+      '100-120': '100-120 dias',
+      '120+': '120+ dias',
     },
     saldoMin: {
       10000: 'R$ 10 mil+',

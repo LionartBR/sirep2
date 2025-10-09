@@ -143,6 +143,7 @@ class PlansFilters(BaseModel):
     """Echoes the filters applied to the plans listing."""
 
     situacao: list[str] | None = None
+    dias_range: Optional[str] = None
     dias_min: int | None = None
     saldo_min: int | None = None
     dt_sit_range: str | None = None

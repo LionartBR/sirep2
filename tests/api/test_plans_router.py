@@ -427,13 +427,15 @@ class _DummyCursor:
         return False
 
     async def execute(self, sql: str, *args: Any, **kwargs: Any) -> None:
-        self.executed_sql = sql
-        if args:
-            self.executed_params = args[0]
-        else:
-            params = kwargs.get("params")
-            if params is not None:
-                self.executed_params = params
+        normalized = sql.strip().upper()
+        if normalized not in {"BEGIN", "COMMIT"} and not normalized.startswith("SET "):
+            self.executed_sql = sql
+            if args:
+                self.executed_params = args[0]
+            else:
+                params = kwargs.get("params")
+                if params is not None:
+                    self.executed_params = params
 
     async def fetchall(self) -> list[dict[str, Any]]:
         return self._rows
@@ -1072,7 +1074,7 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
         response = await plans.list_plans(
             request=_make_request(
                 headers={"X-User-Registration": "abc123"},
-                query_params={"situacao": "P_RESCISAO"},
+                query_params={"situacao": "P_RESCISAO", "dias_range": "60-90"},
             ),
             q=None,
             page=1,
@@ -1082,7 +1084,7 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
             tipo_doc=None,
             occurrences_only=False,
             situacao=["P_RESCISAO", "RESCINDIDO"],
-            dias_min=90,
+            dias_range="60-90",
             saldo_min=50000,
             dt_sit_range="THIS_MONTH",
         )
@@ -1091,7 +1093,8 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
         assert response.filters is not None
         expected_filters = PlansFilters(
             situacao=["P_RESCISAO", "RESCINDIDO"],
-            dias_min=90,
+            dias_range="60-90",
+            dias_min=60,
             saldo_min=50000,
             dt_sit_range="THIS_MONTH",
         )
@@ -1103,14 +1106,68 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
         assert cursor_obj.executed_sql is not None
         sql = cursor_obj.executed_sql
         assert "planos.situacao_codigo = ANY" in sql
-        assert "make_interval" in sql
+        assert "faixa_dias_em_atraso" in sql
         assert "COALESCE(planos.saldo, 0) >= %(saldo_min)s" in sql
         assert "planos.dt_situacao >= date_trunc('month', CURRENT_DATE)" in sql
         params = cursor_obj.executed_params
         assert params is not None
         assert list(params["situacoes"]) == ["P_RESCISAO", "RESCINDIDO"]
-        assert params["dias_min"] == 90
+        assert params["dias_range"] == "60-90"
         assert params["saldo_min"] == 50000
+
+    _run(_exercise())
+
+
+def test_list_plans_legacy_dias_min_maps_to_bucket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows: list[dict[str, Any]] = []
+
+    manager = _DummyManager(rows)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
+    async def _fake_bind(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    async def _exercise() -> None:
+        response = await plans.list_plans(
+            request=_make_request(
+                headers={"X-User-Registration": "abc123"},
+                query_params={"dias_min": "120"},
+            ),
+            q=None,
+            page=1,
+            page_size=plans.KEYSET_DEFAULT_PAGE_SIZE,
+            cursor=None,
+            direction=None,
+            tipo_doc=None,
+            occurrences_only=False,
+            dias_min=120,
+        )
+
+        assert isinstance(response, PlansResponse)
+        assert response.filters is not None
+        assert response.filters.dias_range == "120+"
+        assert response.filters.dias_min == 120
+        assert manager.last_connection is not None
+        cursor_obj = manager.last_connection.last_cursor
+        assert cursor_obj is not None
+        params = cursor_obj.executed_params
+        assert params is not None
+        assert params["dias_range"] == "120+"
 
     _run(_exercise())
 

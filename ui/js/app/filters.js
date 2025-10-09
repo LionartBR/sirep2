@@ -30,13 +30,13 @@ export function registerFiltersModule(context) {
 
   const hasActiveFilters = () =>
     (Array.isArray(filtersState.situacao) && filtersState.situacao.length > 0) ||
-    filtersState.diasMin !== null ||
+    filtersState.diasRange !== null ||
     filtersState.saldoMin !== null ||
     Boolean(filtersState.dtRange);
 
   const resetFiltersState = () => {
     filtersState.situacao = [];
-    filtersState.diasMin = null;
+    filtersState.diasRange = null;
     filtersState.saldoMin = null;
     filtersState.dtRange = null;
   };
@@ -62,8 +62,8 @@ export function registerFiltersModule(context) {
     filtersState.situacao.forEach((value) => {
       chips.push({ type: 'situacao', value });
     });
-    if (filtersState.diasMin !== null) {
-      chips.push({ type: 'diasMin', value: String(filtersState.diasMin) });
+    if (filtersState.diasRange) {
+      chips.push({ type: 'diasRange', value: filtersState.diasRange });
     }
     if (filtersState.saldoMin !== null) {
       chips.push({ type: 'saldoMin', value: String(filtersState.saldoMin) });
@@ -131,7 +131,8 @@ export function registerFiltersModule(context) {
 
       if (filterType === 'dias') {
         input.checked =
-          filtersState.diasMin !== null && Number(value) === Number(filtersState.diasMin);
+          typeof filtersState.diasRange === 'string' &&
+          filtersState.diasRange === String(value);
         return;
       }
 
@@ -170,7 +171,7 @@ export function registerFiltersModule(context) {
         filtersState.situacao = [];
         break;
       case 'dias':
-        filtersState.diasMin = null;
+        filtersState.diasRange = null;
         break;
       case 'saldo':
         filtersState.saldoMin = null;
@@ -227,8 +228,8 @@ export function registerFiltersModule(context) {
             filtersState.situacao = filtersState.situacao.filter((item) => item !== filterValue);
           }
           break;
-        case 'diasMin':
-          filtersState.diasMin = null;
+        case 'diasRange':
+          filtersState.diasRange = null;
           break;
         case 'saldoMin':
           filtersState.saldoMin = null;
@@ -345,7 +346,7 @@ export function registerFiltersModule(context) {
           }
 
           if (filterType === 'dias') {
-            filtersState.diasMin = Number(target.value);
+            filtersState.diasRange = target.value;
             applyFilters({ closeDropdown: true });
             return;
           }

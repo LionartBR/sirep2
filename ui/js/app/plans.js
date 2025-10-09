@@ -874,8 +874,8 @@ export function registerPlansModule(context) {
         url.searchParams.append('situacao', value);
       });
     }
-    if (filtersState.diasMin !== null) {
-      url.searchParams.set('dias_min', String(filtersState.diasMin));
+    if (filtersState.diasRange) {
+      url.searchParams.set('dias_range', filtersState.diasRange);
     }
     if (filtersState.saldoMin !== null) {
       url.searchParams.set('saldo_min', String(filtersState.saldoMin));
@@ -943,14 +943,14 @@ export function registerPlansModule(context) {
         filtersState.situacao = Array.isArray(filtersResponse.situacao)
           ? [...filtersResponse.situacao]
           : [];
-        filtersState.diasMin =
-          typeof filtersResponse.dias_min === 'number' ? filtersResponse.dias_min : null;
+        filtersState.diasRange =
+          typeof filtersResponse.dias_range === 'string' ? filtersResponse.dias_range : null;
         filtersState.saldoMin =
           typeof filtersResponse.saldo_min === 'number' ? filtersResponse.saldo_min : null;
         filtersState.dtRange = filtersResponse.dt_sit_range || null;
       } else {
         filtersState.situacao = [];
-        filtersState.diasMin = null;
+        filtersState.diasRange = null;
         filtersState.saldoMin = null;
         filtersState.dtRange = null;
       }
