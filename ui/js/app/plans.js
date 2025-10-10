@@ -839,7 +839,7 @@ export function registerPlansModule(context) {
       const totalLabel = totalKnown ? String(plansPager.totalCount) : `~${Math.max(plansPager.showingTo, 0)}`;
       const from = plansPager.showingFrom || 0;
       const to = plansPager.showingTo || 0;
-      plansPagerRange.textContent = `exibindo ${from}–${to} de ${totalLabel} planos`;
+      plansPagerRange.textContent = `Exibindo ${from}–${to} de ${totalLabel} planos`;
     }
     if (plansPagerPrevBtn) {
       const canGoPrev = plansPager.page > 1;

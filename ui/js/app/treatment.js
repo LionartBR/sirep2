@@ -206,7 +206,7 @@ export function registerTreatmentModule(context) {
         ? Math.min(totalValue, showingFrom + rowsOnPage - 1)
         : 0;
       const totalLabel = totalValue.toLocaleString('pt-BR');
-      treatmentPagerRange.textContent = `exibindo ${showingFrom}–${showingTo} de ${totalLabel} planos para rescisão`;
+      treatmentPagerRange.textContent = `Exibindo ${showingFrom}–${showingTo} de ${totalLabel} planos para rescisão`;
     }
 
     if (treatmentPagerPrevBtn) {
