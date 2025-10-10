@@ -432,6 +432,22 @@
   height: 16px;
 }
 
+.table__refresh-toggle {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.table__refresh-toggle i {
+  width: 16px;
+  height: 16px;
+}
+
 .table__row--selected .table__cell {
   background: rgba(17, 94, 214, 0.1);
 }

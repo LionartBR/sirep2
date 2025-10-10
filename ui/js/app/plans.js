@@ -663,6 +663,31 @@ export function registerPlansModule(context) {
       });
       actionsWrapper.appendChild(lockButton);
 
+      const refreshButton = document.createElement('button');
+      refreshButton.type = 'button';
+      refreshButton.className = 'table__refresh-toggle';
+      if (planId) {
+        refreshButton.dataset.planId = planId;
+      }
+      if (planNumber) {
+        refreshButton.dataset.planNumber = planNumber;
+      }
+      const refreshIcon = document.createElement('i');
+      refreshIcon.setAttribute('data-feather', 'refresh-cw');
+      refreshIcon.setAttribute('aria-hidden', 'true');
+      refreshButton.appendChild(refreshIcon);
+      const refreshIdentifier = planNumber || planId || '';
+      const refreshLabel = refreshIdentifier
+        ? `Atualizar plano ${refreshIdentifier}`
+        : 'Atualizar plano';
+      refreshButton.setAttribute('aria-label', refreshLabel);
+      refreshButton.title = refreshLabel;
+      refreshButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      actionsWrapper.appendChild(refreshButton);
+
       actionsCell.appendChild(actionsWrapper);
 
       row.appendChild(actionsCell);
