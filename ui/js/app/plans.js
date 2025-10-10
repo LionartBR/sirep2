@@ -869,6 +869,12 @@ export function registerPlansModule(context) {
     if (state.currentPlansSearchTerm) {
       url.searchParams.set('q', state.currentPlansSearchTerm);
     }
+    if (typeof context.getPlansSearchConfig === 'function') {
+      const searchConfig = context.getPlansSearchConfig();
+      if (searchConfig?.tipoDoc) {
+        url.searchParams.set('tipo_doc', searchConfig.tipoDoc);
+      }
+    }
     if (filtersState.situacao.length) {
       filtersState.situacao.forEach((value) => {
         url.searchParams.append('situacao', value);

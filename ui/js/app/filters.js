@@ -98,17 +98,17 @@ export function registerFiltersModule(context) {
       container.innerHTML = '';
 
       chips.forEach(({ type, value }) => {
+        const chipLabel = getFilterLabel(type, value);
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'filter-chip';
         button.dataset.filterType = type;
         button.dataset.filterValue = value;
-        const label = getFilterLabel(type, value);
-        button.setAttribute('aria-label', `Remover filtro ${label}`);
+        button.setAttribute('aria-label', `Remover filtro ${chipLabel}`);
         button.innerHTML = `
-          <span class="filter-chip__label">${label}</span>
+          <span class="filter-chip__label">${chipLabel}</span>
           <span class="filter-chip__remove" aria-hidden="true">×</span>
-          <span class="sr-only">Remover filtro ${label}</span>
+          <span class="sr-only">Remover filtro ${chipLabel}</span>
         `;
         container.appendChild(button);
       });

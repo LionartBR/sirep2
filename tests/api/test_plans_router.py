@@ -888,6 +888,122 @@ def test_list_plans_search_by_number_builds_like(
     _run(_exercise())
 
 
+def test_build_filters_document_prefix_when_tipo_doc() -> None:
+    where_sql, params = plans._build_filters(
+        "12.345",
+        tipo_doc="CNPJ",
+        occurrences_only=False,
+        situacoes=None,
+        dias_range=None,
+        saldo_min=None,
+        dt_sit_range=None,
+        table_alias=None,
+    )
+
+    assert "documento LIKE %(document_prefix)s" in where_sql
+    assert "tipo_doc = %(tipo_doc)s" in where_sql
+    assert params["document_prefix"] == "12345%"
+    assert params["tipo_doc"] == "CNPJ"
+    assert "number" not in params
+    assert "razao_social ILIKE" not in where_sql
+    assert "name_pattern" not in params
+
+
+def test_build_filters_document_exact_when_tipo_doc() -> None:
+    where_sql, params = plans._build_filters(
+        "12345678000190",
+        tipo_doc="CNPJ",
+        occurrences_only=False,
+        situacoes=None,
+        dias_range=None,
+        saldo_min=None,
+        dt_sit_range=None,
+        table_alias=None,
+    )
+
+    assert "documento = %(document)s" in where_sql
+    assert "LIKE %(document_prefix)s" not in where_sql
+    assert params["document"] == "12345678000190"
+    assert params["tipo_doc"] == "CNPJ"
+    assert "razao_social ILIKE" not in where_sql
+    assert "name_pattern" not in params
+
+
+def test_build_filters_document_exact_without_tipo_doc() -> None:
+    where_sql, params = plans._build_filters(
+        "12345678000190",
+        tipo_doc=None,
+        occurrences_only=False,
+        situacoes=None,
+        dias_range=None,
+        saldo_min=None,
+        dt_sit_range=None,
+        table_alias=None,
+    )
+
+    assert "documento = %(document)s" in where_sql
+    assert "tipo_doc IN" in where_sql
+    assert params["document"] == "12345678000190"
+    assert "razao_social ILIKE" not in where_sql
+    assert "name_pattern" not in params
+
+
+def test_list_plans_keyset_uses_document_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows: list[dict[str, Any]] = []
+
+    manager = _DummyManager(rows)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
+    async def _fake_bind(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    async def _exercise() -> None:
+        response = await plans.list_plans(
+            request=_make_request(
+                headers={"X-User-Registration": "abc123"},
+                query_params={"q": "123456", "tipo_doc": "CNPJ"},
+            ),
+            q="123456",
+            page=1,
+            page_size=plans.KEYSET_DEFAULT_PAGE_SIZE,
+            cursor=None,
+            direction=None,
+            tipo_doc="CNPJ",
+            occurrences_only=False,
+            situacao=None,
+            dias_range=None,
+            saldo_min=None,
+            dt_sit_range=None,
+        )
+
+        assert isinstance(response, PlansResponse)
+        assert response.total == 0
+        assert response.items == []
+        assert manager.last_connection is not None
+        cursor = manager.last_connection.last_cursor
+        assert cursor is not None
+        assert cursor.executed_sql is not None
+        assert "documento LIKE %(document_prefix)s" in cursor.executed_sql
+        assert cursor.executed_params is not None
+        assert cursor.executed_params["document_prefix"] == "123456%"
+        assert cursor.executed_params["tipo_doc"] == "CNPJ"
+
+    _run(_exercise())
+
+
 def test_list_plans_search_by_name_builds_wildcard(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

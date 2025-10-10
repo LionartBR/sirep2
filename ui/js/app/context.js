@@ -139,6 +139,8 @@ export function createAppContext() {
   context.filterWrappers = [];
   context.currentPlansSearchTerm = '';
   context.activeTableSearchTarget = 'plans';
+  context.currentPlansSearchDescriptor = null;
+  context.plansSearchOverride = null;
   context.quickFilterOccActive = false;
   context.prevSituacaoBeforeOccQuick = null;
 
@@ -203,6 +205,9 @@ export function createAppContext() {
   context.applyFilters = () => {};
   context.clearAllFilters = () => {};
   context.attachFilterChipHandler = () => {};
+  context.getPlansSearchConfig = () => null;
+  context.getPlansSearchChip = () => null;
+  context.overridePlansSearch = () => {};
 
   context.resetPlansPagination = () => {};
   context.resetTreatmentPagination = () => {};

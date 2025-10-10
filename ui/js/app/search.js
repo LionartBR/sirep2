@@ -4,8 +4,63 @@ export function registerSearchModule(context) {
 
   const tableSearchForm = document.getElementById('tableSearchForm');
   const tableSearchInput = document.getElementById('tableSearchInput');
+  const MIN_CNPJ_PREFIX_LENGTH = 5;
+  const CNPJ_DIGITS = 14;
+  const DOCUMENT_PATTERN = /^[\d./\-\s]+$/;
   const SEARCH_DEBOUNCE_MS = 350;
   let searchDebounceHandle = null;
+
+  let currentDescriptor = null;
+
+  const onlyDigits = (value) => {
+    if (window.SirepUtils?.onlyDigits) {
+      return window.SirepUtils.onlyDigits(value);
+    }
+    return String(value ?? '').replace(/\D+/g, '');
+  };
+
+  const formatCnpj = (digits) => {
+    if (window.SirepUtils?.formatCnpj) {
+      return window.SirepUtils.formatCnpj(digits);
+    }
+    return digits;
+  };
+
+  const resolveDocumentDescriptor = (term) => {
+    const raw = String(term ?? '').trim();
+    if (!raw) {
+      return null;
+    }
+    const digits = onlyDigits(raw);
+    if (!digits) {
+      return null;
+    }
+    const looksLikeDocument = DOCUMENT_PATTERN.test(raw);
+    if (!looksLikeDocument && digits !== raw) {
+      return null;
+    }
+    if (digits.length === CNPJ_DIGITS) {
+      return { mode: 'cnpj-exact', tipoDoc: 'CNPJ', digits };
+    }
+    if (digits.length >= MIN_CNPJ_PREFIX_LENGTH && digits.length < CNPJ_DIGITS) {
+      return { mode: 'cnpj-prefix', tipoDoc: 'CNPJ', digits };
+    }
+    return null;
+  };
+
+  const updateSearchDescriptor = (term) => {
+    currentDescriptor = resolveDocumentDescriptor(term);
+  };
+
+  context.getPlansSearchConfig = () => {
+    if (!currentDescriptor) {
+      return null;
+    }
+    return { tipoDoc: currentDescriptor.tipoDoc };
+  };
+
+  context.getPlansSearchChip = () => null;
+  context.overridePlansSearch = () => {};
 
   const syncSearchInputValue = () => {
     if (!tableSearchInput) {
@@ -37,6 +92,7 @@ export function registerSearchModule(context) {
     plansPager.page = 1;
     plansPager.nextCursor = null;
     plansPager.prevCursor = null;
+    updateSearchDescriptor(normalized);
     void context.refreshPlans?.({ showLoading: true });
     if (typeof context.scheduleOccurrencesCountUpdate === 'function') {
       context.scheduleOccurrencesCountUpdate();
@@ -84,4 +140,5 @@ export function registerSearchModule(context) {
 
   setActiveSearchTarget();
   syncSearchInputValue();
+  updateSearchDescriptor(tableSearchState.plans ?? '');
 }

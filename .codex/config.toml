@@ -1,7 +1,7 @@
 [mcp_servers.postgres]
-command = "postgres-mcp"
-args = ["--access-mode=restricted"]
-env = { DATABASE_URI = "postgresql://postgres@localhost:5432/sirep_db" }
+command = "/home/arthur_martins/.nvm/versions/node/v22.20.0/bin/mcp-server-postgres"
+args = ["postgresql://lionart:Por%40m9815@127.0.0.1:5432/sirep_db?sslmode=disable"]
+startup_timeout_sec = 60
 
 [mcp_servers.context7]
 command = "C:\\Program Files\\nodejs\\node.exe"

@@ -45,7 +45,7 @@ def get_database_settings() -> DatabaseSettings:
     return DatabaseSettings(
         host=os.getenv("DB_HOST", "localhost"),
         port=int(os.getenv("DB_PORT", "5432")),
-        user=os.getenv("DB_USER", "postgres"),
+        user=os.getenv("DB_USER", "lionart"),
         password=os.getenv("DB_PASSWORD") or None,
         database=os.getenv("DB_NAME", "sirep_db"),
         application_name=os.getenv("DB_APP_NAME", "Sirep 2.0"),

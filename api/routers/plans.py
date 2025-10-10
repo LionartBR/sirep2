@@ -92,6 +92,11 @@ _FILTER_SITUATION_SET = set(_FILTER_SITUATION_CODES)
 _OCCURRENCE_SITUATION_CODES: tuple[str, ...] = ("SIT_ESPECIAL", "GRDE_EMITIDA")
 _OCCURRENCE_SITUATION_SET = set(_OCCURRENCE_SITUATION_CODES)
 
+_DOCUMENT_TYPES: tuple[str, ...] = ("CNPJ", "CPF", "CEI")
+_DOCUMENT_TYPES_SQL = "('CNPJ','CPF','CEI')"
+_DOCUMENT_LENGTHS: tuple[int, ...] = (11, 12, 14)
+_MIN_DOCUMENT_PREFIX_LENGTH = 5
+
 _ALLOWED_OVERDUE_RANGES: dict[str, tuple[int, int | None]] = {
     "30-60": (30, 60),
     "60-90": (60, 90),
@@ -810,21 +815,38 @@ def _build_filters(
     def col(name: str) -> str:
         return f"{table_alias}.{name}" if table_alias else name
 
-    if digits and len(digits) in (11, 12, 14):
-        clauses.append(f"{col('documento')} = %(document)s")
-        params["document"] = digits
-        if tipo_doc and tipo_doc in {"CNPJ", "CPF", "CEI"}:
+    document_handled = False
+
+    if digits:
+        if tipo_doc and tipo_doc in _DOCUMENT_TYPES:
             clauses.append(f"{col('tipo_doc')} = %(tipo_doc)s")
             params["tipo_doc"] = tipo_doc
-        else:
-            clauses.append(f"{col('tipo_doc')} IN ('CNPJ','CPF','CEI')")
-    elif normalized_search.isdigit() and normalized_search:
+            if len(digits) in _DOCUMENT_LENGTHS:
+                clauses.append(f"{col('documento')} = %(document)s")
+                params["document"] = digits
+            elif len(digits) >= _MIN_DOCUMENT_PREFIX_LENGTH:
+                clauses.append(f"{col('documento')} LIKE %(document_prefix)s")
+                params["document_prefix"] = f"{digits}%"
+            else:
+                clauses.append(f"{col('documento')} = %(document)s")
+                params["document"] = digits
+            document_handled = True
+        elif len(digits) in _DOCUMENT_LENGTHS:
+            clauses.append(f"{col('documento')} = %(document)s")
+            params["document"] = digits
+            clauses.append(f"{col('tipo_doc')} IN {_DOCUMENT_TYPES_SQL}")
+            document_handled = True
+
+    number_handled = False
+    if not document_handled and normalized_search.isdigit() and normalized_search:
         params["number"] = normalized_search
         params["number_prefix"] = f"{normalized_search}%"
         clauses.append(
             f"({col('numero_plano')} = %(number)s OR {col('numero_plano')} LIKE %(number_prefix)s)"
         )
-    elif normalized_search:
+        number_handled = True
+
+    if not document_handled and not number_handled and normalized_search:
         params["name_pattern"] = f"%{normalized_search}%"
         clauses.append(f"{col('razao_social')} ILIKE %(name_pattern)s")
 
@@ -1036,7 +1058,7 @@ async def _fetch_plan_rows(
     normalized_search = (search or "").strip()
     digits = only_digits(normalized_search)
 
-    if digits and len(digits) in (11, 12, 14):
+    if digits and len(digits) in _DOCUMENT_LENGTHS:
         query = PLAN_SEARCH_BY_DOCUMENT_QUERY
         params = {"document": digits, "limit": limit, "offset": offset}
     elif normalized_search.isdigit() and normalized_search:

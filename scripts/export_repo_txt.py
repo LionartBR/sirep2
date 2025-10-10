@@ -58,6 +58,8 @@ IGNORE_DIRS = {
     ".mypy_cache",
     ".ruff_cache",
     "docs",
+    "shared"
+    "services"
 }
 
 # Arquivos específicos a ignorar (por nome exato)
@@ -71,6 +73,7 @@ IGNORE_FILES = {
     "pw3270.py",
     ".pre-commit-config.yaml",
     "mypy.ini",
+    "requirements.txt",
 }
 
 # Extensões que normalmente são binárias e devem ser puladas

@@ -278,6 +278,7 @@
   * `UNIQUE(tenant_id, tipo_inscricao_id, numero_inscricao)`
   * `GIN (razao_social gin_trgm_ops)`
   * `(tenant_id, numero_inscricao)`
+  * `(tenant_id, tipo_inscricao_id, translate(numero_inscricao, './- ', '') text_pattern_ops)` *(WHERE `tipo_inscricao_id` = ID('CNPJ'))* — acelera prefixos de CNPJ.
 
 * **`app.plano_situacao_hist`**
 
@@ -342,6 +343,17 @@ SELECT *
 FROM app.vw_planos_busca
 WHERE tipo_doc = 'CNPJ'
   AND razao_social ILIKE '%'||:texto||'%'
+ORDER BY saldo DESC NULLS LAST, numero_plano
+LIMIT 10;
+```
+
+**Grid de planos (prefixo de CNPJ)**
+
+```sql
+SELECT *
+FROM app.vw_planos_busca
+WHERE tipo_doc = 'CNPJ'
+  AND documento LIKE :cnpj_prefix || '%'
 ORDER BY saldo DESC NULLS LAST, numero_plano
 LIMIT 10;
 ```
