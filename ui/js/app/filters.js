@@ -66,7 +66,6 @@ export function registerFiltersModule(context) {
     if (typeof filtersState.saldoBucket === 'string' && filtersState.saldoBucket) {
       chips.push({ type: 'saldoBucket', value: filtersState.saldoBucket });
     }
-    // dtRange filter removed
 
     const hasChips = chips.length > 0;
 
