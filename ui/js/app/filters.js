@@ -31,14 +31,12 @@ export function registerFiltersModule(context) {
   const hasActiveFilters = () =>
     (Array.isArray(filtersState.situacao) && filtersState.situacao.length > 0) ||
     filtersState.diasRange !== null ||
-    filtersState.saldoMin !== null ||
-    Boolean(filtersState.dtRange);
+    filtersState.saldoBucket !== null;
 
   const resetFiltersState = () => {
     filtersState.situacao = [];
     filtersState.diasRange = null;
-    filtersState.saldoMin = null;
-    filtersState.dtRange = null;
+    filtersState.saldoBucket = null;
   };
 
   const getFilterLabel = (filterKey, value) => {
@@ -65,14 +63,16 @@ export function registerFiltersModule(context) {
     if (filtersState.diasRange) {
       chips.push({ type: 'diasRange', value: filtersState.diasRange });
     }
-    if (filtersState.saldoMin !== null) {
-      chips.push({ type: 'saldoMin', value: String(filtersState.saldoMin) });
+    if (typeof filtersState.saldoBucket === 'string' && filtersState.saldoBucket) {
+      chips.push({ type: 'saldoBucket', value: filtersState.saldoBucket });
     }
-    if (filtersState.dtRange) {
-      chips.push({ type: 'dtRange', value: filtersState.dtRange });
-    }
+    // dtRange filter removed
 
     const hasChips = chips.length > 0;
+
+    if (context.plansQuickFilters instanceof HTMLElement) {
+      context.plansQuickFilters.classList.toggle('table-quick-filters--tight', !hasChips);
+    }
 
     containers.forEach((container) => {
       const scope = container.getAttribute('data-filter-chips') ?? '';
@@ -138,13 +138,12 @@ export function registerFiltersModule(context) {
 
       if (filterType === 'saldo') {
         input.checked =
-          filtersState.saldoMin !== null && Number(value) === Number(filtersState.saldoMin);
+          typeof filtersState.saldoBucket === 'string' &&
+          filtersState.saldoBucket === String(value);
         return;
       }
 
-      if (filterType === 'dt') {
-        input.checked = filtersState.dtRange === value;
-      }
+      // dt filter removed
     });
 
     const quickFilterActive = isOccurrencesSelection(filtersState.situacao);
@@ -174,10 +173,7 @@ export function registerFiltersModule(context) {
         filtersState.diasRange = null;
         break;
       case 'saldo':
-        filtersState.saldoMin = null;
-        break;
-      case 'dt':
-        filtersState.dtRange = null;
+        filtersState.saldoBucket = null;
         break;
       default:
         break;
@@ -231,11 +227,8 @@ export function registerFiltersModule(context) {
         case 'diasRange':
           filtersState.diasRange = null;
           break;
-        case 'saldoMin':
-          filtersState.saldoMin = null;
-          break;
-        case 'dtRange':
-          filtersState.dtRange = null;
+        case 'saldoBucket':
+          filtersState.saldoBucket = null;
           break;
         default:
           break;
@@ -352,14 +345,9 @@ export function registerFiltersModule(context) {
           }
 
           if (filterType === 'saldo') {
-            filtersState.saldoMin = Number(target.value);
+            filtersState.saldoBucket = target.value;
             applyFilters({ closeDropdown: true });
             return;
-          }
-
-          if (filterType === 'dt') {
-            filtersState.dtRange = target.value;
-            applyFilters({ closeDropdown: true });
           }
         });
       });

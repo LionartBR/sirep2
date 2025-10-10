@@ -240,7 +240,7 @@
 
   * **SITUAÇÃO**: `situacao_codigo IN (...)`.
   * **DIAS**: **use `atraso_desde`** → `atraso_desde <= CURRENT_DATE - INTERVAL '90 days'` (não filtre por `dias_em_atraso`).
-  * **SALDO**: `saldo >= :min`.
+* **SALDO**: use o enumerador `saldo_bucket` (`UP_TO_10K`, `10K_TO_150K`, `150K_TO_500K`, `500K_TO_1M`, `ABOVE_1M`). Cada faixa é convertida em `COALESCE(saldo, 0)` com limites abertos/fechados apropriados (ex.: `10K_TO_150K` gera `> 10.000` e `<= 150.000`). O parâmetro legado `saldo_min` continua aceito e mapeado para essas buckets.
   * **DT SITUAÇÃO**: ranges sobre `dt_situacao` (`date_trunc('month', CURRENT_DATE)` etc.).
 
 ### 5.2 `app.vw_pipeline_status`

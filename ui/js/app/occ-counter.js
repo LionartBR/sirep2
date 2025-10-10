@@ -67,12 +67,10 @@ export function registerOccurrenceCounterModule(context) {
     if (typeof filtersState.diasRange === 'string' && filtersState.diasRange) {
       url.searchParams.set('dias_range', filtersState.diasRange);
     }
-    if (filtersState.saldoMin !== null && filtersState.saldoMin !== undefined) {
-      url.searchParams.set('saldo_min', String(filtersState.saldoMin));
+    if (typeof filtersState.saldoBucket === 'string' && filtersState.saldoBucket) {
+      url.searchParams.set('saldo_bucket', filtersState.saldoBucket);
     }
-    if (filtersState.dtRange) {
-      url.searchParams.set('dt_sit_range', filtersState.dtRange);
-    }
+    // dt_sit_range filter removed
 
     return url.toString();
   };

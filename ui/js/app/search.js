@@ -19,13 +19,6 @@ export function registerSearchModule(context) {
     return String(value ?? '').replace(/\D+/g, '');
   };
 
-  const formatCnpj = (digits) => {
-    if (window.SirepUtils?.formatCnpj) {
-      return window.SirepUtils.formatCnpj(digits);
-    }
-    return digits;
-  };
-
   const resolveDocumentDescriptor = (term) => {
     const raw = String(term ?? '').trim();
     if (!raw) {

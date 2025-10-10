@@ -177,12 +177,10 @@ export function registerTreatmentModule(context) {
     if (typeof filtersState.diasRange === 'string' && filtersState.diasRange) {
       filters.dias_range = filtersState.diasRange;
     }
-    if (typeof filtersState.saldoMin === 'number' && Number.isFinite(filtersState.saldoMin)) {
-      filters.saldo_min = filtersState.saldoMin;
+    if (typeof filtersState.saldoBucket === 'string' && filtersState.saldoBucket) {
+      filters.saldo_bucket = filtersState.saldoBucket;
     }
-    if (filtersState.dtRange) {
-      filters.dt_sit_range = filtersState.dtRange;
-    }
+    // dt_sit_range filter removed
     return Object.keys(filters).length ? filters : null;
   };
 

@@ -122,6 +122,10 @@
   margin-bottom: 12px;
 }
 
+.table-quick-filters--tight {
+  margin-bottom: 4px;
+}
+
 .quick-filter {
   position: relative;
   display: inline-flex;

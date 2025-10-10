@@ -883,12 +883,10 @@ export function registerPlansModule(context) {
     if (filtersState.diasRange) {
       url.searchParams.set('dias_range', filtersState.diasRange);
     }
-    if (filtersState.saldoMin !== null) {
-      url.searchParams.set('saldo_min', String(filtersState.saldoMin));
+    if (typeof filtersState.saldoBucket === 'string' && filtersState.saldoBucket) {
+      url.searchParams.set('saldo_bucket', filtersState.saldoBucket);
     }
-    if (filtersState.dtRange) {
-      url.searchParams.set('dt_sit_range', filtersState.dtRange);
-    }
+    // dt_sit_range filter removed
 
     if (occurrenceSituacaoCodes.length) {
       const matchesOccurrenceFilter =
@@ -951,14 +949,12 @@ export function registerPlansModule(context) {
           : [];
         filtersState.diasRange =
           typeof filtersResponse.dias_range === 'string' ? filtersResponse.dias_range : null;
-        filtersState.saldoMin =
-          typeof filtersResponse.saldo_min === 'number' ? filtersResponse.saldo_min : null;
-        filtersState.dtRange = filtersResponse.dt_sit_range || null;
+        filtersState.saldoBucket =
+          typeof filtersResponse.saldo_bucket === 'string' ? filtersResponse.saldo_bucket : null;
       } else {
         filtersState.situacao = [];
         filtersState.diasRange = null;
-        filtersState.saldoMin = null;
-        filtersState.dtRange = null;
+        filtersState.saldoBucket = null;
       }
       if (typeof context.syncFilterInputs === 'function') {
         context.syncFilterInputs();

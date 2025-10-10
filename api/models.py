@@ -145,6 +145,7 @@ class PlansFilters(BaseModel):
     situacao: list[str] | None = None
     dias_range: Optional[str] = None
     dias_min: int | None = None
+    saldo_bucket: str | None = None
     saldo_min: int | None = None
     dt_sit_range: str | None = None
 

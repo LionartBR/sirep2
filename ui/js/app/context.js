@@ -48,13 +48,14 @@ export function createAppContext() {
 
   context.plansActionsMenuContainer = document.querySelector('[data-plans-actions-menu]');
   context.plansActionsTrigger = document.getElementById('plansActionsTrigger');
-  context.plansActionsMenu = document.getElementById('plansActionsMenu');
-  context.plansSelectAllAction = context.plansActionsMenu?.querySelector('[data-action="select-all"]') ?? null;
-  context.plansSelectAllLabel = context.plansSelectAllAction?.querySelector('span') ?? null;
-  context.plansLockAction = context.plansActionsMenu?.querySelector('[data-action="lock"]') ?? null;
-  context.plansLockActionLabel = context.plansLockAction?.querySelector('span') ?? null;
-  context.plansActionsSeparator = context.plansActionsMenu?.querySelector('[data-role="separator"]') ?? null;
-  context.plansFiltersChipsContainer = document.getElementById('plansFiltersChips');
+context.plansActionsMenu = document.getElementById('plansActionsMenu');
+context.plansSelectAllAction = context.plansActionsMenu?.querySelector('[data-action="select-all"]') ?? null;
+context.plansSelectAllLabel = context.plansSelectAllAction?.querySelector('span') ?? null;
+context.plansLockAction = context.plansActionsMenu?.querySelector('[data-action="lock"]') ?? null;
+context.plansLockActionLabel = context.plansLockAction?.querySelector('span') ?? null;
+context.plansActionsSeparator = context.plansActionsMenu?.querySelector('[data-role="separator"]') ?? null;
+context.plansQuickFilters = document.getElementById('plansQuickFilters');
+context.plansFiltersChipsContainer = document.getElementById('plansFiltersChips');
   context.quickFilterOccurrencesCheckbox = document.getElementById('quickFilterOccurrences');
   context.quickFilterOccurrencesBadge = document.getElementById('occurrencesCountQuickFilter');
 
@@ -99,8 +100,7 @@ export function createAppContext() {
   context.filtersState = {
     situacao: [],
     diasRange: null,
-    saldoMin: null,
-    dtRange: null,
+    saldoBucket: null,
   };
   context.OCCURRENCE_SITUATION_CODES = ['SIT_ESPECIAL', 'GRDE_EMITIDA'];
   context.plansSelection = new Set();
@@ -120,18 +120,12 @@ export function createAppContext() {
       '100-120': '100-120 dias',
       '120+': '120+ dias',
     },
-    saldoMin: {
-      10000: 'R$ 10 mil+',
-      50000: 'R$ 50 mil+',
-      150000: 'R$ 150 mil+',
-      500000: 'R$ 500 mil+',
-      1000000: 'R$ 1 mi+',
-    },
-    dtRange: {
-      LAST_3_MONTHS: 'Até 3 meses',
-      LAST_2_MONTHS: 'Até 2 meses',
-      LAST_MONTH: 'Até 1 mês',
-      THIS_MONTH: 'Mês atual',
+    saldoBucket: {
+      UP_TO_10K: 'Até R$ 10 mil',
+      '10K_TO_150K': 'R$ 10 mil – R$ 150 mil',
+      '150K_TO_500K': 'R$ 150 mil – R$ 500 mil',
+      '500K_TO_1M': 'R$ 500 mil – R$ 1 mi',
+      ABOVE_1M: '+ R$ 1 mi',
     },
   };
 
@@ -139,8 +133,6 @@ export function createAppContext() {
   context.filterWrappers = [];
   context.currentPlansSearchTerm = '';
   context.activeTableSearchTarget = 'plans';
-  context.currentPlansSearchDescriptor = null;
-  context.plansSearchOverride = null;
   context.quickFilterOccActive = false;
   context.prevSituacaoBeforeOccQuick = null;
 

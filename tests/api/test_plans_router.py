@@ -895,6 +895,7 @@ def test_build_filters_document_prefix_when_tipo_doc() -> None:
         occurrences_only=False,
         situacoes=None,
         dias_range=None,
+        saldo_bucket=None,
         saldo_min=None,
         dt_sit_range=None,
         table_alias=None,
@@ -916,6 +917,7 @@ def test_build_filters_document_exact_when_tipo_doc() -> None:
         occurrences_only=False,
         situacoes=None,
         dias_range=None,
+        saldo_bucket=None,
         saldo_min=None,
         dt_sit_range=None,
         table_alias=None,
@@ -936,6 +938,7 @@ def test_build_filters_document_exact_without_tipo_doc() -> None:
         occurrences_only=False,
         situacoes=None,
         dias_range=None,
+        saldo_bucket=None,
         saldo_min=None,
         dt_sit_range=None,
         table_alias=None,
@@ -946,6 +949,25 @@ def test_build_filters_document_exact_without_tipo_doc() -> None:
     assert params["document"] == "12345678000190"
     assert "razao_social ILIKE" not in where_sql
     assert "name_pattern" not in params
+
+
+def test_build_filters_adds_saldo_bucket_range() -> None:
+    where_sql, params = plans._build_filters(
+        None,
+        tipo_doc=None,
+        occurrences_only=False,
+        situacoes=None,
+        dias_range=None,
+        saldo_bucket="500K_TO_1M",
+        saldo_min=None,
+        dt_sit_range=None,
+        table_alias="planos",
+    )
+
+    assert "COALESCE(planos.saldo, 0) > %(saldo_min_bucket)s" in where_sql
+    assert "COALESCE(planos.saldo, 0) <= %(saldo_max_bucket)s" in where_sql
+    assert params["saldo_min_bucket"] == 500_000
+    assert params["saldo_max_bucket"] == 1_000_000
 
 
 def test_list_plans_keyset_uses_document_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1190,7 +1212,11 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
         response = await plans.list_plans(
             request=_make_request(
                 headers={"X-User-Registration": "abc123"},
-                query_params={"situacao": "P_RESCISAO", "dias_range": "60-90"},
+                query_params={
+                    "situacao": "P_RESCISAO",
+                    "dias_range": "60-90",
+                    "saldo_bucket": "10K_TO_150K",
+                },
             ),
             q=None,
             page=1,
@@ -1201,7 +1227,8 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
             occurrences_only=False,
             situacao=["P_RESCISAO", "RESCINDIDO"],
             dias_range="60-90",
-            saldo_min=50000,
+            saldo_bucket="10K_TO_150K",
+            saldo_min=None,
             dt_sit_range="THIS_MONTH",
         )
 
@@ -1211,7 +1238,8 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
             situacao=["P_RESCISAO", "RESCINDIDO"],
             dias_range="60-90",
             dias_min=60,
-            saldo_min=50000,
+            saldo_bucket="10K_TO_150K",
+            saldo_min=None,
             dt_sit_range="THIS_MONTH",
         )
         assert response.filters.model_dump() == expected_filters.model_dump()
@@ -1223,13 +1251,15 @@ def test_list_plans_applies_filters_keyset(monkeypatch: pytest.MonkeyPatch) -> N
         sql = cursor_obj.executed_sql
         assert "planos.situacao_codigo = ANY" in sql
         assert "faixa_dias_em_atraso" in sql
-        assert "COALESCE(planos.saldo, 0) >= %(saldo_min)s" in sql
+        assert "COALESCE(planos.saldo,0) > %(saldo_min_bucket)s" in sql or "COALESCE(planos.saldo, 0) > %(saldo_min_bucket)s" in sql
+        assert "COALESCE(planos.saldo, 0) <= %(saldo_max_bucket)s" in sql
         assert "planos.dt_situacao >= date_trunc('month', CURRENT_DATE)" in sql
         params = cursor_obj.executed_params
         assert params is not None
         assert list(params["situacoes"]) == ["P_RESCISAO", "RESCINDIDO"]
         assert params["dias_range"] == "60-90"
-        assert params["saldo_min"] == 50000
+        assert params["saldo_min_bucket"] == 10000
+        assert params["saldo_max_bucket"] == 150000
 
     _run(_exercise())
 
@@ -1284,6 +1314,62 @@ def test_list_plans_legacy_dias_min_maps_to_bucket(
         params = cursor_obj.executed_params
         assert params is not None
         assert params["dias_range"] == "120+"
+
+    _run(_exercise())
+
+
+def test_list_plans_legacy_saldo_min_maps_to_bucket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows: list[dict[str, Any]] = []
+
+    manager = _DummyManager(rows)
+    monkeypatch.setattr(plans, "get_connection_manager", lambda: manager)
+
+    async def _fake_bind(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(plans, "bind_session", _fake_bind)
+    monkeypatch.setattr(
+        plans,
+        "get_principal_settings",
+        lambda: PrincipalSettings(
+            tenant_id="tenant-x",
+            matricula="abc123",
+            nome="Usuário",
+            email="user@example.com",
+            perfil="admin",
+        ),
+    )
+
+    async def _exercise() -> None:
+        response = await plans.list_plans(
+            request=_make_request(
+                headers={"X-User-Registration": "abc123"},
+                query_params={"saldo_min": "50000"},
+            ),
+            q=None,
+            page=1,
+            page_size=plans.KEYSET_DEFAULT_PAGE_SIZE,
+            cursor=None,
+            direction=None,
+            tipo_doc=None,
+            occurrences_only=False,
+            saldo_min=50000,
+        )
+
+        assert isinstance(response, PlansResponse)
+        assert response.filters is not None
+        assert response.filters.saldo_bucket == "10K_TO_150K"
+        assert response.filters.saldo_min == 50000
+        cursor_obj = manager.last_connection.last_cursor if manager.last_connection else None
+        assert cursor_obj is not None
+        sql = cursor_obj.executed_sql or ""
+        assert "> %(saldo_min_bucket)s" in sql
+        assert "<= %(saldo_max_bucket)s" in sql
+        params = cursor_obj.executed_params or {}
+        assert params.get("saldo_min_bucket") == 10000
+        assert params.get("saldo_max_bucket") == 150000
 
     _run(_exercise())
 

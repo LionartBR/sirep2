@@ -108,6 +108,22 @@ _ALLOWED_OVERDUE_RANGE_KEYS = set(_ALLOWED_OVERDUE_RANGES)
 _ALLOWED_SALDO_THRESHOLDS: tuple[int, ...] = (10000, 50000, 150000, 500000, 1_000_000)
 _ALLOWED_SALDO_SET = set(_ALLOWED_SALDO_THRESHOLDS)
 
+_SALDO_BUCKETS: dict[str, tuple[int | None, bool, int | None, bool]] = {
+    "UP_TO_10K": (None, False, 10_000, True),
+    "10K_TO_150K": (10_000, False, 150_000, True),
+    "150K_TO_500K": (150_000, False, 500_000, True),
+    "500K_TO_1M": (500_000, False, 1_000_000, True),
+    "ABOVE_1M": (1_000_000, False, None, False),
+}
+_SALDO_BUCKET_SET = set(_SALDO_BUCKETS)
+_SALDO_BUCKET_COMPAT_MIN: dict[str, int | None] = {
+    "UP_TO_10K": None,
+    "10K_TO_150K": 10_000,
+    "150K_TO_500K": 150_000,
+    "500K_TO_1M": 500_000,
+    "ABOVE_1M": 1_000_000,
+}
+
 _DT_SITUATION_RANGE_CLAUSES: dict[str, tuple[str | None, str | None]] = {
     "LAST_3_MONTHS": (
         "dt_situacao >= date_trunc('month', CURRENT_DATE) - INTERVAL '2 months'",
@@ -202,6 +218,31 @@ def _normalize_saldo_min(value: int | None) -> int | None:
     except (TypeError, ValueError):
         return None
     return candidate if candidate in _ALLOWED_SALDO_SET else None
+
+
+def _normalize_saldo_bucket(value: str | None) -> str | None:
+    if not value:
+        return None
+    candidate = str(value).strip().upper()
+    return candidate if candidate in _SALDO_BUCKET_SET else None
+
+
+def _map_legacy_saldo_min_to_bucket(value: int | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        candidate = int(value)
+    except (TypeError, ValueError):
+        return None
+    if candidate >= 1_000_000:
+        return "ABOVE_1M"
+    if candidate >= 500_000:
+        return "500K_TO_1M"
+    if candidate >= 150_000:
+        return "150K_TO_500K"
+    if candidate >= 10_000:
+        return "10K_TO_150K"
+    return "UP_TO_10K"
 
 
 def _normalize_dt_range(value: str | None) -> str | None:
@@ -801,6 +842,7 @@ def _build_filters(
     occurrences_only: bool = False,
     situacoes: Sequence[str] | None = None,
     dias_range: str | None = None,
+    saldo_bucket: str | None = None,
     saldo_min: int | None = None,
     dt_sit_range: str | None = None,
     table_alias: str | None = None,
@@ -869,7 +911,17 @@ def _build_filters(
         params["dias_range"] = dias_range
         clauses.append(f"{col('faixa_dias_em_atraso')} = %(dias_range)s")
 
-    if saldo_min is not None:
+    if saldo_bucket and saldo_bucket in _SALDO_BUCKETS:
+        min_value, min_inclusive, max_value, max_inclusive = _SALDO_BUCKETS[saldo_bucket]
+        if min_value is not None:
+            op = ">=" if min_inclusive else ">"
+            params["saldo_min_bucket"] = min_value
+            clauses.append(f"COALESCE({col('saldo')}, 0) {op} %(saldo_min_bucket)s")
+        if max_value is not None:
+            op = "<=" if max_inclusive else "<"
+            params["saldo_max_bucket"] = max_value
+            clauses.append(f"COALESCE({col('saldo')}, 0) {op} %(saldo_max_bucket)s")
+    elif saldo_min is not None:
         params["saldo_min"] = saldo_min
         clauses.append(f"COALESCE({col('saldo')}, 0) >= %(saldo_min)s")
 
@@ -944,6 +996,7 @@ async def _fetch_keyset_page(
     occurrences_only: bool,
     situacoes: Sequence[str] | None,
     dias_range: str | None,
+    saldo_bucket: str | None,
     saldo_min: int | None,
     dt_sit_range: str | None,
     page_size: int,
@@ -961,6 +1014,7 @@ async def _fetch_keyset_page(
         occurrences_only=occurrences_only,
         situacoes=situacoes,
         dias_range=dias_range,
+        saldo_bucket=saldo_bucket,
         saldo_min=saldo_min,
         dt_sit_range=dt_sit_range,
         table_alias="planos",
@@ -1137,6 +1191,12 @@ async def list_plans(
     saldo_min: int | None = Query(
         None,
         description="Saldo mínimo em reais (10000, 50000, 150000, 500000, 1000000)",
+        deprecated=True,
+    ),
+    saldo_bucket: str | None = Query(
+        None,
+        pattern="^(UP_TO_10K|10K_TO_150K|150K_TO_500K|500K_TO_1M|ABOVE_1M)$",
+        description="Faixa de saldo (UP_TO_10K, 10K_TO_150K, 150K_TO_500K, 500K_TO_1M, ABOVE_1M)",
     ),
     dt_sit_range: str | None = Query(
         None,
@@ -1164,7 +1224,8 @@ async def list_plans(
     situacao = _unwrap_query_param(situacao)
     dias_range_value_raw = _unwrap_query_param(dias_range)
     dias_min_value_raw = _unwrap_query_param(dias_min)
-    saldo_min = _unwrap_query_param(saldo_min)
+    saldo_min_value_raw = _unwrap_query_param(saldo_min)
+    saldo_bucket_raw = _unwrap_query_param(saldo_bucket)
     dt_sit_range = _unwrap_query_param(dt_sit_range)
 
     limit = int(limit) if limit is not None else DEFAULT_LIMIT
@@ -1183,12 +1244,18 @@ async def list_plans(
     dias_bucket = dias_range_value or _map_legacy_dias_min(legacy_threshold)
     if dias_bucket and legacy_threshold is None:
         legacy_threshold = _ALLOWED_OVERDUE_RANGES[dias_bucket][0]
-    saldo_threshold = _normalize_saldo_min(saldo_min)
+    saldo_threshold = _normalize_saldo_min(saldo_min_value_raw)
+    saldo_bucket_value = _normalize_saldo_bucket(saldo_bucket_raw)
+    if saldo_bucket_value is None and saldo_threshold is not None:
+        saldo_bucket_value = _map_legacy_saldo_min_to_bucket(saldo_threshold)
+    if saldo_bucket_value is not None and saldo_threshold is None:
+        saldo_threshold = _SALDO_BUCKET_COMPAT_MIN.get(saldo_bucket_value)
     dt_range_value = _normalize_dt_range(dt_sit_range)
 
     filters_applied = bool(
         situacao_values
         or dias_bucket is not None
+        or saldo_bucket_value is not None
         or saldo_threshold is not None
         or dt_range_value is not None
     )
@@ -1197,12 +1264,14 @@ async def list_plans(
         situacao=situacao_values or None,
         dias_range=dias_bucket,
         dias_min=legacy_threshold,
-        saldo_min=saldo_threshold,
+        saldo_bucket=saldo_bucket_value,
+        saldo_min=saldo_threshold if saldo_min_value_raw is not None else None,
         dt_sit_range=dt_range_value,
     )
     if not (
         filters_model.situacao
         or filters_model.dias_range is not None
+        or filters_model.saldo_bucket is not None
         or filters_model.saldo_min is not None
         or filters_model.dt_sit_range is not None
     ):
@@ -1230,6 +1299,7 @@ async def list_plans(
                     occurrences_only=occurrences_only,
                     situacoes=situacao_values,
                     dias_range=dias_bucket,
+                    saldo_bucket=saldo_bucket_value,
                     saldo_min=saldo_threshold,
                     dt_sit_range=dt_range_value,
                     page_size=page_size,
@@ -1243,6 +1313,7 @@ async def list_plans(
                     occurrences_only=occurrences_only,
                     situacoes=situacao_values,
                     dias_range=dias_bucket,
+                    saldo_bucket=saldo_bucket_value,
                     saldo_min=saldo_threshold,
                     dt_sit_range=dt_range_value,
                     table_alias="planos",
@@ -1250,7 +1321,8 @@ async def list_plans(
                 cache_key = (
                     f"{matricula}|{q or ''}|{tipo_doc or ''}|occ={occurrences_only}"
                     f"|situ={','.join(situacao_values) if situacao_values else ''}"
-                    f"|dias={dias_bucket or ''}|saldo={saldo_threshold or ''}|dt={dt_range_value or ''}"
+                    f"|dias={dias_bucket or ''}|saldo_bucket={saldo_bucket_value or ''}|"
+                    f"saldo_min={saldo_threshold or ''}|dt={dt_range_value or ''}"
                 )
                 total_count = await _fast_total_count(
                     connection,

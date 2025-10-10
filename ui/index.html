@@ -272,27 +272,27 @@
                           <i data-feather="chevron-down" class="table-filter__icon" aria-hidden="true"></i>
                         </button>
                         <div class="table-filter__dropdown" role="menu">
-                          <p class="table-filter__title">Saldo mínimo</p>
-                          <div class="table-filter__options" role="group" aria-label="Saldo mínimo">
+                          <p class="table-filter__title">SELECIONE A FAIXA</p>
+                          <div class="table-filter__options" role="group" aria-label="SELECIONE A FAIXA">
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="10000" data-filter-input="saldo" />
-                              <span>R$ 10 mil+</span>
+                              <input type="radio" name="filter-saldo" value="UP_TO_10K" data-filter-input="saldo" />
+                              <span>Até R$ 10 mil</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="50000" data-filter-input="saldo" />
-                              <span>R$ 50 mil+</span>
+                              <input type="radio" name="filter-saldo" value="10K_TO_150K" data-filter-input="saldo" />
+                              <span>R$ 10 mil – R$ 150 mil</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="150000" data-filter-input="saldo" />
-                              <span>R$ 150 mil+</span>
+                              <input type="radio" name="filter-saldo" value="150K_TO_500K" data-filter-input="saldo" />
+                              <span>R$ 150 mil – R$ 500 mil</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="500000" data-filter-input="saldo" />
-                              <span>R$ 500 mil+</span>
+                              <input type="radio" name="filter-saldo" value="500K_TO_1M" data-filter-input="saldo" />
+                              <span>R$ 500 mil – R$ 1 mi</span>
                             </label>
                             <label class="table-filter__option">
-                              <input type="radio" name="filter-saldo" value="1000000" data-filter-input="saldo" />
-                              <span>R$ 1 mi+</span>
+                              <input type="radio" name="filter-saldo" value="ABOVE_1M" data-filter-input="saldo" />
+                              <span>+ R$ 1 mi</span>
                             </label>
                           </div>
                           <div class="table-filter__actions">
@@ -307,44 +307,7 @@
                         </div>
                       </div>
                     </th>
-                    <th scope="col" class="table__col--filterable">
-                      <div class="table-filter" data-filter-group="dt">
-                        <button class="table-filter__trigger" type="button" aria-expanded="false">
-                          <span>DT SITUAÇÃO</span>
-                          <i data-feather="chevron-down" class="table-filter__icon" aria-hidden="true"></i>
-                        </button>
-                        <div class="table-filter__dropdown" role="menu">
-                          <p class="table-filter__title">Intervalo de data</p>
-                          <div class="table-filter__options" role="group" aria-label="Data da situação">
-                            <label class="table-filter__option">
-                              <input type="radio" name="filter-date" value="LAST_3_MONTHS" data-filter-input="dt" />
-                              <span>&lt; 3 meses</span>
-                            </label>
-                            <label class="table-filter__option">
-                              <input type="radio" name="filter-date" value="LAST_2_MONTHS" data-filter-input="dt" />
-                              <span>&lt; 2 meses</span>
-                            </label>
-                            <label class="table-filter__option">
-                              <input type="radio" name="filter-date" value="LAST_MONTH" data-filter-input="dt" />
-                              <span>&lt; 1 mês</span>
-                            </label>
-                            <label class="table-filter__option">
-                              <input type="radio" name="filter-date" value="THIS_MONTH" data-filter-input="dt" />
-                              <span>Mês atual</span>
-                            </label>
-                          </div>
-                          <div class="table-filter__actions">
-                            <button
-                              type="button"
-                              class="table-filter__clear"
-                              data-filter-clear="dt"
-                            >
-                              Limpar filtro
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </th>
+                    <th scope="col">DT SITUAÇÃO</th>
                     <th scope="col" class="table__col--actions">
                       <div class="table-actions-menu" data-plans-actions-menu>
                         <button
